@@ -1,7 +1,9 @@
+
 {
-  "name": "fintech-kyc-backend",
+  "name": "aquapay",
   "version": "1.0.0",
-  "description": "Fintech KYC backend API",
+  "description": "AQUAPAY fintech KYC backend API",
+  "type": "commonjs",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",

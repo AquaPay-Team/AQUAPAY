@@ -1,3 +1,5 @@
-const router = require("express").Router();
-// Planned: GET /api/roles
-module.exports = router;
+import { Router } from "express";
+
+const router = Router();
+
+export default router;

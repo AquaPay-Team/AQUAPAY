@@ -1,3 +1,4 @@
+
 function notFound(req, res, next) {
   res.status(404).json({
     success: false,
@@ -7,9 +8,15 @@ function notFound(req, res, next) {
 
 function errorHandler(err, req, res, next) {
   console.error(err);
-  res.status(err.status || 500).json({
+
+  const statusCode = err.statusCode || err.status || 500;
+
+  res.status(statusCode).json({
     success: false,
-    message: err.status ? err.message : "Internal server error"
+    message:
+      statusCode < 500
+        ? err.message
+        : "Internal server error"
   });
 }
 

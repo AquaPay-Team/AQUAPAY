@@ -1,18 +1,37 @@
+
 const ROLES = [
-  { slug: 'AD',  name: 'Admin',              level: 0 },
-  { slug: 'SA',  name: 'Sub Admin',          level: 1 },
-  { slug: 'NSM', name: 'NSM / NSH',          level: 2 },
-  { slug: 'SH',  name: 'SH',                 level: 3 },
-  { slug: 'CHF', name: 'CHF',                level: 4 },
-  { slug: 'MD',  name: 'Master Distributor', level: 5 },
-  { slug: 'DT',  name: 'Distributor',        level: 6 },
-  { slug: 'RT',  name: 'Retailer',           level: 7 },
+  { slug: "AD", name: "Admin", level: 0 },
+  { slug: "SA", name: "Sub Admin", level: 1 },
+  { slug: "NSM", name: "NSM / NSH", level: 2 },
+  { slug: "SH", name: "SH", level: 3 },
+  { slug: "CHF", name: "CHF", level: 4 },
+  { slug: "MD", name: "Master Distributor", level: 5 },
+  { slug: "DT", name: "Distributor", level: 6 },
+  { slug: "RT", name: "Retailer", level: 7 },
 ];
 
-
+// Returns the immediate next child role.
 function getChildSlug(slug) {
-  const i = ROLES.findIndex((r) => r.slug === slug);
-  return i >= 0 && i < ROLES.length - 1 ? ROLES[i + 1].slug : null;
+  const index = ROLES.findIndex((role) => role.slug === slug);
+
+  return index >= 0 && index < ROLES.length - 1
+    ? ROLES[index + 1].slug
+    : null;
 }
 
-module.exports = { ROLES, getChildSlug };
+// Returns all roles below the given role in the hierarchy.
+function getChildSlugs(slug) {
+  const index = ROLES.findIndex((role) => role.slug === slug);
+
+  if (index === -1) {
+    return [];
+  }
+
+  return ROLES.slice(index + 1).map((role) => role.slug);
+}
+
+module.exports = {
+  ROLES,
+  getChildSlug,
+  getChildSlugs,
+};

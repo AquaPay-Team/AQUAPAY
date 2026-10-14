@@ -1,5 +1,8 @@
-// Add user routes here after the API contract is agreed.
-// Planned: POST /, GET /, GET /:id, PUT /:id, PATCH /:id/status
 const router = require("express").Router();
+const { createUser } = require("./user.controller");
+const { validateCreateUser } = require("./user.validator");
+
+// POST /api/users - Create a permitted child user
+router.post("/", validateCreateUser, createUser);
 
 module.exports = router;

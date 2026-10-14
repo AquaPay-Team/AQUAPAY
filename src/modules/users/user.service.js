@@ -1,4 +1,4 @@
-const bcrypt = require("bcryptjs");
+const bcrypt = require("bcrypt");
 const pool = require("../../config/db");
 const userModel = require("./user.model");
 const ApiError = require("../../utils/ApiError");
@@ -20,9 +20,9 @@ async function createUser({ actorId, name, email, mobile, password, roleId }) {
       throw new ApiError(httpStatus.UNAUTHORIZED, "Active authenticated creator not found", [], "UNAUTHORIZED");
     }
 
-    if (actor.company_status && actor.company_status !== "active") {
-      throw new ApiError(httpStatus.FORBIDDEN, "Creator company is inactive", [], "FORBIDDEN");
-    }
+    // if (actor.company_status && actor.company_status !== "active") {
+    //   throw new ApiError(httpStatus.FORBIDDEN, "Creator company is inactive", [], "FORBIDDEN");
+    // }
 
     // 2. Validate and resolve target child role
     const targetRole = await userModel.findRoleByIdOrName(roleId, connection);
@@ -89,11 +89,16 @@ async function createUser({ actorId, name, email, mobile, password, roleId }) {
 
     return newUser;
   } catch (error) {
-    await connection.rollback();
+    try {
+        await connection.rollback();
+    } catch (rollbackError) {
+        // Preserve the original error if rollback also fails.
+    }
+
     throw error;
-  } finally {
+} finally {
     connection.release();
-  }
+}
 }
 
 module.exports = {

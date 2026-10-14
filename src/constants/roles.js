@@ -25,8 +25,19 @@ function getRole(input) {
 function getChildSlug(slug) {
   const role = getRole(slug);
   if (!role) return null;
-  const nextRole = ROLES.find((r) => r.level === role.level + 1);
-  return nextRole ? nextRole.slug : null;
+
+  const hierarchy = {
+    AD: "SA",
+    SA: "NSM",
+    NSM: "SH",
+    SH: "CNF",
+    CNF: "MD",
+    MD: "DT",
+    DT: "RT",
+    RT: null,
+  };
+
+  return hierarchy[role.slug] ?? null;
 }
 
 function canCreateChildRole(parentInput, childInput) {

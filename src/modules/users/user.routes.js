@@ -1,5 +1,8 @@
-import { Router } from "express";
+const router = require("express").Router();
+const { createUser } = require("./user.controller");
+const { validateCreateUser } = require("./user.validator");
 
-const router = Router();
+// POST /api/users - Create a permitted child user
+router.post("/", validateCreateUser, createUser);
 
-export default router;
+module.exports = router;

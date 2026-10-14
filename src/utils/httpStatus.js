@@ -14,4 +14,5 @@ const httpStatus = Object.freeze({
   SERVICE_UNAVAILABLE: 503,
 });
 
-export default httpStatus;
+module.exports = httpStatus;
+

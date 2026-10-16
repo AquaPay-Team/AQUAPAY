@@ -1,12 +1,4 @@
-AQUAPAY --- Users Module
-The Users module provides the user-creation endpoint for the AQUAPAY
-fintech KYC backend. It validates input, checks the creator's active
-account and permitted role relationship, hashes passwords with bcrypt,
-and stores the new user using the shared MySQL connection pool.
-> **Current status:** This README documents the implementation and
-> testing workflow. Do not consider the endpoint production-ready until
-> verified authentication middleware populates `req.user` and the
-> database migrations/seeds are reconciled with the approved schema.
+
 1. API overview
 Item              Value
 ---

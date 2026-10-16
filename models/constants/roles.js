@@ -4,7 +4,7 @@ const ROLES = [
   { slug: "SA", name: "Sub Admin", level: 1 },
   { slug: "NSM", name: "NSM / NSH", level: 2 },
   { slug: "SH", name: "SH", level: 3 },
-  { slug: "CNF", name: "CHF", level: 4 },
+  { slug: "CNF", name: "CNF", level: 4 },
   { slug: "MD", name: "Master Distributor", level: 5 },
   { slug: "DT", name: "Distributor", level: 6 },
   { slug: "RT", name: "Retailer", level: 7 },

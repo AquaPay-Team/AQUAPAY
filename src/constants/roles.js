@@ -1,12 +1,17 @@
 const ROLES = [
-  { slug: "AD",  name: "Admin",              level: 0 },
-  { slug: "SA",  name: "Sub Admin",          level: 1 },
-  { slug: "NSM", name: "NSM",                level: 2, aliases: ["NSM / NSH", "NSH", "National State Manager"] },
-  { slug: "SH",  name: "SH",                 level: 3, aliases: ["State Head"] },
-  { slug: "CHF", name: "CHF",                level: 4, aliases: ["CNF", "C&F"] },
-  { slug: "MD",  name: "Master Distributor", level: 5 },
-  { slug: "DT",  name: "Distributor",        level: 6 },
-  { slug: "RT",  name: "Retailer",           level: 7 },
+  { slug: "AD", name: "Admin", level: 0 },
+  { slug: "SA", name: "Sub Admin", level: 1 },
+  {
+    slug: "NSM",
+    name: "NSM",
+    level: 2,
+    aliases: ["NSM / NSH", "NSH", "National State Manager"],
+  },
+  { slug: "SH", name: "SH", level: 3, aliases: ["State Head"] },
+  { slug: "CNF", name: "CNF", level: 4, aliases: ["CNF", "C&F"] },
+  { slug: "MD", name: "Master Distributor", level: 5 },
+  { slug: "DT", name: "Distributor", level: 6 },
+  { slug: "RT", name: "Retailer", level: 7 },
 ];
 
 function getRole(input) {
@@ -17,7 +22,7 @@ function getRole(input) {
       (r) =>
         r.slug.toLowerCase() === str ||
         r.name.toLowerCase() === str ||
-        (r.aliases && r.aliases.some((a) => a.toLowerCase() === str))
+        (r.aliases && r.aliases.some((a) => a.toLowerCase() === str)),
     ) || null
   );
 }
@@ -70,5 +75,3 @@ module.exports = {
   getRoleBySlug,
   getRoleByName,
 };
-
-

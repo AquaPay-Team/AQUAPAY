@@ -21,6 +21,11 @@ Shared starter structure for the team. Stack: Node.js, Express, MySQL, MVC + ser
 
 The server starts on `http://localhost:3000`. `GET /api/health` is a basic health check.
 
+## Documentation
+- [API Testing Guide](docs/API_TESTING_GUIDE.md): Complete guide for testing all endpoints, headers, cURL commands, and negative scenarios.
+- [Codebase Changes Summary](CHANGES_SUMMARY.md): Full summary of schema changes, bug fixes, validation rules, and hierarchy policies.
+- [Users Module Documentation](src/modules/users/README.md): Detailed role hierarchy, permissions, and endpoint specifications.
+
 ## Architecture
 - `routes/`: URL-to-controller mappings
 - `controllers/`: HTTP request/response handling
@@ -37,5 +42,5 @@ The server starts on `http://localhost:3000`. `GET /api/health` is a basic healt
 - Use parameterized queries; never concatenate untrusted input into SQL.
 - Never commit `.env`, credentials, tokens, or real KYC data.
 - Do not expose public signup that grants the Admin role. Bootstrap the first Admin through a controlled one-time script.
-- `created_by` is the account that created a user; `parent_user_id` is the business hierarchy parent. Keep their meanings distinct.
+- `created_by` is the account that created a user; `parent_id` is the business hierarchy parent. Keep their meanings distinct.
 - Do not return password hashes in API responses.

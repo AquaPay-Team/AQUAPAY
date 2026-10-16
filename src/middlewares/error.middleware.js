@@ -1,39 +1,50 @@
-
 function notFound(req, res, next) {
-    res.status(404).json({
-        success: false,
-        message: `Route not found: ${req.method} ${req.originalUrl}`
-    });
+  res.status(404).json({
+    success: false,
+    message: `Route not found: ${req.method} ${req.originalUrl}`,
+  });
 }
 
 function errorHandler(err, req, res, next) {
-    if (res.headersSent) {
-        return next(err);
-    }
+  if (res.headersSent) {
+    return next(err);
+  }
 
-    const statusCode = err.statusCode || err.status || 500;
+  const status = Number.isInteger(err.statusCode) ? err.statusCode : err.status;
 
-    if (statusCode >= 500) {
-        console.error(err);
-    }
+  const isClientError =
+    Number.isInteger(status) && status >= 400 && status < 500;
 
-    const response = {
-        success: false,
-        message:
-            statusCode >= 500
-                ? "Internal server error"
-                : (err.message || "An error occurred")
-    };
+  const statusCode = isClientError ? status : 500;
 
-    if (err.code) {
-        response.code = err.code;
-    }
+  const message =
+    err.type === "entity.parse.failed"
+      ? "Invalid request body"
+      : isClientError
+        ? err.message || "Request failed"
+        : "Internal server error";
 
-    if (Array.isArray(err.errors) && err.errors.length > 0) {
-        response.errors = err.errors;
-    }
+  if (!isClientError) {
+    console.error("Request failed with server error", {
+      name: typeof err.name === "string" ? err.name : "Error",
+      code: typeof err.code === "string" ? err.code : undefined,
+    });
+  }
 
-    res.status(statusCode).json(response);
+  const response = {
+    success: false,
+    message,
+  };
+
+  if (isClientError && typeof err.code === "string") {
+    response.code = err.code;
+  }
+
+  if (isClientError && Array.isArray(err.errors) && err.errors.length > 0) {
+    response.errors = err.errors;
+  }
+
+  res.status(statusCode).json(response);
 }
 
 module.exports = { notFound, errorHandler };

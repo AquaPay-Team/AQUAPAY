@@ -1,16 +1,85 @@
 require("dotenv").config();
+
 const mysql = require("mysql2/promise");
 
+function getDatabaseConfig() {
+  const required = ["DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME"];
+  const missing = required.filter((name) => !process.env[name]);
+
+  if (missing.length > 0) {
+    throw new Error(
+      `Missing required database configuration: ${missing.join(", ")}`,
+    );
+  }
+
+  const port = Number(process.env.DB_PORT);
+
+  if (
+    !/^[1-9]\d*$/.test(process.env.DB_PORT) ||
+    !Number.isInteger(port) ||
+    port < 1 ||
+    port > 65535
+  ) {
+    throw new Error("DB_PORT must be a valid TCP port");
+  }
+
+  if (
+    /replace|change.?me|placeholder|example/i.test(process.env.DB_USER) ||
+    /replace|change.?me|placeholder|example/i.test(process.env.DB_PASSWORD)
+  ) {
+    throw new Error(
+      "DB_USER and DB_PASSWORD must be configured with non-placeholder values",
+    );
+  }
+
+  if (!/^[A-Za-z0-9_]+$/.test(process.env.DB_NAME)) {
+    throw new Error("DB_NAME contains unsupported characters");
+  }
+
+  return {
+    host: process.env.DB_HOST,
+    port,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+  };
+}
+
 const pool = mysql.createPool({
-  host: process.env.DB_HOST || "127.0.0.1",
-  port: Number(process.env.DB_PORT || 3306),
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME || "fintech_kyc",
+  ...getDatabaseConfig(),
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
 });
 
-module.exports = pool;
+async function verifyDatabaseConnection() {
+  const [rows] = await pool.query(
+    "SELECT VERSION() AS version, @@version_comment AS versionComment",
+  );
 
+  return {
+    version: rows[0].version,
+    versionComment: rows[0].versionComment,
+  };
+}
+
+async function verifyOracleMySql() {
+  const metadata = await verifyDatabaseConnection();
+  const versionComment = String(metadata.versionComment || "");
+  const version = String(metadata.version || "");
+
+  if (
+    /mariadb/i.test(versionComment) ||
+    /mariadb/i.test(version) ||
+    !/mysql/i.test(versionComment)
+  ) {
+    throw new Error("Database server is not Oracle MySQL");
+  }
+
+  return metadata;
+}
+
+module.exports = pool;
+module.exports.getDatabaseConfig = getDatabaseConfig;
+module.exports.verifyDatabaseConnection = verifyDatabaseConnection;
+module.exports.verifyOracleMySql = verifyOracleMySql;

@@ -3,6 +3,7 @@ const pool = require("../../config/db");
 const userModel = require("./user.model");
 const ApiError = require("../../utils/ApiError");
 const httpStatus = require("../../utils/httpStatus");
+const authorizationService = require("../authorization/authorization.service");
 
 async function createUser({ actorId, name, email, mobile, password, roleId }) {
   if (!actorId) {
@@ -30,8 +31,8 @@ async function createUser({ actorId, name, email, mobile, password, roleId }) {
       throw new ApiError(httpStatus.BAD_REQUEST, "Requested role does not exist", [], "INVALID_ROLE");
     }
 
-    // 3. Verify permitted parent-child relationship using role hierarchy
-    const isPermitted = await userModel.checkRoleHierarchy(
+    // 3.Verify whether the target role is below the actor
+    const isPermitted = await authorizationService.canCreateRole(
       actor.role_id,
       targetRole.id,
       connection

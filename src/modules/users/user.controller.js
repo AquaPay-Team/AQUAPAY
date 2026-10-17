@@ -4,26 +4,33 @@ const ApiResponse = require("../../utils/ApiResponse");
 const ApiError = require("../../utils/ApiError");
 const httpStatus = require("../../utils/httpStatus");
 
-const createUser = asyncHandler(async (req, res) => {
+function getActorId(req) {
   const actorId = req.user?.id;
 
   if (!actorId) {
     throw new ApiError(
       httpStatus.UNAUTHORIZED,
-      "Authentication required to create a user",
+      "Authentication required",
       [],
       "UNAUTHORIZED",
     );
   }
 
-  const { name, email, mobile, password, roleId } =
+  return Number(actorId);
+}
+
+const createUser = asyncHandler(async (req, res) => {
+  const actorId = getActorId(req);
+  const { name, email, mobile, state, city, password, roleId } =
     req.validatedBody || req.body;
 
-  const newUser = await userService.createUser({
-    actorId: Number(actorId),
+  const result = await userService.createUser({
+    actorId,
     name,
     email,
     mobile,
+    state,
+    city,
     password,
     roleId,
   });
@@ -31,7 +38,7 @@ const createUser = asyncHandler(async (req, res) => {
   return res
     .status(httpStatus.CREATED)
     .json(
-      new ApiResponse(httpStatus.CREATED, newUser, "User created successfully"),
+      new ApiResponse(httpStatus.CREATED, result, "User created successfully"),
     );
 });
 

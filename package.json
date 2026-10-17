@@ -1,4 +1,3 @@
-
 {
   "name": "aquapay",
   "version": "1.0.0",
@@ -14,7 +13,6 @@
     "test": "node --test src/modules/auth/auth.test.js"
   },
   "dependencies": {
-    "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.3",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",

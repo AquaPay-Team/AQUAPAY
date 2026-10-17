@@ -1,10 +1,10 @@
-const bcrypt = require("bcrypt");
+const bcrypt = require("bcryptjs");
 const pool = require("../../config/db");
 const userModel = require("./user.model");
 const ApiError = require("../../utils/ApiError");
 const httpStatus = require("../../utils/httpStatus");
 
-async function createUser({ actorId, name, email, mobile, password, roleId }) {
+async function createUser({ actorId, name, email, mobile, state, city, password, roleId }) {
   if (!actorId) {
     throw new ApiError(httpStatus.UNAUTHORIZED, "Authentication required to create a user", [], "UNAUTHORIZED");
   }
@@ -20,17 +20,13 @@ async function createUser({ actorId, name, email, mobile, password, roleId }) {
       throw new ApiError(httpStatus.UNAUTHORIZED, "Active authenticated creator not found", [], "UNAUTHORIZED");
     }
 
-    // if (actor.company_status && actor.company_status !== "active") {
-    //   throw new ApiError(httpStatus.FORBIDDEN, "Creator company is inactive", [], "FORBIDDEN");
-    // }
-
     // 2. Validate and resolve target child role
     const targetRole = await userModel.findRoleByIdOrName(roleId, connection);
     if (!targetRole) {
       throw new ApiError(httpStatus.BAD_REQUEST, "Requested role does not exist", [], "INVALID_ROLE");
     }
 
-    // 3. Verify permitted parent-child relationship using role hierarchy
+    // 3. Verify permitted parent-child relationship using role_hierarchy table
     const isPermitted = await userModel.checkRoleHierarchy(
       actor.role_id,
       targetRole.id,
@@ -57,21 +53,22 @@ async function createUser({ actorId, name, email, mobile, password, roleId }) {
       throw new ApiError(httpStatus.CONFLICT, `${field} already exists`, [], "DUPLICATE_ENTRY");
     }
 
-
     // 5. Hash password before storing
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(password, salt);
 
-    // 6. Parent ID is ALWAYS derived from the authenticated actor context
+    // 6. Parent ID is the authenticated creator
     const parentId = actor.id;
     const companyId = actor.company_id || null;
 
-    // 7. Insert the user using the approved MySQL schema
+    // 7. Insert the user using the approved database schema
     const newUserId = await userModel.insertUser(
       {
         name,
         email,
         mobile,
+        state: state || null,
+        city: city || null,
         passwordHash,
         roleId: targetRole.id,
         companyId,
@@ -90,17 +87,18 @@ async function createUser({ actorId, name, email, mobile, password, roleId }) {
     return newUser;
   } catch (error) {
     try {
-        await connection.rollback();
+      await connection.rollback();
     } catch (rollbackError) {
-        // Preserve the original error if rollback also fails.
+      // Preserve the original error if rollback also fails.
     }
 
     throw error;
-} finally {
+  } finally {
     connection.release();
-}
+  }
 }
 
 module.exports = {
   createUser
 };
+

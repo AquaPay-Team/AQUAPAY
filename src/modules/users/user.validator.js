@@ -3,7 +3,7 @@ const {
   normalizeEmail,
   normalizeMobile,
   isValidEmail,
-  isValidMobile
+  isValidMobile,
 } = require("../../utils/validationHelper");
 const ApiError = require("../../utils/ApiError");
 const httpStatus = require("../../utils/httpStatus");
@@ -16,7 +16,12 @@ function validateCreateUser(req, res, next) {
   const state = normalizeString(body.state);
   const city = normalizeString(body.city);
   const password = body.password;
-  const roleInput = body.roleId !== undefined ? body.roleId : (body.role_id !== undefined ? body.role_id : body.role);
+  const roleInput =
+    body.roleId !== undefined
+      ? body.roleId
+      : body.role_id !== undefined
+        ? body.role_id
+        : body.role;
 
   const errors = [];
 
@@ -64,36 +69,51 @@ function validateCreateUser(req, res, next) {
   }
 
   // State & City length validation (max 100 chars)
-  if (state && state.length > 100) {
-    errors.push("State cannot exceed 100 characters");
+  // State validation
+  if (body.state !== undefined && body.state !== null) {
+    if (typeof body.state !== "string") {
+      errors.push("State must be a string");
+    } else if (body.state.trim().length > 100) {
+      errors.push("State cannot exceed 100 characters");
+    }
   }
 
-  if (city && city.length > 100) {
-    errors.push("City cannot exceed 100 characters");
+  // City validation
+  if (body.city !== undefined && body.city !== null) {
+    if (typeof body.city !== "string") {
+      errors.push("City must be a string");
+    } else if (body.city.trim().length > 100) {
+      errors.push("City cannot exceed 100 characters");
+    }
   }
 
   // Role validation
-  if (roleInput === undefined || roleInput === null || roleInput === "") {
+  // Role validation
+  if (
+    roleInput === undefined ||
+    roleInput === null ||
+    (typeof roleInput === "string" && !roleInput.trim())
+  ) {
     errors.push("Role is required");
+  } else if (typeof roleInput !== "string" && typeof roleInput !== "number") {
+    errors.push("Role must be a valid role ID, name, or slug");
+  } else if (
+    typeof roleInput === "number" &&
+    (!Number.isSafeInteger(roleInput) || roleInput <= 0)
+  ) {
+    errors.push("Role ID must be a positive integer");
+  } else if (
+    typeof roleInput === "string" &&
+    /^\d+$/.test(roleInput.trim()) &&
+    (!Number.isSafeInteger(Number(roleInput.trim())) ||
+      Number(roleInput.trim()) <= 0)
+  ) {
+    errors.push("Role ID must be a positive integer");
   }
-
-  if (errors.length > 0) {
-    return next(new ApiError(httpStatus.BAD_REQUEST, errors.join(", "), errors, "VALIDATION_ERROR"));
-  }
-
-  req.validatedBody = {
-    name,
-    email,
-    mobile,
-    state: state || null,
-    city: city || null,
-    password: password || null,
-    roleId: roleInput
-  };
 
   next();
 }
 
 module.exports = {
-  validateCreateUser
+  validateCreateUser,
 };

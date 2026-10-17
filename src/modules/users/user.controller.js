@@ -5,16 +5,24 @@ const ApiError = require("../../utils/ApiError");
 const httpStatus = require("../../utils/httpStatus");
 
 function getActorId(req) {
-  const actorId = req.user ? req.user.id : (req.headers["x-user-id"] || req.headers["user-id"]);
+  const actorId = req.user?.id;
+
   if (!actorId) {
-    throw new ApiError(httpStatus.UNAUTHORIZED, "Authentication required", [], "UNAUTHORIZED");
+    throw new ApiError(
+      httpStatus.UNAUTHORIZED,
+      "Authentication required",
+      [],
+      "UNAUTHORIZED",
+    );
   }
+
   return Number(actorId);
 }
 
 const createUser = asyncHandler(async (req, res) => {
   const actorId = getActorId(req);
-  const { name, email, mobile, state, city, password, roleId } = req.validatedBody || req.body;
+  const { name, email, mobile, state, city, password, roleId } =
+    req.validatedBody || req.body;
 
   const result = await userService.createUser({
     actorId,
@@ -24,14 +32,16 @@ const createUser = asyncHandler(async (req, res) => {
     state,
     city,
     password,
-    roleId
+    roleId,
   });
 
   return res
     .status(httpStatus.CREATED)
-    .json(new ApiResponse(httpStatus.CREATED, result, "User created successfully"));
+    .json(
+      new ApiResponse(httpStatus.CREATED, result, "User created successfully"),
+    );
 });
 
 module.exports = {
-  createUser
+  createUser,
 };

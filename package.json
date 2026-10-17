@@ -8,11 +8,11 @@
   "engines": {
     "node": ">=20.13.0"
   },
-  "scripts": {
-    "start": "node src/server.js",
-    "dev": "nodemon src/server.js",
-    "test": "node --test src/modules/auth/auth.test.js"
-  },
+ "scripts": {
+  "start": "node src/server.js",
+  "dev": "nodemon src/server.js",
+  "test": "node --test src/modules/auth/auth.test.js"
+},
   "dependencies": {
     "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.3",

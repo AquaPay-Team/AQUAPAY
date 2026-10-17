@@ -1,6 +1,6 @@
 
 const pool = require("../../config/db");
-const bcrypt = require("bcrypt");
+const bcrypt = require("bcryptjs");
 
 async function createAdmin(adminInput) {
   const connection = await pool.getConnection();

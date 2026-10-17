@@ -3,10 +3,25 @@ const pool = require("../../config/db");
 const userModel = require("./user.model");
 const ApiError = require("../../utils/ApiError");
 const httpStatus = require("../../utils/httpStatus");
+const authorizationService = require("../authorization/authorization.service");
 
-async function createUser({ actorId, name, email, mobile, state, city, password, roleId }) {
+async function createUser({
+  actorId,
+  name,
+  email,
+  mobile,
+  state,
+  city,
+  password,
+  roleId,
+}) {
   if (!actorId) {
-    throw new ApiError(httpStatus.UNAUTHORIZED, "Authentication required to create a user", [], "UNAUTHORIZED");
+    throw new ApiError(
+      httpStatus.UNAUTHORIZED,
+      "Authentication required to create a user",
+      [],
+      "UNAUTHORIZED",
+    );
   }
 
   const connection = await pool.getConnection();
@@ -17,40 +32,54 @@ async function createUser({ actorId, name, email, mobile, state, city, password,
     // 1. Authenticate requester and fetch creator context
     const actor = await userModel.findUserForAuth(actorId, connection);
     if (!actor) {
-      throw new ApiError(httpStatus.UNAUTHORIZED, "Active authenticated creator not found", [], "UNAUTHORIZED");
+      throw new ApiError(
+        httpStatus.UNAUTHORIZED,
+        "Active authenticated creator not found",
+        [],
+        "UNAUTHORIZED",
+      );
     }
 
     // 2. Validate and resolve target child role
     const targetRole = await userModel.findRoleByIdOrName(roleId, connection);
     if (!targetRole) {
-      throw new ApiError(httpStatus.BAD_REQUEST, "Requested role does not exist", [], "INVALID_ROLE");
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        "Requested role does not exist",
+        [],
+        "INVALID_ROLE",
+      );
     }
 
-    // 3. Verify permitted parent-child relationship using role_hierarchy table
-    const isPermitted = await userModel.checkRoleHierarchy(
+    // 3. Verify whether the actor can create the target role.
+    const isPermitted = await authorizationService.canCreateRole(
       actor.role_id,
       targetRole.id,
-      connection
+      connection,
     );
-
     if (!isPermitted) {
       throw new ApiError(
         httpStatus.FORBIDDEN,
         `Role '${actor.role_name}' is not authorized to create a '${targetRole.name}'`,
         [],
-        "FORBIDDEN"
+        "FORBIDDEN",
       );
     }
 
     // 4. Check whether email or mobile already exists
     const duplicate = await userModel.checkDuplicateUser(
       { email, mobile },
-      connection
+      connection,
     );
 
     if (duplicate) {
       const field = duplicate.email === email ? "Email" : "Mobile number";
-      throw new ApiError(httpStatus.CONFLICT, `${field} already exists`, [], "DUPLICATE_ENTRY");
+      throw new ApiError(
+        httpStatus.CONFLICT,
+        `${field} already exists`,
+        [],
+        "DUPLICATE_ENTRY",
+      );
     }
 
     // 5. Hash password before storing
@@ -73,9 +102,9 @@ async function createUser({ actorId, name, email, mobile, state, city, password,
         roleId: targetRole.id,
         companyId,
         parentId,
-        status: "active"
+        status: "active",
       },
-      connection
+      connection,
     );
 
     // 8. Fetch the created user without password or password_hash
@@ -99,6 +128,5 @@ async function createUser({ actorId, name, email, mobile, state, city, password,
 }
 
 module.exports = {
-  createUser
+  createUser,
 };
-

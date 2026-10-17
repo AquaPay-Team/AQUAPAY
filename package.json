@@ -1,17 +1,24 @@
+
 {
   "name": "aquapay",
   "version": "1.0.0",
   "description": "AQUAPAY fintech KYC backend API",
   "type": "commonjs",
   "main": "src/server.js",
+  "engines": {
+    "node": ">=20.13.0"
+  },
   "scripts": {
     "start": "node src/server.js",
-    "dev": "nodemon src/server.js"
+    "dev": "nodemon src/server.js",
+    "test": "node --test src/modules/auth/auth.test.js"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
+    "bcryptjs": "^3.0.3",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.3",
     "mysql2": "^3.12.0"
   },
   "devDependencies": {

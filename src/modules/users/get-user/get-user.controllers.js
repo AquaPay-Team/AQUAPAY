@@ -1,9 +1,9 @@
-import * as service from "./get-user.service.js";
+import service from "./get-user.service.js";
 import asyncHandler from "../../../utils/asyncHandler.js";
 import ApiResponse from "../../../utils/ApiResponse.js";
 import httpStatus from "../../../utils/httpStatus.js";
 
-const getUsers = asyncHandler(async (req, res) => {
+const getUsers = asyncHandler(async (req, res) => { 
   const result = await service.getUsers(req.user.id);
 
   return res.status(httpStatus.OK).json(

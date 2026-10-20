@@ -4,14 +4,17 @@ import userModel from "./user.model.js";
 import ApiError from "../../utils/ApiError.js";
 import httpStatus from "../../utils/httpStatus.js";
 import authorizationService from "../authorization/authorization.service.js";
+import * as getUserService from "./get-user/get-user.service.js";
 
 async function createUser({
   actorId,
   name,
   email,
   mobile,
+  address,
   state,
   city,
+  pincode,
   password,
   roleId,
 }) {
@@ -96,8 +99,10 @@ async function createUser({
         name,
         email,
         mobile,
+        address: address || null,
         state: state || null,
         city: city || null,
+        pincode: pincode || null,
         passwordHash,
         roleId: targetRole.id,
         companyId,
@@ -127,12 +132,19 @@ async function createUser({
   }
 }
 
+const listUserDownline = getUserService.getUsers;
+const getUserById = getUserService.getUserById;
+
 const userService = {
   createUser,
+  listUserDownline,
+  getUserById,
 };
 
 export {
   createUser,
+  listUserDownline,
+  getUserById,
 };
 
 export default userService;

@@ -4,6 +4,8 @@ import {
   normalizeMobile,
   isValidEmail,
   isValidMobile,
+  isValidAddress,
+  isValidPincode,
 } from "../../utils/validationHelper.js";
 import ApiError from "../../utils/ApiError.js";
 import httpStatus from "../../utils/httpStatus.js";
@@ -13,8 +15,13 @@ function validateCreateUser(req, res, next) {
   const name = normalizeString(body.name);
   const email = normalizeEmail(body.email);
   const mobile = normalizeMobile(body.mobile);
+  const address = normalizeString(body.address);
   const state = normalizeString(body.state);
   const city = normalizeString(body.city);
+  const pincode =
+    body.pincode !== undefined && body.pincode !== null
+      ? String(body.pincode).trim()
+      : "";
   const password = body.password;
   const roleInput =
     body.roleId !== undefined
@@ -52,11 +59,11 @@ function validateCreateUser(req, res, next) {
     errors.push("Email cannot exceed 254 characters");
   }
 
-  // Mobile validation: 10 digits Indian format
+  // Mobile validation: 10 digits Indian format with +91
   if (!mobile) {
     errors.push("Mobile number is required");
   } else if (!isValidMobile(mobile)) {
-    errors.push("Invalid mobile number format (must be 10 digits)");
+    errors.push("Invalid mobile number format (must contain 10 digits with +91)");
   }
 
   // Password validation: 8 to 128 characters
@@ -66,6 +73,15 @@ function validateCreateUser(req, res, next) {
     errors.push("Password must contain at least 8 characters");
   } else if (password.length > 128) {
     errors.push("Password cannot exceed 128 characters");
+  }
+
+  // Address validation (max 255 chars)
+  if (body.address !== undefined && body.address !== null) {
+    if (typeof body.address !== "string") {
+      errors.push("Address must be a string");
+    } else if (body.address.trim().length > 255) {
+      errors.push("Address cannot exceed 255 characters");
+    }
   }
 
   // State & City length validation (max 100 chars)
@@ -87,7 +103,13 @@ function validateCreateUser(req, res, next) {
     }
   }
 
-  // Role validation
+  // Pincode validation (6-digit Indian postal code)
+  if (body.pincode !== undefined && body.pincode !== null && body.pincode !== "") {
+    if (!isValidPincode(pincode)) {
+      errors.push("Invalid pincode (must be a 6-digit postal code)");
+    }
+  }
+
   // Role validation
   if (
     roleInput === undefined ||
@@ -110,6 +132,29 @@ function validateCreateUser(req, res, next) {
   ) {
     errors.push("Role ID must be a positive integer");
   }
+
+  if (errors.length > 0) {
+    return next(
+      new ApiError(
+        httpStatus.BAD_REQUEST,
+        errors.join(", "),
+        errors,
+        "VALIDATION_ERROR"
+      )
+    );
+  }
+
+  req.validatedBody = {
+    name,
+    email,
+    mobile,
+    address: address || null,
+    state: state || null,
+    city: city || null,
+    pincode: pincode || null,
+    password,
+    roleId: roleInput,
+  };
 
   next();
 }

@@ -21,16 +21,27 @@ function getActorId(req) {
 
 const createUser = asyncHandler(async (req, res) => {
   const actorId = getActorId(req);
-  const { name, email, mobile, state, city, password, roleId } =
-    req.validatedBody || req.body;
+  const {
+    name,
+    email,
+    mobile,
+    address,
+    state,
+    city,
+    pincode,
+    password,
+    roleId,
+  } = req.validatedBody || req.body;
 
   const result = await userService.createUser({
     actorId,
     name,
     email,
     mobile,
+    address,
     state,
     city,
+    pincode,
     password,
     roleId,
   });

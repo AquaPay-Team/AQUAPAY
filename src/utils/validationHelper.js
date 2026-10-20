@@ -11,6 +11,11 @@ function normalizeMobile(value) {
   if (value === null || value === undefined) return "";
   let str = String(value).trim().replace(/[\s-]/g, "");
 
+  // If already in +91 followed by 10 digits
+  if (/^\+91[0-9]{10}$/.test(str)) {
+    return str;
+  }
+
   // Auto-fill +91 if user provides 10 digits
   if (/^[0-9]{10}$/.test(str)) {
     return `+91${str}`;
@@ -20,7 +25,7 @@ function normalizeMobile(value) {
   if (/^91[0-9]{10}$/.test(str)) {
     return `+${str}`;
   }
- 
+
   return str;
 }
 
@@ -50,6 +55,18 @@ function isValidStateOrCity(value) {
   return value.trim().length <= 100;
 }
 
+function isValidAddress(value) {
+  if (value === null || value === undefined || value === "") return true;
+  if (typeof value !== "string") return false;
+  return value.trim().length <= 255;
+}
+
+function isValidPincode(value) {
+  if (value === null || value === undefined || value === "") return true;
+  const str = String(value).trim();
+  return /^[1-9][0-9]{5}$/.test(str);
+}
+
 function isValidPassword(value) {
   if (typeof value !== "string") return false;
   return value.length >= 8 && value.length <= 128;
@@ -63,6 +80,8 @@ export {
   isValidEmail,
   isValidMobile,
   isValidStateOrCity,
+  isValidAddress,
+  isValidPincode,
   isValidPassword
 };
 
@@ -74,5 +93,7 @@ export default {
   isValidEmail,
   isValidMobile,
   isValidStateOrCity,
+  isValidAddress,
+  isValidPincode,
   isValidPassword
 };

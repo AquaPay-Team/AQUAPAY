@@ -1,4 +1,5 @@
-const pool = require("./db");
+import pool from "./db.js";
+
 
 async function testDatabaseConnection() {
     try {
@@ -17,3 +18,6 @@ async function testDatabaseConnection() {
 }
 
 testDatabaseConnection();
+
+export { testDatabaseConnection };
+export default testDatabaseConnection;

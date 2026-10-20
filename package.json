@@ -2,7 +2,7 @@
   "name": "aquapay",
   "version": "1.0.0",
   "description": "AQUAPAY fintech KYC backend API",
-  "type": "commonjs",
+  "type": "module",
   "main": "src/server.js",
   "engines": {
     "node": ">=20.13.0"

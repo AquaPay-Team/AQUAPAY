@@ -67,7 +67,16 @@ function getRoleByName(name) {
   return getRole(name);
 }
 
-module.exports = {
+export {
+  ROLES,
+  getRole,
+  getChildSlug,
+  canCreateChildRole,
+  getRoleBySlug,
+  getRoleByName,
+};
+
+export default {
   ROLES,
   getRole,
   getChildSlug,

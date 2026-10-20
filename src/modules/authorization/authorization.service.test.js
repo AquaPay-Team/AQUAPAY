@@ -1,9 +1,8 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
 
-const { test } = require("node:test");
-const assert = require("node:assert/strict");
-
-const authorizationModel = require("./authorization.model");
-const authorizationService = require("./authorization.service");
+import authorizationModel from "./authorization.model.js";
+import authorizationService from "./authorization.service.js";
 
 test("allows creating a descendant role", async () => {
   const original = authorizationModel.isRoleBelow;

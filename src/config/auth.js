@@ -50,4 +50,10 @@ function getAuthConfig() {
   };
 }
 
-module.exports = { getAuthConfig, JWT_ISSUER, JWT_AUDIENCE };
+export { getAuthConfig, JWT_ISSUER, JWT_AUDIENCE };
+
+export default {
+  getAuthConfig,
+  JWT_ISSUER,
+  JWT_AUDIENCE,
+};

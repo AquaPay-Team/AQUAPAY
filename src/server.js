@@ -1,16 +1,23 @@
-const path = require("path");
-require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
+import path from "path";
+import { fileURLToPath } from "url";
+import dotenv from "dotenv";
 
-const app = require("./app");
-const pool = require("./config/db");
-const { verifyDatabaseConnection } = pool;
-const { getAuthConfig } = require("./config/auth");
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+dotenv.config({ path: path.resolve(__dirname, "../.env") });
+
+import app from "./app.js";
+import pool, { verifyDatabaseConnection } from "./config/db.js";
+import { getAuthConfig } from "./config/auth.js";
 
 async function start() {
   try {
+    // Validate auth configuration early
     getAuthConfig();
 
-    const database = await verifyDatabaseConnection();
+    // Verify DB connection before starting server
+    await verifyDatabaseConnection();
     const port = Number(process.env.PORT || 3000);
 
     const server = app.listen(port, () => {
@@ -22,14 +29,17 @@ async function start() {
     return server;
   } catch (error) {
     console.error("AquaPay startup failed:", error.message);
+    // Ensure pool is closed if it was created
     await pool.end().catch(() => {});
     process.exitCode = 1;
     return null;
   }
 }
 
-if (require.main === module) {
+// Start server only when this file is executed directly (not imported)
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
   start();
 }
 
-module.exports = { start };
+export { start };
+export default { start };

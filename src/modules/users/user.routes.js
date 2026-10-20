@@ -1,11 +1,12 @@
-const router = require("express").Router();
+import { Router } from "express";
+import * as controller from "./user.controller.js";
+import { validateCreateUser } from "./user.validator.js";
+import { requireAuth } from "../../middlewares/auth.middleware.js";
 
-const userController = require("./user.controller");
-const { validateCreateUser } = require("./user.validator");
-const { requireAuth } = require("../../middlewares/auth.middleware");
+const router = Router();
 
-// Create a user
-router.post("/", requireAuth, validateCreateUser, userController.createUser);
 
-module.exports = router;
+router.post("/", requireAuth, validateCreateUser, controller.createUser);
 
+export { router };
+export default router;

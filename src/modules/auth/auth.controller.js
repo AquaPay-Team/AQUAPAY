@@ -1,5 +1,5 @@
-const authService = require("./auth.service");
-const asyncHandler = require("../../utils/asyncHandler");
+import authService from "./auth.service.js";
+import asyncHandler from "../../utils/asyncHandler.js";
 
 const login = asyncHandler(async (req, res) => {
   const data = await authService.login(req.validatedBody);
@@ -21,4 +21,5 @@ const resetPassword = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, message: result.message, data: null });
 });
 
-module.exports = { login, getCurrentUser, forgotPassword, resetPassword };
+export { login, getCurrentUser, forgotPassword, resetPassword };
+export default { login, getCurrentUser, forgotPassword, resetPassword };

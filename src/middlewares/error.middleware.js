@@ -47,4 +47,6 @@ function errorHandler(err, req, res, next) {
   res.status(statusCode).json(response);
 }
 
-module.exports = { notFound, errorHandler };
+export { notFound, errorHandler };
+
+export default { notFound, errorHandler };

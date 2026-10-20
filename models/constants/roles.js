@@ -30,7 +30,13 @@ function getChildSlugs(slug) {
   return ROLES.slice(index + 1).map((role) => role.slug);
 }
 
-module.exports = {
+export {
+  ROLES,
+  getChildSlug,
+  getChildSlugs,
+};
+
+export default {
   ROLES,
   getChildSlug,
   getChildSlugs,

@@ -63,4 +63,5 @@ tests/
 tests/*
 apiEndpoints.test.js
 userCreation.test.js
-
+get-user.test.js
+user.test.js

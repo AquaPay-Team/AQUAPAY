@@ -111,8 +111,11 @@ async function insertUser(
     name,
     email,
     mobile,
+    shopname,
+    address,
     state,
     city,
+    pincode,
     passwordHash,
     roleId,
     companyId,
@@ -122,14 +125,17 @@ async function insertUser(
   connection,
 ) {
   const [result] = await getDb(connection).execute(
-    `INSERT INTO users (name, email, mobile, state, city, password_hash, role_id, company_id, parent_id, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO users (name, email, mobile, shopname, address, state, city, pincode, password_hash, role_id, company_id, parent_id, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       name,
       email,
       mobile,
+      shopname || null,
+      address || null,
       state || null,
       city || null,
+      pincode || null,
       passwordHash,
       roleId,
       companyId || null,
@@ -142,7 +148,7 @@ async function insertUser(
 
 async function findUserSafeById(userId, connection) {
   const [rows] = await getDb(connection).execute(
-    `SELECT u.id, u.name, u.email, u.mobile, u.state, u.city, u.role_id, u.company_id, u.parent_id, u.status, u.created_at,
+    `SELECT u.id, u.name, u.email, u.mobile, u.shopname, u.address, u.state, u.city, u.pincode, u.role_id, u.company_id, u.parent_id, u.status, u.created_at, u.updated_at,
             r.name AS role_name, r.slug AS role_slug,
             p.name AS parent_name,
             c.name AS company_name

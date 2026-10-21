@@ -1,4 +1,8 @@
-const router = require("express").Router();
+import express from "express";
 
-module.exports = router;
+const router = express.Router();
+
+export default router;
+export { router };
+
 

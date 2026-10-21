@@ -1,9 +1,9 @@
-const bcrypt = require("bcryptjs");
-const pool = require("../../config/db");
-const userModel = require("./user.model");
-const ApiError = require("../../utils/ApiError");
-const httpStatus = require("../../utils/httpStatus");
-const authorizationService = require("../authorization/authorization.service");
+import bcrypt from "bcryptjs";
+import pool from "../../config/db.js";
+import userModel from "./user.model.js";
+import ApiError from "../../utils/ApiError.js";
+import httpStatus from "../../utils/httpStatus.js";
+import authorizationService from "../authorization/authorization.service.js";
 
 async function createUser({
   actorId,
@@ -127,6 +127,12 @@ async function createUser({
   }
 }
 
-module.exports = {
+const userService = {
   createUser,
 };
+
+export {
+  createUser,
+};
+
+export default userService;

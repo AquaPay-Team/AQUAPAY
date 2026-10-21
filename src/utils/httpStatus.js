@@ -1,4 +1,3 @@
-
 const httpStatus = Object.freeze({
   OK: 200,
   CREATED: 201,
@@ -14,5 +13,5 @@ const httpStatus = Object.freeze({
   SERVICE_UNAVAILABLE: 503,
 });
 
-module.exports = httpStatus;
-
+export default httpStatus;
+export { httpStatus };

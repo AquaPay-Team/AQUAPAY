@@ -1,4 +1,4 @@
-const defaultPool = require("../../config/db");
+import defaultPool from "../../config/db.js";
 
 const getDb = (connection) => connection || defaultPool;
 
@@ -157,7 +157,7 @@ async function findUserSafeById(userId, connection) {
   return rows[0] || null;
 }
 
-module.exports = {
+const userModel = {
   findUserForAuth,
   findRoleByIdOrName,
   checkRoleHierarchy,
@@ -165,4 +165,15 @@ module.exports = {
   insertUser,
   findUserSafeById,
 };
+
+export {
+  findUserForAuth,
+  findRoleByIdOrName,
+  checkRoleHierarchy,
+  checkDuplicateUser,
+  insertUser,
+  findUserSafeById,
+};
+
+export default userModel;
 

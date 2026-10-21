@@ -1,8 +1,8 @@
-const crypto = require("node:crypto");
-const authModel = require("../modules/auth/auth.model");
-const { getAuthConfig } = require("../config/auth");
-const { normalizeIdentifier } = require("../modules/auth/auth.validator");
-const ApiError = require("../utils/ApiError");
+import crypto from "node:crypto";
+import authModel from "../modules/auth/auth.model.js";
+import { getAuthConfig } from "../config/auth.js";
+import { normalizeIdentifier } from "../modules/auth/auth.validator.js";
+import ApiError from "../utils/ApiError.js";
 
 function sqlDate(date) {
   return date.toISOString().slice(0, 19).replace("T", " ");
@@ -51,4 +51,6 @@ function createRateLimiter({ incrementCounter = authModel.incrementRateLimitCoun
 }
 
 const rateLimit = createRateLimiter();
-module.exports = { rateLimit, createRateLimiter };
+
+export { rateLimit, createRateLimiter };
+export default { rateLimit, createRateLimiter };

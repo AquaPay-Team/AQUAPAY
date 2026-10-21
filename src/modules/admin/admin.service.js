@@ -1,6 +1,5 @@
-
-const pool = require("../../config/db");
-const bcrypt = require("bcryptjs");
+import pool from "../../config/db.js";
+import bcrypt from "bcryptjs";
 
 async function createAdmin(adminInput) {
   const connection = await pool.getConnection();
@@ -75,4 +74,9 @@ async function createAdmin(adminInput) {
   }
 }
 
-module.exports = { createAdmin };
+const adminService = {
+  createAdmin,
+};
+
+export { createAdmin };
+export default adminService;

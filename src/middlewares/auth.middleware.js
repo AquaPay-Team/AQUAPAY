@@ -1,7 +1,7 @@
-const jwt = require("jsonwebtoken");
-const authModel = require("../modules/auth/auth.model");
-const ApiError = require("../utils/ApiError");
-const { getAuthConfig, JWT_ISSUER, JWT_AUDIENCE } = require("../config/auth");
+import jwt from "jsonwebtoken";
+import authModel from "../modules/auth/auth.model.js";
+import ApiError from "../utils/ApiError.js";
+import { getAuthConfig, JWT_ISSUER, JWT_AUDIENCE } from "../config/auth.js";
 
 function unauthorized(message = "Authentication required") {
   return new ApiError(401, message, "UNAUTHORIZED");
@@ -39,4 +39,9 @@ async function requireAuth(req, res, next) {
   return next();
 }
 
-module.exports = { requireAuth };
+const authMiddleware = {
+  requireAuth,
+};
+
+export { requireAuth };
+export default authMiddleware;

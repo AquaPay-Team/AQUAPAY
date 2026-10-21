@@ -1,8 +1,8 @@
-const userService = require("./user.service");
-const asyncHandler = require("../../utils/asyncHandler");
-const ApiResponse = require("../../utils/ApiResponse");
-const ApiError = require("../../utils/ApiError");
-const httpStatus = require("../../utils/httpStatus");
+import userService from "./user.service.js";
+import asyncHandler from "../../utils/asyncHandler.js";
+import ApiResponse from "../../utils/ApiResponse.js";
+import ApiError from "../../utils/ApiError.js";
+import httpStatus from "../../utils/httpStatus.js";
 
 function getActorId(req) {
   const actorId = req.user?.id;
@@ -42,6 +42,5 @@ const createUser = asyncHandler(async (req, res) => {
     );
 });
 
-module.exports = {
-  createUser,
-};
+export { createUser };
+export default { createUser };

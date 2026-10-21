@@ -1,5 +1,5 @@
-const ApiError = require("../../utils/ApiError");
-const { getAuthConfig } = require("../../config/auth");
+import ApiError from "../../utils/ApiError.js";
+import { getAuthConfig } from "../../config/auth.js";
 
 function normalizeIdentifier(value) {
   if (typeof value !== "string") return null;
@@ -70,4 +70,11 @@ function validateResetPassword(req, res, next) {
   return next();
 }
 
-module.exports = { normalizeIdentifier, validateLogin, validateForgotPassword, validateResetPassword };
+export { normalizeIdentifier, validateLogin, validateForgotPassword, validateResetPassword };
+
+export default {
+  normalizeIdentifier,
+  validateLogin,
+  validateForgotPassword,
+  validateResetPassword,
+};

@@ -1,12 +1,12 @@
-const {
+import {
   normalizeString,
   normalizeEmail,
   normalizeMobile,
   isValidEmail,
   isValidMobile,
-} = require("../../utils/validationHelper");
-const ApiError = require("../../utils/ApiError");
-const httpStatus = require("../../utils/httpStatus");
+} from "../../utils/validationHelper.js";
+import ApiError from "../../utils/ApiError.js";
+import httpStatus from "../../utils/httpStatus.js";
 
 function validateCreateUser(req, res, next) {
   const body = req.body || {};
@@ -114,6 +114,10 @@ function validateCreateUser(req, res, next) {
   next();
 }
 
-module.exports = {
+export {
+  validateCreateUser,
+};
+
+export default {
   validateCreateUser,
 };

@@ -1,38 +1,26 @@
-const assert = require("node:assert/strict");
-const crypto = require("node:crypto");
-const test = require("node:test");
+import assert from "node:assert/strict";
+import crypto from "node:crypto";
+import { test } from "node:test";
 
-process.env.JWT_SECRET = "unit-test-secret-that-is-longer-than-32-characters";
-process.env.JWT_EXPIRES_IN = "1h";
-process.env.DB_HOST = "127.0.0.1";
-process.env.DB_PORT = "1";
-process.env.DB_USER = "unit_test_user";
-process.env.DB_PASSWORD = "unit-test-only-password";
-process.env.DB_NAME = "auth_unit_test_database";
+import "./setupEnv.js";
 
-const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
-const pool = require("../../config/db");
-const authModel = require("./auth.model");
-const authService = require("./auth.service");
-const recoveryDelivery = require("./recoveryDelivery");
-const app = require("../../app");
-const {
-  getAuthConfig,
-  JWT_ISSUER,
-  JWT_AUDIENCE,
-} = require("../../config/auth");
-const { requireAuth } = require("../../middlewares/auth.middleware");
-const { errorHandler } = require("../../middlewares/error.middleware");
-const {
-  createRateLimiter,
-} = require("../../middlewares/authRateLimit.middleware");
-const {
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import pool from "../../config/db.js";
+import authModel from "./auth.model.js";
+import authService from "./auth.service.js";
+import recoveryDelivery from "./recoveryDelivery.js";
+import app from "../../app.js";
+import { getAuthConfig, JWT_ISSUER, JWT_AUDIENCE } from "../../config/auth.js";
+import { requireAuth } from "../../middlewares/auth.middleware.js";
+import { errorHandler } from "../../middlewares/error.middleware.js";
+import { createRateLimiter } from "../../middlewares/authRateLimit.middleware.js";
+import {
   normalizeIdentifier,
   validateLogin,
   validateForgotPassword,
   validateResetPassword,
-} = require("./auth.validator");
+} from "./auth.validator.js";
 
 function activeUser(overrides = {}) {
   return {

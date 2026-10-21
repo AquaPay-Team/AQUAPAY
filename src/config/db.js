@@ -1,6 +1,5 @@
-require("dotenv").config();
-
-const mysql = require("mysql2/promise");
+import "dotenv/config";
+import mysql from "mysql2/promise";
 
 function getDatabaseConfig() {
   const required = ["DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME"];
@@ -79,7 +78,9 @@ async function verifyOracleMySql() {
   return metadata;
 }
 
-module.exports = pool;
-module.exports.getDatabaseConfig = getDatabaseConfig;
-module.exports.verifyDatabaseConnection = verifyDatabaseConnection;
-module.exports.verifyOracleMySql = verifyOracleMySql;
+pool.getDatabaseConfig = getDatabaseConfig;
+pool.verifyDatabaseConnection = verifyDatabaseConnection;
+pool.verifyOracleMySql = verifyOracleMySql;
+
+export { getDatabaseConfig, verifyDatabaseConnection, verifyOracleMySql };
+export default pool;

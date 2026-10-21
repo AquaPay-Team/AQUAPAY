@@ -1,4 +1,4 @@
-const pool = require("../../config/db");
+import pool from "../../config/db.js";
 
 const SAFE_USER_FIELDS = `u.id, u.name AS name, u.email, u.mobile,
   u.role_id, u.company_id, u.parent_id AS parent_id, u.status,
@@ -153,7 +153,7 @@ async function invalidatePasswordReset(tokenHash) {
   );
 }
 
-module.exports = {
+const authModel = {
   findUserByIdentifier,
   findActiveUserById,
   isUserActive,
@@ -163,3 +163,16 @@ module.exports = {
   consumePasswordReset,
   invalidatePasswordReset,
 };
+
+export {
+  findUserByIdentifier,
+  findActiveUserById,
+  isUserActive,
+  incrementRateLimitCounter,
+  createPasswordReset,
+  hasValidPasswordReset,
+  consumePasswordReset,
+  invalidatePasswordReset,
+};
+
+export default authModel;

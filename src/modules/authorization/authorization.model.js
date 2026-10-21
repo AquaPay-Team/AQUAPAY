@@ -1,5 +1,4 @@
-
-const defaultPool = require("../../config/db");
+import defaultPool from "../../config/db.js";
 
 async function isRoleBelow(actorRoleId, targetRoleId, connection) {
   const db = connection || defaultPool;
@@ -27,6 +26,13 @@ async function isRoleBelow(actorRoleId, targetRoleId, connection) {
   return rows.length > 0;
 }
 
-module.exports = {
+const authorizationModel = {
   isRoleBelow,
 };
+
+export {
+  isRoleBelow,
+};
+
+export default authorizationModel;
+

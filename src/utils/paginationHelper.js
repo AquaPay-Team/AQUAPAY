@@ -19,7 +19,12 @@ function getPaginationMeta({ page, limit, total }) {
   };
 }
 
-module.exports = {
+export {
+  getPagination,
+  getPaginationMeta,
+};
+
+export default {
   getPagination,
   getPaginationMeta,
 };

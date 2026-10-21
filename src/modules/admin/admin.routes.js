@@ -1,15 +1,15 @@
-const { verifyAdminSetupKey } = require("./adminSetup.middleware");
-const router =require("express").Router();
-const{
-    validateAdminInput,
-    createAdminController
+import adminSetupMiddleware from "./adminSetup.middleware.js";
+import { Router } from "express";
+import { validateAdminInput, createAdminController } from "./admin.controller.js";
 
-} = require("./admin.controller");
+const router = Router();
 
 router.post(
-    "/create",
-    verifyAdminSetupKey,
-    validateAdminInput,
-    createAdminController
+  "/create",
+  adminSetupMiddleware.verifyAdminSetupKey,
+  validateAdminInput,
+  createAdminController
 );
-module.exports = router;
+
+export { router };
+export default router;

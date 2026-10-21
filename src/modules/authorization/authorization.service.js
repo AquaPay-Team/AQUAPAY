@@ -1,5 +1,4 @@
-
-const authorizationModel = require("./authorization.model");
+import authorizationModel from "./authorization.model.js";
 
 async function canCreateRole(actorRoleId, targetRoleId, connection) {
   if (!actorRoleId || !targetRoleId) {
@@ -17,6 +16,13 @@ async function canCreateRole(actorRoleId, targetRoleId, connection) {
   );
 }
 
-module.exports = {
+const authorizationService = {
   canCreateRole,
 };
+
+export {
+  canCreateRole,
+};
+
+export default authorizationService;
+

@@ -20,7 +20,7 @@ function normalizeMobile(value) {
   if (/^91[0-9]{10}$/.test(str)) {
     return `+${str}`;
   }
-
+ 
   return str;
 }
 
@@ -55,7 +55,18 @@ function isValidPassword(value) {
   return value.length >= 8 && value.length <= 128;
 }
 
-module.exports = {
+export {
+  normalizeString,
+  normalizeEmail,
+  normalizeMobile,
+  isValidName,
+  isValidEmail,
+  isValidMobile,
+  isValidStateOrCity,
+  isValidPassword
+};
+
+export default {
   normalizeString,
   normalizeEmail,
   normalizeMobile,

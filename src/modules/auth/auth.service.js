@@ -1,10 +1,10 @@
-const crypto = require("node:crypto");
-const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
-const authModel = require("./auth.model");
-const recoveryDelivery = require("./recoveryDelivery");
-const ApiError = require("../../utils/ApiError");
-const { getAuthConfig, JWT_ISSUER, JWT_AUDIENCE } = require("../../config/auth");
+import crypto from "node:crypto";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import authModel from "./auth.model.js";
+import recoveryDelivery from "./recoveryDelivery.js";
+import ApiError from "../../utils/ApiError.js";
+import { getAuthConfig, JWT_ISSUER, JWT_AUDIENCE } from "../../config/auth.js";
 
 const AUTH_CONFIG = getAuthConfig();
 const DUMMY_PASSWORD_HASH = bcrypt.hashSync(crypto.randomBytes(32).toString("base64url"), AUTH_CONFIG.bcryptSaltRounds);
@@ -107,4 +107,18 @@ async function resetPassword({ token, password }) {
   return { message: "Password reset successfully" };
 }
 
-module.exports = { login, getCurrentUser, forgotPassword, resetPassword };
+const authService = {
+  login,
+  getCurrentUser,
+  forgotPassword,
+  resetPassword,
+};
+
+export {
+  login,
+  getCurrentUser,
+  forgotPassword,
+  resetPassword,
+};
+
+export default authService;

@@ -21,4 +21,6 @@ function verifyAdminSetupKey(req, res, next) {
   next();
 }
 
-module.exports = { verifyAdminSetupKey };
+export { verifyAdminSetupKey };
+
+export default { verifyAdminSetupKey };

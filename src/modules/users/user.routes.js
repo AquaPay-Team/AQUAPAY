@@ -13,4 +13,3 @@ router.use("/", updateUserRoutes);
 
 export { router };
 export default router;
-

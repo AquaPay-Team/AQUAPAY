@@ -10,7 +10,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "test": "node --test src/modules/auth/auth.test.js src/modules/users/user.test.js"
+    "test": "node --test src/modules/auth/auth.test.js src/modules/users/user.test.js src/modules/kyc/status/status.test.js src/modules/kyc/basic-details/basicDetails.test.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

@@ -11,16 +11,26 @@ function normalizeMobile(value) {
   if (value === null || value === undefined) return "";
   let str = String(value).trim().replace(/[\s-]/g, "");
 
+  // If already in +91 followed by 10 digits
+  if (/^\+91[0-9]{10}$/.test(str)) {
+    return str;
+  }
+
   // Auto-fill +91 if user provides 10 digits
   if (/^[0-9]{10}$/.test(str)) {
     return `+91${str}`;
+  }
+
+  // If user provides 0 followed by 10 digits
+  if (/^0[0-9]{10}$/.test(str)) {
+    return `+91${str.slice(1)}`;
   }
 
   // If user provides 91 followed by 10 digits without '+'
   if (/^91[0-9]{10}$/.test(str)) {
     return `+${str}`;
   }
- 
+
   return str;
 }
 
@@ -40,14 +50,32 @@ function isValidEmail(value) {
 function isValidMobile(value) {
   if (value === null || value === undefined) return false;
   const normalized = normalizeMobile(value);
-  // Must be +91 followed by exactly 10 digits
-  return /^\+91[0-9]{10}$/.test(normalized);
+  // Must be +91 followed by exactly 10 digits starting with 6-9
+  return /^\+91[6-9][0-9]{9}$/.test(normalized);
+}
+
+function isValidShopname(value) {
+  if (value === null || value === undefined || value === "") return true;
+  if (typeof value !== "string") return false;
+  return value.trim().length <= 150;
 }
 
 function isValidStateOrCity(value) {
   if (value === null || value === undefined || value === "") return true;
   if (typeof value !== "string") return false;
   return value.trim().length <= 100;
+}
+
+function isValidAddress(value) {
+  if (value === null || value === undefined || value === "") return true;
+  if (typeof value !== "string") return false;
+  return value.trim().length <= 255;
+}
+
+function isValidPincode(value) {
+  if (value === null || value === undefined || value === "") return true;
+  const str = String(value).trim();
+  return /^[1-9][0-9]{5}$/.test(str);
 }
 
 function isValidPassword(value) {
@@ -62,7 +90,10 @@ export {
   isValidName,
   isValidEmail,
   isValidMobile,
+  isValidShopname,
   isValidStateOrCity,
+  isValidAddress,
+  isValidPincode,
   isValidPassword
 };
 
@@ -73,6 +104,9 @@ export default {
   isValidName,
   isValidEmail,
   isValidMobile,
+  isValidShopname,
   isValidStateOrCity,
+  isValidAddress,
+  isValidPincode,
   isValidPassword
 };

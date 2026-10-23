@@ -1,12 +1,16 @@
-# Users Module — User Creation API
+# Users Module — User Management API
 
-This module provides the User Creation endpoint for the AQUAPAY fintech platform with server-side role hierarchy enforcement.
+This module provides the User Creation and User Retrieval endpoints for the AQUAPAY fintech platform with server-side role hierarchy enforcement and creator-child data isolation.
 
 ## 1. Endpoint Overview
 
-| Method | Endpoint     | Description                                                      |
-| ------ | ------------ | ---------------------------------------------------------------- |
-| POST   | `/api/users` | Create a permitted child user within the caller's role hierarchy |
+| Method | Endpoint | Authorization | Description |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/users` | Bearer Token | Create a permitted child user within the caller's role hierarchy |
+| `GET` | `/api/users` | Bearer Token | List all users (Admin) or list only child users created by caller (Non-Admin) |
+| `GET` | `/api/users/:id` | Bearer Token | Get user by ID (Admin) or get specific child user created by caller (Non-Admin) |
+
+> For in-depth documentation on the User Retrieval endpoints, see [get-user/README.md](./get-user/README.md).
 
 ## 2. Role Hierarchy and Permission Rules
 

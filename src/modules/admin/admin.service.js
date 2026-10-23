@@ -35,7 +35,17 @@ async function createAdmin(adminInput) {
 
       companyId = companyResult.insertId;
     }
-    const passwordHash = await bcrypt.hash(adminInput.password, 12);
+    // Guard against duplicate email or mobile
+const [existingUsers] = await connection.execute(
+  "SELECT id FROM users WHERE email = ? OR mobile = ? LIMIT 1",
+  [adminInput.email, adminInput.mobile]
+);
+if (existingUsers.length > 0) {
+  const error = new Error("Email or mobile already in use");
+  error.statusCode = 409;
+  throw error;
+}
+const passwordHash = await bcrypt.hash(adminInput.password, 12);
     const [result] = await connection.execute(
       `INSERT INTO users
         (name, email, mobile, company_id, role_id, parent_id,

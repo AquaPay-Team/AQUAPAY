@@ -17,6 +17,7 @@ async function createUser({
   pincode,
   password,
   roleId,
+  businessType,
 }) {
   if (!actorId) {
     throw new ApiError(
@@ -113,10 +114,22 @@ async function createUser({
       connection,
     );
 
-    // 8. Fetch the created user without password or password_hash
+    // 8. Initialize Phase 2 KYC Case for non-admin accounts
+    if (targetRole.id !== 1) {
+      await userModel.initKycCaseForUser(
+        {
+          userId: newUserId,
+          businessType: businessType || null,
+          actorId: actor.id,
+        },
+        connection,
+      );
+    }
+
+    // 9. Fetch the created user without password or password_hash
     const newUser = await userModel.findUserSafeById(newUserId, connection);
 
-    // 9. Commit transaction
+    // 10. Commit transaction
     await connection.commit();
 
     return newUser;

@@ -20,14 +20,14 @@ function isAdmin(actor) {
   return actor.role_id === 1 || actor.role_slug === "AD";
 }
 
-async function getUsers(actorId) {
+async function getUsers(actorId, options = {}) {
   const actor = await getActor(actorId);
 
   if (isAdmin(actor)) {
-    return getUserModel.findAllUsers();
+    return getUserModel.findAllUsers(options);
   }
 
-  return getUserModel.findChildrenByParentId(actor.id);
+  return getUserModel.findChildrenByParentId(actor.id, options);
 }
 
 async function getUserById(actorId, userId) {

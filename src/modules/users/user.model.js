@@ -146,6 +146,51 @@ async function insertUser(
   return result.insertId;
 }
 
+
+
+async function updateUserFields(userId, fields, connection) {
+  const allowedFields = [
+    "name",
+    "email",
+    "mobile",
+    "shopname",
+    "address",
+    "state",
+    "city",
+    "pincode",
+  ];
+
+  const entries = Object.entries(fields);
+
+  if (entries.length === 0) {
+    return false;
+  }
+
+  const invalidFields = entries
+    .map(([field]) => field)
+    .filter((field) => !allowedFields.includes(field));
+
+  if (invalidFields.length > 0) {
+    throw new Error(
+      `Unsupported user update fields: ${invalidFields.join(", ")}`,
+    );
+  }
+
+  const setClause = entries
+    .map(([field]) => `\`${field}\` = ?`)
+    .join(", ");
+
+  const values = entries.map(([, value]) => value);
+
+  const [result] = await getDb(connection).execute(
+    `UPDATE users SET ${setClause} WHERE id = ?`,
+    [...values, userId],
+  );
+
+  return result.affectedRows > 0;
+}
+
+
 async function findUserSafeById(userId, connection) {
   const [rows] = await getDb(connection).execute(
     `SELECT u.id, u.name, u.email, u.mobile, u.shopname, u.address, u.state, u.city, u.pincode, u.role_id, u.company_id, u.parent_id, u.status, u.created_at, u.updated_at,
@@ -169,6 +214,7 @@ const userModel = {
   checkRoleHierarchy,
   checkDuplicateUser,
   insertUser,
+  updateUserFields,
   findUserSafeById,
 };
 
@@ -178,6 +224,7 @@ export {
   checkRoleHierarchy,
   checkDuplicateUser,
   insertUser,
+  updateUserFields,
   findUserSafeById,
 };
 

@@ -8,8 +8,8 @@ This module provides user retrieval endpoints for the AQUAPAY fintech platform. 
 
 | Method | Endpoint | Authorization | Description |
 | :--- | :--- | :--- | :--- |
-| `GET` | `/api/users` | Bearer Token (`requireAuth`) | List all users (Admin) or list only child users created by caller (Non-Admin) |
-| `GET` | `/api/users/:id` | Bearer Token (`requireAuth`) | Get user by ID (Admin) or get specific child user created by caller (Non-Admin) |
+| `GET` | `/api/users` | Bearer Token (`requireAuth`) | List all users (Admin) or list child users (Non-Admin). Supports `?kyc_status=` filter. |
+| `GET` | `/api/users/:id` | Bearer Token (`requireAuth`) | Get user by ID with full KYC case and step-by-step progress |
 
 ---
 
@@ -27,13 +27,17 @@ flowchart TD
 ```
 
 ### Admin Access (`role_id: 1` / `role_slug: 'AD'`)
-* **`GET /api/users`**: Returns **all** registered users across the system.
-* **`GET /api/users/:id`**: Returns any user with matching ID, or `404 Not Found` if the user ID does not exist.
+* **`GET /api/users`**: Returns **all** registered users across the system. Supports `?kyc_status=submitted` (or `draft`, `under_review`, `approved`, `rejected`) for Admin KYC review queues.
+* **`GET /api/users/:id`**: Returns any user with matching ID including full KYC case details and step progress, or `404 Not Found` if the user ID does not exist.
 
 ### Non-Admin Access (Sub Admin, MD, Distributor, Retailer, etc.)
 * **`GET /api/users`**: Returns **only** child users directly created by the caller (`WHERE parent_id = caller.id`).
-* **`GET /api/users/:id`**: Returns the user **only** if they were created by the caller (`WHERE id = ? AND parent_id = caller.id`). If the user does not exist or was created by another caller, returns `404 Not Found` (`"Child user not found or not created by you"`).
+* **`GET /api/users/:id`**: Returns the user **only** if they were created by the caller (`WHERE id = ? AND parent_id = caller.id`).
 * **Retailers (`RT`)**: As retailers cannot create child users, `GET /api/users` returns an empty array `[]`.
+
+### KYC Permissions Policy
+* **Visibility**: Both Admin and parent managers can view `kyc` status, case metadata, and step progression for accessible users in GET responses to monitor downline onboarding.
+* **Execution & Approval**: KYC review, verification, and status approval are performed exclusively by administrators. Parent managers possess read-only visibility.
 
 ---
 
@@ -78,6 +82,15 @@ Authorization: Bearer <valid_jwt_token>
       "company_name": "AquaPay Financial",
       "parent_id": 5,
       "parent_name": "Rajesh Kumar",
+      "kyc": {
+        "case_id": 3,
+        "status": "draft",
+        "current_step": 1,
+        "business_type": "Telecom Store",
+        "submitted_at": null,
+        "reviewed_at": null,
+        "rejection_reason": null
+      },
       "created_at": "2026-10-21T10:00:00.000Z",
       "updated_at": "2026-10-21T10:30:00.000Z"
     }
@@ -111,6 +124,20 @@ Authorization: Bearer <valid_jwt_token>
     "company_name": "AquaPay Financial",
     "parent_id": 5,
     "parent_name": "Rajesh Kumar",
+    "kyc": {
+      "case_id": 3,
+      "status": "in_progress",
+      "current_step": 2,
+      "business_type": "Telecom Store",
+      "submitted_at": null,
+      "reviewed_at": null,
+      "rejection_reason": null,
+      "steps": [
+        { "step_number": 1, "status": "completed", "completed_at": "2026-10-21T10:15:00.000Z", "failure_code": null },
+        { "step_number": 2, "status": "in_progress", "completed_at": null, "failure_code": null },
+        { "step_number": 3, "status": "pending", "completed_at": null, "failure_code": null }
+      ]
+    },
     "created_at": "2026-10-21T10:00:00.000Z",
     "updated_at": "2026-10-21T10:30:00.000Z"
   },

@@ -21,7 +21,10 @@ function getActorId(req) {
 
 const getUsers = asyncHandler(async (req, res) => { 
   const actorId = getActorId(req);
-  const result = await service.getUsers(actorId);
+  const { kyc_status, kycStatus } = req.query || {};
+  const result = await service.getUsers(actorId, {
+    kycStatus: kyc_status || kycStatus,
+  });
 
   return res.status(httpStatus.OK).json(
     new ApiResponse(httpStatus.OK, result, "Users fetched successfully")

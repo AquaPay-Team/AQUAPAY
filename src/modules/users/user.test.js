@@ -202,25 +202,25 @@ test("user.service: createUser initializes KYC case and returns user with KYC st
 
     userModel.initKycCaseForUser = async ({ userId, businessType, actorId }) => {
       assert.equal(userId, 99);
-      assert.equal(businessType, "Grocery");
+      assert.equal(businessType, "Private Limited Company");
       assert.equal(actorId, 5);
       kycCaseInitialized = true;
-      return { caseId: 1, status: "draft", currentStep: 1 };
+      return { caseId: 1, status: "pending", stepsCompleted: 0 };
     };
 
-    userModel.findUserSafeById = async (userId) => ({
-      id: userId,
-      name: "Ramesh Retailer",
-      email: "ramesh@example.com",
-      role_id: 8,
-      role_slug: "RT",
-      kyc: {
-        case_id: 1,
-        status: "draft",
-        current_step: 1,
-        business_type: "Grocery",
-      },
-    });
+
+userModel.findUserSafeById = async (userId) => ({
+  id: userId,
+  name: "Ramesh Retailer",
+  email: "ramesh@example.com",
+  role_id: 8,
+  role_slug: "RT",
+  kyc: {
+    status: "pending",
+    steps_completed: 0,
+    business_type: "Private Limited Company",
+  },
+});
 
     const result = await userService.createUser({
       actorId: 5,
@@ -229,15 +229,17 @@ test("user.service: createUser initializes KYC case and returns user with KYC st
       mobile: "9876543210",
       password: "Password@123",
       roleId: 8,
-      businessType: "Grocery",
+      businessType: "Private Limited Company",
     });
 
     assert.equal(kycCaseInitialized, true);
     assert.equal(result.id, 99);
-    assert.ok(result.kyc);
-    assert.equal(result.kyc.case_id, 1);
-    assert.equal(result.kyc.status, "draft");
-    assert.equal(result.kyc.current_step, 1);
+
+    assert.deepEqual(result.kyc, {
+      status: "pending",
+      steps_completed: 0,
+      business_type: "Private Limited Company",
+});
   } finally {
     pool.getConnection = originalGetConnection;
     userModel.findUserForAuth = originalFindUserForAuth;
@@ -250,6 +252,7 @@ test("user.service: createUser initializes KYC case and returns user with KYC st
   }
 });
 
+
 test("get-user model: formatUserRow correctly formats KYC details", async () => {
   const { formatUserRow } = await import("./get-user/get-user.model.js");
 
@@ -259,23 +262,23 @@ test("get-user model: formatUserRow correctly formats KYC details", async () => 
     email: "test@example.com",
     kyc_case_id: 42,
     kyc_status: "under_review",
-    kyc_current_step: 3,
+    kyc_steps_completed: 3,
     kyc_business_type: "Retail Store",
-    kyc_submitted_at: "2026-10-23T10:00:00Z",
-    kyc_reviewed_at: null,
-    kyc_rejection_reason: null,
   };
 
   const formattedWithKyc = formatUserRow(rowWithKyc);
+
   assert.equal(formattedWithKyc.id, 10);
   assert.equal(formattedWithKyc.kyc_case_id, undefined);
   assert.equal(formattedWithKyc.kyc_status, undefined);
-  assert.ok(formattedWithKyc.kyc);
-  assert.equal(formattedWithKyc.kyc.case_id, 42);
-  assert.equal(formattedWithKyc.kyc.status, "under_review");
-  assert.equal(formattedWithKyc.kyc.current_step, 3);
-  assert.equal(formattedWithKyc.kyc.business_type, "Retail Store");
-  assert.equal(formattedWithKyc.kyc.submitted_at, "2026-10-23T10:00:00Z");
+  assert.equal(formattedWithKyc.kyc_steps_completed, undefined);
+  assert.equal(formattedWithKyc.kyc_business_type, undefined);
+
+  assert.deepEqual(formattedWithKyc.kyc, {
+    status: "under_review",
+    steps_completed: 3,
+    business_type: "Retail Store",
+  });
 
   const rowWithoutKyc = {
     id: 1,
@@ -283,14 +286,16 @@ test("get-user model: formatUserRow correctly formats KYC details", async () => 
     email: "admin@example.com",
     kyc_case_id: null,
     kyc_status: null,
-    kyc_current_step: null,
+    kyc_steps_completed: null,
     kyc_business_type: null,
   };
 
   const formattedWithoutKyc = formatUserRow(rowWithoutKyc);
+
   assert.equal(formattedWithoutKyc.id, 1);
   assert.equal(formattedWithoutKyc.kyc, null);
 });
+
 
 test("get-user service: passes kycStatus filter to model", async () => {
   const getUserModel = (await import("./get-user/get-user.model.js")).default;
@@ -323,6 +328,52 @@ test("get-user service: passes kycStatus filter to model", async () => {
 
     await getUserService.getUsers(5, { kycStatus: "approved" });
     assert.deepEqual(capturedFilter, { kycStatus: "approved" });
+  } finally {
+    getUserModel.findActorRole = originalFindActorRole;
+    getUserModel.findAllUsers = originalFindAllUsers;
+    getUserModel.findChildrenByParentId = originalFindChildrenByParentId;
+  }
+});
+
+
+test("get-user service: rejects invalid KYC status without querying users", async () => {
+  const getUserModel = (await import("./get-user/get-user.model.js")).default;
+  const getUserService = (await import("./get-user/get-user.service.js")).default;
+
+  const originalFindActorRole = getUserModel.findActorRole;
+  const originalFindAllUsers = getUserModel.findAllUsers;
+  const originalFindChildrenByParentId = getUserModel.findChildrenByParentId;
+
+  try {
+    let modelCalled = false;
+
+    getUserModel.findActorRole = async (actorId) => ({
+      id: actorId,
+      role_id: 1,
+      role_slug: "AD",
+    });
+
+    getUserModel.findAllUsers = async () => {
+      modelCalled = true;
+      return [];
+    };
+
+    getUserModel.findChildrenByParentId = async () => {
+      modelCalled = true;
+      return [];
+    };
+
+    await assert.rejects(
+      getUserService.getUsers(1, { kycStatus: "invalid" }),
+      (error) => {
+        assert.equal(error.statusCode, 400);
+        assert.equal(error.code, "VALIDATION_ERROR");
+        assert.equal(error.message, "Invalid KYC status");
+        return true;
+      },
+    );
+
+    assert.equal(modelCalled, false);
   } finally {
     getUserModel.findActorRole = originalFindActorRole;
     getUserModel.findAllUsers = originalFindAllUsers;

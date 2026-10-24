@@ -7,14 +7,15 @@ CREATE TABLE IF NOT EXISTS kyc_cases (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   user_id BIGINT UNSIGNED NOT NULL,
   business_type VARCHAR(100) DEFAULT NULL,
+
   status ENUM(
-    'draft',
+    'pending',
     'submitted',
     'under_review',
     'approved',
     'rejected'
-  ) NOT NULL DEFAULT 'draft',
-  current_step TINYINT UNSIGNED NOT NULL DEFAULT 1,
+  ) NOT NULL DEFAULT 'pending',
+  steps_completed TINYINT UNSIGNED NOT NULL DEFAULT 0,
   submitted_at DATETIME DEFAULT NULL,
   reviewed_at DATETIME DEFAULT NULL,
   rejection_reason VARCHAR(500) DEFAULT NULL,
@@ -26,8 +27,8 @@ CREATE TABLE IF NOT EXISTS kyc_cases (
   KEY idx_kyc_cases_status_created (status, created_at),
   CONSTRAINT fk_kyc_cases_user
     FOREIGN KEY (user_id) REFERENCES users(id),
-  CONSTRAINT chk_kyc_cases_current_step
-    CHECK (current_step BETWEEN 1 AND 7)
+CONSTRAINT chk_kyc_cases_steps_completed
+  CHECK (steps_completed BETWEEN 0 AND 7)
 ) ENGINE=InnoDB
   DEFAULT CHARSET=utf8mb4
   COLLATE=utf8mb4_0900_ai_ci;
@@ -52,7 +53,7 @@ CREATE TABLE IF NOT EXISTS kyc_steps (
   CONSTRAINT fk_kyc_steps_case
     FOREIGN KEY (case_id) REFERENCES kyc_cases(id)
     ON DELETE CASCADE,
-  CONSTRAINT chk_kyc_steps_number
+  CONSTRAINT chk_kyc_steps_step_number
     CHECK (step_number BETWEEN 1 AND 7)
 ) ENGINE=InnoDB
   DEFAULT CHARSET=utf8mb4

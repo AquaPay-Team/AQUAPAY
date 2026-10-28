@@ -18,18 +18,48 @@ async function findUserByIdentifier(identifier, type) {
   return rows[0] || null;
 }
 
+
 async function findActiveUserById(userId) {
   const [rows] = await pool.execute(
-    `SELECT ${SAFE_USER_FIELDS}, u.created_at
+    `SELECT
+       ${SAFE_USER_FIELDS},
+       u.created_at,
+       k.id AS kyc_case_id,
+       k.status AS kyc_status,
+       k.steps_completed AS kyc_steps_completed,
+       k.business_type AS kyc_business_type
      FROM users u
      JOIN roles r ON r.id = u.role_id
      LEFT JOIN companies c ON c.id = u.company_id
+     LEFT JOIN kyc_cases k ON k.user_id = u.id
      WHERE u.id = ? AND u.status = 'active'
      LIMIT 1`,
     [userId],
   );
-  return rows[0] || null;
+
+  const row = rows[0];
+  if (!row) return null;
+
+  const {
+    kyc_case_id,
+    kyc_status,
+    kyc_steps_completed,
+    kyc_business_type,
+    ...user
+  } = row;
+
+  return {
+    ...user,
+    kyc: kyc_case_id
+      ? {
+          status: kyc_status,
+          steps_completed: kyc_steps_completed,
+          business_type: kyc_business_type,
+        }
+      : null,
+  };
 }
+
 
 async function isUserActive(userId) {
   const [rows] = await pool.execute(

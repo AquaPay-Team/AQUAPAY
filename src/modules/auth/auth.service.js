@@ -9,6 +9,21 @@ import { getAuthConfig, JWT_ISSUER, JWT_AUDIENCE } from "../../config/auth.js";
 const AUTH_CONFIG = getAuthConfig();
 const DUMMY_PASSWORD_HASH = bcrypt.hashSync(crypto.randomBytes(32).toString("base64url"), AUTH_CONFIG.bcryptSaltRounds);
 const RECOVERY_MESSAGE = "If the account exists and recovery delivery is available, instructions will be sent.";
+const RESET_OTP_TTL_MINUTES = 5;
+
+function hashResetOtp(token, otp) {
+  return crypto
+    .createHmac("sha256", AUTH_CONFIG.secret)
+    .update(`aquapay:password-reset:otp:${token}:${otp}`)
+    .digest("hex");
+}
+
+function resetOtpAttemptBucket(tokenHash) {
+  return crypto
+    .createHash("sha256")
+    .update(`aquapay:password-reset:otp-attempts:${tokenHash}`)
+    .digest("hex");
+}
 
 function authFailure() {
   return new ApiError(401, "Invalid email/mobile or password", "INVALID_CREDENTIALS");
@@ -66,41 +81,82 @@ async function getCurrentUser(userId) {
 }
 
 async function forgotPassword({ identifier, type }) {
-  if (!recoveryDelivery.isConfigured(type)) return { message: RECOVERY_MESSAGE };
+  const localDevelopment = process.env.NODE_ENV === "development";
+  if (!localDevelopment && !recoveryDelivery.isConfigured(type)) {
+    return { message: RECOVERY_MESSAGE };
+  }
   const user = await withDatabase(() => authModel.findUserByIdentifier(identifier, type));
-  if (!user || user.status !== "active") return { message: RECOVERY_MESSAGE };
+  if (!user || user.status !== "active") {
+    return {
+      message: RECOVERY_MESSAGE,
+      ...(localDevelopment
+        ? { developmentResetToken: crypto.randomBytes(32).toString("base64url") }
+        : {}),
+    };
+  }
 
   const config = AUTH_CONFIG;
   const token = crypto.randomBytes(32).toString("base64url");
+  const otp = String(crypto.randomInt(0, 1_000_000)).padStart(6, "0");
   const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+  const otpHash = hashResetOtp(token, otp);
   const expiresAt = await withDatabase(() => authModel.createPasswordReset({
     userId: user.id,
     tokenHash,
-    ttlMinutes: config.resetTokenTtlMinutes
+    otpHash,
+    ttlMinutes: config.resetTokenTtlMinutes,
+    otpTtlMinutes: RESET_OTP_TTL_MINUTES,
   }));
   try {
     await recoveryDelivery.sendPasswordReset({
       destination: type === "email" ? user.email : user.mobile,
       type,
       token,
+      otp,
       expiresAt
     });
   } catch {
     await authModel.invalidatePasswordReset(tokenHash).catch(() => {});
+    return { message: RECOVERY_MESSAGE };
   }
-  return { message: RECOVERY_MESSAGE };
+  return {
+    message: RECOVERY_MESSAGE,
+    ...(localDevelopment ? { developmentResetToken: token } : {}),
+  };
 }
 
-async function resetPassword({ token, password }) {
+async function resetPassword({ token, otp, password }) {
   const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-  if (!(await withDatabase(() => authModel.hasValidPasswordReset(tokenHash)))) {
-    throw new ApiError(400, "Invalid or expired password reset token", "INVALID_RESET_TOKEN");
+  const otpHash = hashResetOtp(token, otp);
+  const attemptBucketHash = resetOtpAttemptBucket(tokenHash);
+  const validCredentials = await withDatabase(() =>
+    authModel.checkPasswordResetCredentials({
+      tokenHash,
+      otpHash,
+      attemptBucketHash,
+    }),
+  );
+  if (!validCredentials) {
+    throw new ApiError(
+      400,
+      "Invalid or expired password reset credentials",
+      "INVALID_RESET_CREDENTIALS",
+    );
   }
   const config = AUTH_CONFIG;
   const passwordHash = await bcrypt.hash(password, config.bcryptSaltRounds);
-  const account = await withDatabase(() => authModel.consumePasswordReset({ tokenHash, passwordHash }));
+  const account = await withDatabase(() => authModel.consumePasswordReset({
+    tokenHash,
+    otpHash,
+    attemptBucketHash,
+    passwordHash,
+  }));
   if (!account) {
-    throw new ApiError(400, "Invalid or expired password reset token", "INVALID_RESET_TOKEN");
+    throw new ApiError(
+      400,
+      "Invalid or expired password reset credentials",
+      "INVALID_RESET_CREDENTIALS",
+    );
   }
   if (recoveryDelivery.isConfigured()) {
     await recoveryDelivery.sendPasswordChanged(account).catch(() => {});

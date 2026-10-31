@@ -1,4 +1,5 @@
 import defaultPool from "../../config/db.js";
+import { normalizeMobile } from "../../utils/validationHelper.js";
 
 const getDb = (connection) => connection || defaultPool;
 
@@ -93,8 +94,9 @@ async function checkDuplicateUser(
   { email, mobile, excludeUserId },
   connection,
 ) {
+  const normalizedMobile = mobile ? normalizeMobile(mobile) : mobile;
   let sql = `SELECT id, email, mobile FROM users WHERE (email = ? OR mobile = ?)`;
-  const params = [email, mobile];
+  const params = [email, normalizedMobile];
 
   if (excludeUserId) {
     sql += ` AND id <> ?`;
@@ -124,13 +126,14 @@ async function insertUser(
   },
   connection,
 ) {
+  const normalizedMobile = mobile ? normalizeMobile(mobile) : mobile;
   const [result] = await getDb(connection).execute(
     `INSERT INTO users (name, email, mobile, shopname, address, state, city, pincode, password_hash, role_id, company_id, parent_id, status)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       name,
       email,
-      mobile,
+      normalizedMobile,
       shopname || null,
       address || null,
       state || null,
@@ -269,4 +272,3 @@ export {
 };
 
 export default userModel;
-

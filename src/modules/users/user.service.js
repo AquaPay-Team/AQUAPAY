@@ -4,6 +4,8 @@ import userModel from "./user.model.js";
 import ApiError from "../../utils/ApiError.js";
 import httpStatus from "../../utils/httpStatus.js";
 import authorizationService from "../authorization/authorization.service.js";
+import { normalizeMobile } from "../../utils/validationHelper.js";
+import { getPasswordConfig } from "../../config/auth.js";
 
 async function createUser({
   actorId,
@@ -70,14 +72,17 @@ async function createUser({
       );
     }
 
-    // 4. Check whether email or mobile already exists
+    // 4. Normalize mobile and email, and check whether duplicate already exists
+    const normalizedMobile = normalizeMobile(mobile);
+    const normalizedEmail = email ? email.trim().toLowerCase() : email;
+
     const duplicate = await userModel.checkDuplicateUser(
-      { email, mobile },
+      { email: normalizedEmail, mobile: normalizedMobile },
       connection,
     );
 
     if (duplicate) {
-      const field = duplicate.email === email ? "Email" : "Mobile number";
+      const field = duplicate.email === normalizedEmail ? "Email" : "Mobile number";
       throw new ApiError(
         httpStatus.CONFLICT,
         `${field} already exists`,
@@ -86,9 +91,25 @@ async function createUser({
       );
     }
 
-    // 5. Hash password before storing
-    const salt = await bcrypt.genSalt(10);
-    const passwordHash = await bcrypt.hash(password, salt);
+    // 5. Validate and hash password before storing
+    const passwordConfig = getPasswordConfig();
+    if (
+      typeof password !== "string" ||
+      password.length < passwordConfig.passwordMinLength ||
+      Buffer.byteLength(password, "utf8") > 72
+    ) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        typeof password !== "string" || !password
+          ? "Password is required"
+          : password.length < passwordConfig.passwordMinLength
+            ? `Password must contain at least ${passwordConfig.passwordMinLength} characters`
+            : "Password must not exceed 72 bytes",
+        [],
+        "VALIDATION_ERROR",
+      );
+    }
+    const passwordHash = await bcrypt.hash(password, passwordConfig.bcryptSaltRounds);
 
     // 6. Parent ID is the authenticated creator
     const parentId = actor.id;
@@ -98,8 +119,8 @@ async function createUser({
     const newUserId = await userModel.insertUser(
       {
         name,
-        email,
-        mobile,
+        email: normalizedEmail,
+        mobile: normalizedMobile,
         shopname: shopname || null,
         address: address || null,
         state: state || null,
@@ -138,6 +159,15 @@ async function createUser({
       await connection.rollback();
     } catch (rollbackError) {
       // Preserve the original error if rollback also fails.
+    }
+
+    if (error.code === "ER_DUP_ENTRY") {
+      throw new ApiError(
+        httpStatus.CONFLICT,
+        "An account with this email or mobile already exists",
+        [],
+        "DUPLICATE_ENTRY",
+      );
     }
 
     throw error;

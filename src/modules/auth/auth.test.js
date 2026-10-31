@@ -487,6 +487,7 @@ test("configured recovery stores token and OTP hashes and returns a generic resp
     return new Date();
   };
   try {
+        process.env.NODE_ENV = "test";
     const result = await authService.forgotPassword({
       identifier: "user@example.com",
       type: "email",

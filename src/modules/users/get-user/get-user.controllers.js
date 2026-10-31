@@ -19,15 +19,21 @@ function getActorId(req) {
   return Number(actorId);
 }
 
-const getUsers = asyncHandler(async (req, res) => { 
+const getUsers = asyncHandler(async (req, res) => {
   const actorId = getActorId(req);
-  const { kyc_status, kycStatus } = req.query || {};
+  const { kyc_status, kycStatus, search } = req.query || {};
+
   const result = await service.getUsers(actorId, {
     kycStatus: kyc_status || kycStatus,
+    search,
   });
 
   return res.status(httpStatus.OK).json(
-    new ApiResponse(httpStatus.OK, result, "Users fetched successfully")
+    new ApiResponse(
+      httpStatus.OK,
+      result,
+      "Users fetched successfully",
+    )
   );
 });
 

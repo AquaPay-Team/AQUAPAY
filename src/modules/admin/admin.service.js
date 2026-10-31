@@ -1,5 +1,7 @@
 import pool from "../../config/db.js";
 import bcrypt from "bcryptjs";
+import { normalizeMobile } from "../../utils/validationHelper.js";
+import { getPasswordConfig } from "../../config/auth.js";
 
 async function createAdmin(adminInput) {
   const connection = await pool.getConnection();
@@ -7,9 +9,12 @@ async function createAdmin(adminInput) {
   try {
     await connection.beginTransaction();
 
-    
+    // Normalize mobile number before database operations
+    const normalizedMobile = normalizeMobile(adminInput.mobile);
+
+    // Check whether an Admin already exists
     const [existingAdmins] = await connection.execute(
-      "SELECT id FROM users WHERE role_id = 1 LIMIT 1"
+      "SELECT id FROM users WHERE role_id = 1 LIMIT 1",
     );
 
     if (existingAdmins.length > 0) {
@@ -18,9 +23,10 @@ async function createAdmin(adminInput) {
       throw error;
     }
 
+    // Find existing company
     const [companies] = await connection.execute(
       "SELECT id FROM companies WHERE name = ? LIMIT 1",
-      [adminInput.companyName]
+      [adminInput.companyName],
     );
 
     let companyId;
@@ -30,22 +36,49 @@ async function createAdmin(adminInput) {
     } else {
       const [companyResult] = await connection.execute(
         "INSERT INTO companies (name) VALUES (?)",
-        [adminInput.companyName]
+        [adminInput.companyName],
       );
 
       companyId = companyResult.insertId;
     }
-    // Guard against duplicate email or mobile
-const [existingUsers] = await connection.execute(
-  "SELECT id FROM users WHERE email = ? OR mobile = ? LIMIT 1",
-  [adminInput.email, adminInput.mobile]
-);
-if (existingUsers.length > 0) {
-  const error = new Error("Email or mobile already in use");
-  error.statusCode = 409;
-  throw error;
-}
-const passwordHash = await bcrypt.hash(adminInput.password, 12);
+
+    // Check for duplicate email or normalized mobile
+    const [existingUsers] = await connection.execute(
+      "SELECT id FROM users WHERE email = ? OR mobile = ? LIMIT 1",
+      [adminInput.email, normalizedMobile],
+    );
+
+    if (existingUsers.length > 0) {
+      const error = new Error("Email or mobile already in use");
+      error.statusCode = 409;
+      throw error;
+    }
+
+    // Validate password before hashing
+    const passwordConfig = getPasswordConfig();
+    if (
+      typeof adminInput.password !== "string" ||
+      adminInput.password.length < passwordConfig.passwordMinLength ||
+      Buffer.byteLength(adminInput.password, "utf8") > 72
+    ) {
+      const error = new Error(
+        typeof adminInput.password !== "string" || !adminInput.password
+          ? "Password is required"
+          : adminInput.password.length < passwordConfig.passwordMinLength
+            ? `Password must be at least ${passwordConfig.passwordMinLength} characters`
+            : "Password must not exceed 72 bytes",
+      );
+      error.statusCode = 400;
+      throw error;
+    }
+
+    // Hash Admin password using configured salt rounds
+    const passwordHash = await bcrypt.hash(
+      adminInput.password,
+      passwordConfig.bcryptSaltRounds,
+    );
+
+    // Create Admin
     const [result] = await connection.execute(
       `INSERT INTO users
         (name, email, mobile, company_id, role_id, parent_id,
@@ -54,10 +87,10 @@ const passwordHash = await bcrypt.hash(adminInput.password, 12);
       [
         adminInput.name,
         adminInput.email,
-        adminInput.mobile,
+        normalizedMobile,
         companyId,
-        passwordHash
-      ]
+        passwordHash,
+      ],
     );
 
     await connection.commit();
@@ -68,7 +101,7 @@ const passwordHash = await bcrypt.hash(adminInput.password, 12);
       email: adminInput.email,
       companyId,
       roleId: 1,
-      status: "active"
+      status: "active",
     };
   } catch (error) {
     await connection.rollback();

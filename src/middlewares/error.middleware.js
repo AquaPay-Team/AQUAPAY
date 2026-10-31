@@ -24,12 +24,9 @@ function errorHandler(err, req, res, next) {
         ? err.message || "Request failed"
         : "Internal server error";
 
-  if (!isClientError) {
-    console.error("Request failed with server error", {
-      name: typeof err.name === "string" ? err.name : "Error",
-      code: typeof err.code === "string" ? err.code : undefined,
-    });
-  }
+    if (!isClientError) {
+      console.error("Request failed with server error");
+    }
 
   const response = {
     success: false,

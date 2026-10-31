@@ -8,8 +8,8 @@ This module provides user retrieval endpoints for the AQUAPAY fintech platform. 
 
 | Method | Endpoint | Authorization | Description |
 | :--- | :--- | :--- | :--- |
-| `GET` | `/api/users` | Bearer Token (`requireAuth`) | List all users (Admin) or list child users (Non-Admin). Supports `?kyc_status=` filter. |
-| `GET` | `/api/users/:id` | Bearer Token (`requireAuth`) | Get user by ID with full KYC case and step-by-step progress |
+| `GET` | `/api/users` | Bearer Token (`requireAuth`) | List all users for Admin or list child users for non-admin users. Supports the `kyc_status` filter. |
+| `GET` | `/api/users/:id` | Bearer Token (`requireAuth`) | Get a user by ID, including the simplified KYC status and progress information. |
 
 ---
 
@@ -19,45 +19,49 @@ The endpoint retrieves the authenticated user's role and applies the following a
 
 ```mermaid
 flowchart TD
-    Req["Request (GET /api/users or /:id)"] --> Auth["requireAuth validates JWT"]
-    Auth --> ActorRole["Lookup caller role (findActorRole)"]
-    ActorRole --> IsAdmin{"Is caller Admin? (role_id=1 or slug='AD')"}
+    Req["Request: GET /api/users or /api/users/:id"] --> Auth["requireAuth validates JWT"]
+    Auth --> ActorRole["Lookup caller role: findActorRole"]
+    ActorRole --> IsAdmin{"Is caller Admin? role_id = 1 or role_slug = AD"}
     IsAdmin -- YES --> AdminView["Admin View: Full system access"]
-    IsAdmin -- NO --> ChildView["Non-Admin View: Creator-child isolation (WHERE parent_id = ?)"]
+    IsAdmin -- NO --> ChildView["Non-Admin View: Creator-child isolation"]
 ```
 
 ### Admin Access (`role_id: 1` / `role_slug: 'AD'`)
-* **`GET /api/users`**: Returns **all** registered users across the system. Supports `?kyc_status=submitted` (or `draft`, `under_review`, `approved`, `rejected`) for Admin KYC review queues.
-* **`GET /api/users/:id`**: Returns any user with matching ID including full KYC case details and step progress, or `404 Not Found` if the user ID does not exist.
+
+- **`GET /api/users`**: Returns all registered users across the system. Supports filtering by KYC status using `?kyc_status=`. Supported statuses are `pending`, `submitted`, `under_review`, `approved`, and `rejected`.
+- **`GET /api/users/:id`**: Returns the user with the matching ID, or `404 Not Found` if the user does not exist.
 
 ### Non-Admin Access (Sub Admin, MD, Distributor, Retailer, etc.)
-* **`GET /api/users`**: Returns **only** child users directly created by the caller (`WHERE parent_id = caller.id`).
-* **`GET /api/users/:id`**: Returns the user **only** if they were created by the caller (`WHERE id = ? AND parent_id = caller.id`).
-* **Retailers (`RT`)**: As retailers cannot create child users, `GET /api/users` returns an empty array `[]`.
+
+- **`GET /api/users`**: Returns only child users directly created by the authenticated caller (`WHERE parent_id = caller.id`).
+- **`GET /api/users/:id`**: Returns a user only if that user was created by the authenticated caller (`WHERE id = ? AND parent_id = caller.id`).
+- **Retailers (`RT`)**: If a retailer has no child users, `GET /api/users` returns an empty array (`[]`).
 
 ### KYC Permissions Policy
-* **Visibility**: Both Admin and parent managers can view `kyc` status, case metadata, and step progression for accessible users in GET responses to monitor downline onboarding.
-* **Execution & Approval**: KYC review, verification, and status approval are performed exclusively by administrators. Parent managers possess read-only visibility.
+
+- **Visibility**: Admins and parent managers can view the simplified KYC information for users they are authorized to access.
+- **Execution and approval**: KYC verification, review, and approval must be handled through the appropriate authorized KYC workflow. The user retrieval endpoints do not approve or reject KYC applications.
 
 ---
 
 ## 3. Headers & Authentication
 
-All requests require a valid JWT access token passed via the `Authorization` header:
+All requests require a valid JWT access token passed through the `Authorization` header.
 
 ```http
 Authorization: Bearer <valid_jwt_token>
 ```
 
-* Token must be signed with the configured `JWT_SECRET`.
-* Caller account must be `active` in the database.
-* Missing or invalid tokens return `401 Unauthorized`.
+- The token must be signed with the configured `JWT_SECRET`.
+- The caller's account must be active in the database.
+- Missing or invalid tokens return `401 Unauthorized`.
 
 ---
 
 ## 4. Response Schemas
 
-### Success Response (`GET /api/users`)
+### Success Response — `GET /api/users`
+
 **Status:** `200 OK`
 
 ```json
@@ -83,13 +87,9 @@ Authorization: Bearer <valid_jwt_token>
       "parent_id": 5,
       "parent_name": "Rajesh Kumar",
       "kyc": {
-        "case_id": 3,
-        "status": "draft",
-        "current_step": 1,
-        "business_type": "Telecom Store",
-        "submitted_at": null,
-        "reviewed_at": null,
-        "rejection_reason": null
+        "status": "pending",
+        "steps_completed": 0,
+        "business_type": "Private Limited Company"
       },
       "created_at": "2026-10-21T10:00:00.000Z",
       "updated_at": "2026-10-21T10:30:00.000Z"
@@ -100,7 +100,8 @@ Authorization: Bearer <valid_jwt_token>
 }
 ```
 
-### Success Response (`GET /api/users/:id`)
+### Success Response — `GET /api/users/:id`
+
 **Status:** `200 OK`
 
 ```json
@@ -125,18 +126,9 @@ Authorization: Bearer <valid_jwt_token>
     "parent_id": 5,
     "parent_name": "Rajesh Kumar",
     "kyc": {
-      "case_id": 3,
-      "status": "in_progress",
-      "current_step": 2,
-      "business_type": "Telecom Store",
-      "submitted_at": null,
-      "reviewed_at": null,
-      "rejection_reason": null,
-      "steps": [
-        { "step_number": 1, "status": "completed", "completed_at": "2026-10-21T10:15:00.000Z", "failure_code": null },
-        { "step_number": 2, "status": "in_progress", "completed_at": null, "failure_code": null },
-        { "step_number": 3, "status": "pending", "completed_at": null, "failure_code": null }
-      ]
+      "status": "pending",
+      "steps_completed": 0,
+      "business_type": "Private Limited Company"
     },
     "created_at": "2026-10-21T10:00:00.000Z",
     "updated_at": "2026-10-21T10:30:00.000Z"
@@ -146,10 +138,58 @@ Authorization: Bearer <valid_jwt_token>
 }
 ```
 
+### KYC Status Definitions
+
+| Status | Meaning |
+| :--- | :--- |
+| `pending` | KYC has not yet been submitted for review. |
+| `submitted` | All required KYC steps have been completed and the application has been submitted for review. |
+| `under_review` | An authorized reviewer is reviewing the submitted application. |
+| `approved` | KYC has been approved by an authorized reviewer. |
+| `rejected` | KYC has been rejected by an authorized reviewer. |
+
+### KYC Progress
+
+- `steps_completed` is a number from `0` to `7`.
+- A value of `0` means no KYC steps have been completed.
+- A value of `7` means all seven steps have been completed. It does not, by itself, mean the KYC application has been approved.
+- The KYC status should become `submitted` only after all required steps succeed and the application is successfully submitted.
+- KYC must not be marked `approved` automatically when the steps are completed.
+- `business_type` identifies the business type selected during onboarding.
+
+### KYC Filter Example
+
+```http
+GET /api/users?kyc_status=pending
+Authorization: Bearer <valid_jwt_token>
+```
+
+Other supported values for `kyc_status` are:
+
+- `submitted`
+- `under_review`
+- `approved`
+- `rejected`
+
+The filter applies to the users visible to the authenticated caller. Non-admin users remain restricted to their own child users.
+
 ---
 
 ## 5. Security & Data Protection
 
-1. **Excluded Sensitive Fields:** Passwords (`password_hash`), internal database singleton flags (`admin_singleton`), and recovery tokens are strictly omitted from all queries.
-2. **Ambiguity Prevention:** All database queries utilize explicit table prefixes (`u.address`, `u.pincode`, `u.shopname`, etc.) to prevent MySQL `ER_NON_UNIQ_ERROR` errors during self-joins.
-3. **ID Parameter Validation:** User IDs are validated as positive safe integers (`Number.isSafeInteger(id)` and `id > 0`), rejecting decimals, non-numeric values, or malicious inputs with `400 Bad Request`.
+1. **Sensitive fields excluded:** Password hashes, password-recovery tokens, and internal database-only fields must not be exposed in user retrieval responses.
+2. **Explicit SQL columns:** Database queries use explicit column names and table aliases to avoid ambiguous-column errors, particularly when joining the `users` table to itself.
+3. **User ID validation:** User IDs must be positive safe integers. Invalid IDs, including decimals, non-numeric values, and non-positive numbers, return `400 Bad Request`.
+4. **Authorization enforcement:** Non-admin callers can access only users directly created by them. Knowing another user's ID does not grant access.
+5. **Minimal KYC response:** User retrieval responses expose only `status`, `steps_completed`, and `business_type` under `kyc`. Internal case identifiers, step-level records, timestamps, failure codes, and rejection details are not part of this response.
+6. **KYC approval protection:** Reading user information does not change KYC state or grant permission to approve or reject an application.
+
+---
+
+## 6. Important Implementation Notes
+
+- The examples above illustrate the documented response structure; actual values depend on the database records.
+- A user without an initialized KYC case may have `kyc: null`, depending on the current database state and model implementation.
+- KYC status filters must be validated against the supported status values before being used in database queries.
+- Business type options should be validated by the backend against the business types approved for the application. Frontend dropdown validation alone is not sufficient.
+- Keep this README synchronized with the actual route, controller, service, model, and database implementations.

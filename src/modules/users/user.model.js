@@ -146,45 +146,46 @@ async function insertUser(
   return result.insertId;
 }
 
-async function initKycCaseForUser(
-  { userId, businessType = null, actorId = null },
-  connection,
-) {
-  const db = getDb(connection);
-
-  const [caseResult] = await db.execute(
-    `INSERT INTO kyc_cases (user_id, business_type, status, current_step)
-     VALUES (?, ?, 'draft', 1)`,
-    [userId, businessType],
-  );
-  const caseId = caseResult.insertId;
-
-  const stepRows = [
-    [caseId, 1, "in_progress"],
-    [caseId, 2, "pending"],
-    [caseId, 3, "pending"],
-    [caseId, 4, "pending"],
-    [caseId, 5, "pending"],
-    [caseId, 6, "pending"],
-    [caseId, 7, "pending"],
+async function updateUserFields(userId, fields, connection) {
+  const allowedFields = [
+    "name",
+    "email",
+    "mobile",
+    "shopname",
+    "address",
+    "state",
+    "city",
+    "pincode",
   ];
 
-  await db.query(
-    `INSERT INTO kyc_steps (case_id, step_number, status) VALUES ?`,
-    [stepRows],
+  const entries = Object.entries(fields);
+
+  if (entries.length === 0) {
+    return false;
+  }
+
+  const invalidFields = entries
+    .map(([field]) => field)
+    .filter((field) => !allowedFields.includes(field));
+
+  if (invalidFields.length > 0) {
+    throw new Error(
+      `Unsupported user update fields: ${invalidFields.join(", ")}`,
+    );
+  }
+
+  const setClause = entries
+    .map(([field]) => `\`${field}\` = ?`)
+    .join(", ");
+
+  const values = entries.map(([, value]) => value);
+
+  const [result] = await getDb(connection).execute(
+    `UPDATE users SET ${setClause} WHERE id = ?`,
+    [...values, userId],
   );
 
-  await db.execute(
-    `INSERT INTO kyc_status_history (case_id, old_status, new_status, actor_user_id, reason)
-     VALUES (?, NULL, 'draft', ?, 'Initial KYC case created during user registration')`,
-    [caseId, actorId],
-  );
-
-  return {
-    caseId,
-    status: "draft",
-    currentStep: 1,
-  };
+  return result.affectedRows > 0;
 }
 
 async function findUserSafeById(userId, connection) {
@@ -192,41 +193,58 @@ async function findUserSafeById(userId, connection) {
     `SELECT u.id, u.name, u.email, u.mobile, u.shopname, u.address, u.state, u.city, u.pincode, u.role_id, u.company_id, u.parent_id, u.status, u.created_at, u.updated_at,
             r.name AS role_name, r.slug AS role_slug,
             p.name AS parent_name,
-            c.name AS company_name,
-            k.id AS kyc_case_id,
-            k.status AS kyc_status,
-            k.current_step AS kyc_current_step,
-            k.business_type AS kyc_business_type
+            c.name AS company_name
      FROM users u
      JOIN roles r ON r.id = u.role_id
      LEFT JOIN users p ON p.id = u.parent_id
      LEFT JOIN companies c ON c.id = u.company_id
-     LEFT JOIN kyc_cases k ON k.user_id = u.id
      WHERE u.id = ?
      LIMIT 1`,
     [userId],
   );
-
-  if (!rows[0]) return null;
-  const row = rows[0];
-
-  const user = { ...row };
-  delete user.kyc_case_id;
-  delete user.kyc_status;
-  delete user.kyc_current_step;
-  delete user.kyc_business_type;
-
-  user.kyc = row.kyc_case_id
-    ? {
-      case_id: row.kyc_case_id,
-      status: row.kyc_status,
-      current_step: row.kyc_current_step,
-      business_type: row.kyc_business_type,
-    }
-    : null;
-
-  return user;
+  return rows[0] || null;
 }
+
+
+async function initKycCaseForUser(
+  { userId, businessType, actorId },
+  connection,
+) {
+  const db = getDb(connection);
+
+  // Create the KYC case.
+  const [caseResult] = await db.execute(
+    `INSERT INTO kyc_cases (user_id, business_type, status, steps_completed)
+    VALUES (?, ?, 'pending', 0)`,
+    [userId, businessType || null],
+  );
+
+  const caseId = caseResult.insertId;
+
+  // Initialize all seven KYC steps.
+  const steps = Array.from({ length: 7 }, (_, index) => [
+    caseId,
+    index + 1,
+    index === 0 ? "in_progress" : "pending",
+  ]);
+
+  await db.query(
+    `INSERT INTO kyc_steps (case_id, step_number, status)
+     VALUES ?`,
+    [steps],
+  );
+
+  // Record the initial status.
+  await db.execute(
+    `INSERT INTO kyc_status_history
+     (case_id, old_status, new_status, actor_user_id)
+    VALUES (?, NULL, 'pending', ?)`,
+    [caseId, actorId || null],
+  );
+
+  return caseId;
+}
+
 
 const userModel = {
   findUserForAuth,
@@ -234,8 +252,9 @@ const userModel = {
   checkRoleHierarchy,
   checkDuplicateUser,
   insertUser,
-  initKycCaseForUser,
+  updateUserFields,
   findUserSafeById,
+  initKycCaseForUser,
 };
 
 export {
@@ -244,8 +263,9 @@ export {
   checkRoleHierarchy,
   checkDuplicateUser,
   insertUser,
-  initKycCaseForUser,
+  updateUserFields,
   findUserSafeById,
+  initKycCaseForUser,
 };
 
 export default userModel;

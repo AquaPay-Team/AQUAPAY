@@ -33,7 +33,8 @@ function safeUser(user) {
     parent_id: user.parent_id,
     status: user.status,
     role_name: user.role_name,
-    company_name: user.company_name
+    company_name: user.company_name,
+    kyc: user.kyc ?? null,
   };
 }
 

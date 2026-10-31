@@ -16,6 +16,7 @@ const BASELINE_MIGRATIONS = [
 ];
 
 // Required tables and columns used to validate the existing schema.
+// This is a baseline sanity check, not a complete constraint comparison.
 const REQUIRED_COLUMNS = {
   roles: ["id", "name", "slug"],
   companies: ["id", "name", "created_at"],

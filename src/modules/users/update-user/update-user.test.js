@@ -1,4 +1,3 @@
-
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import pool from "../../../config/db.js";
@@ -122,6 +121,15 @@ test("update-user validator: rejects an invalid name", () => {
   assert.ok(error);
   assert.equal(error.statusCode, 400);
 });
+test("update-user validator: rejects an invalid pincode", () => {
+  const { error } = runValidator({
+    pincode: "12345",
+  });
+
+  assert.ok(error);
+  assert.equal(error.statusCode, 400);
+  assert.equal(error.code, "VALIDATION_ERROR");
+});
 
 test("update-user validator: accepts multiple permitted fields", () => {
   const { req, error } = runValidator({
@@ -139,8 +147,6 @@ test("update-user validator: accepts multiple permitted fields", () => {
     pincode: "390007",
   });
 });
-
-
 
 function createMockConnection({
   rollbackError = null,
@@ -186,8 +192,6 @@ function createMockConnection({
     },
   };
 }
-
-
 
 function mockUpdateUserDependencies({
   actor = { id: 1, role_id: 1 },
@@ -276,6 +280,54 @@ test("update-user service: rejects an invalid target ID", async () => {
     },
   );
 });
+test("update-user service: rejects an actor who does not exist", async () => {
+  const mock = mockUpdateUserDependencies({
+    actor: null,
+  });
+
+  try {
+    await assert.rejects(
+      updateUserService.updateUser({
+        actorId: 999,
+        targetUserId: 10,
+        fields: { city: "Vadodara" },
+      }),
+      (error) => {
+        assert.equal(error.statusCode, 401);
+        return true;
+      },
+    );
+
+    assert.deepEqual(mock.calls, ["begin", "rollback", "release"]);
+  } finally {
+    mock.restore();
+  }
+});
+test("update-user service: returns 404 when target user does not exist", async () => {
+  const mock = mockUpdateUserDependencies({
+    currentUser: null,
+  });
+
+  try {
+    await assert.rejects(
+      updateUserService.updateUser({
+        actorId: 1,
+        targetUserId: 999,
+        fields: { city: "Vadodara" },
+      }),
+      (error) => {
+        assert.equal(error.statusCode, 404);
+        return true;
+      },
+    );
+
+    assert.deepEqual(mock.calls, ["begin", "rollback", "release"]);
+
+    assert.equal(mock.updateArguments, null);
+  } finally {
+    mock.restore();
+  }
+});
 
 test("update-user service: rejects a non-admin and rolls back", async () => {
   const mock = mockUpdateUserDependencies({
@@ -296,11 +348,7 @@ test("update-user service: rejects a non-admin and rolls back", async () => {
       },
     );
 
-    assert.deepEqual(mock.calls, [
-      "begin",
-      "rollback",
-      "release",
-    ]);
+    assert.deepEqual(mock.calls, ["begin", "rollback", "release"]);
   } finally {
     mock.restore();
   }
@@ -334,11 +382,7 @@ test("update-user service: updates permitted fields and commits", async () => {
     assert.deepEqual(mock.updateArguments[1], fields);
     assert.equal(mock.updateArguments[2], mock.connection);
 
-    assert.deepEqual(mock.calls, [
-      "begin",
-      "commit",
-      "release",
-    ]);
+    assert.deepEqual(mock.calls, ["begin", "commit", "release"]);
   } finally {
     mock.restore();
   }
@@ -361,11 +405,7 @@ test("update-user service: rejects an unchanged email", async () => {
       },
     );
 
-    assert.deepEqual(mock.calls, [
-      "begin",
-      "rollback",
-      "release",
-    ]);
+    assert.deepEqual(mock.calls, ["begin", "rollback", "release"]);
   } finally {
     mock.restore();
   }
@@ -394,11 +434,37 @@ test("update-user service: rejects duplicate email and rolls back", async () => 
       },
     );
 
-    assert.deepEqual(mock.calls, [
-      "begin",
-      "rollback",
-      "release",
-    ]);
+    assert.deepEqual(mock.calls, ["begin", "rollback", "release"]);
+  } finally {
+    mock.restore();
+  }
+});
+test("update-user service: rejects duplicate mobile and rolls back", async () => {
+  const mock = mockUpdateUserDependencies({
+    duplicate: {
+      id: 20,
+      email: "other@example.com",
+      mobile: "+919876543211",
+    },
+  });
+
+  try {
+    await assert.rejects(
+      updateUserService.updateUser({
+        actorId: 1,
+        targetUserId: 10,
+        fields: { mobile: "+919876543211" },
+      }),
+      (error) => {
+        assert.equal(error.statusCode, 409);
+        assert.equal(error.code, "DUPLICATE_ENTRY");
+        return true;
+      },
+    );
+
+    assert.deepEqual(mock.calls, ["begin", "rollback", "release"]);
+
+    assert.equal(mock.updateArguments, null);
   } finally {
     mock.restore();
   }
@@ -419,11 +485,7 @@ test("update-user service: rolls back when the database update fails", async () 
       /Simulated database failure/,
     );
 
-    assert.deepEqual(mock.calls, [
-      "begin",
-      "rollback",
-      "release",
-    ]);
+    assert.deepEqual(mock.calls, ["begin", "rollback", "release"]);
   } finally {
     mock.restore();
   }
@@ -451,11 +513,69 @@ test("update-user service: preserves the original error and destroys the connect
       },
     );
 
-    assert.deepEqual(mock.calls, [
-      "begin",
-      "rollback",
-      "destroy",
-    ]);
+    assert.deepEqual(mock.calls, ["begin", "rollback", "destroy"]);
+  } finally {
+    mock.restore();
+  }
+});
+test("update-user validator: converts empty optional fields to null", () => {
+  const { req, error } = runValidator({
+    shopname: "",
+    address: null,
+    state: "",
+    city: "",
+    pincode: null,
+  });
+
+  assert.equal(error, undefined);
+
+  assert.deepEqual(req.validatedBody, {
+    shopname: null,
+    address: null,
+    state: null,
+    city: null,
+    pincode: null,
+  });
+});
+test("update-user validator: rejects protected and unknown fields", () => {
+  const protectedFields = [
+    { status: "inactive" },
+    { company_id: 2 },
+    { parent_id: 5 },
+    { role_id: 1 },
+  ];
+
+  for (const body of protectedFields) {
+    const { error } = runValidator(body);
+
+    assert.ok(error);
+    assert.equal(error.statusCode, 400);
+    assert.equal(error.code, "VALIDATION_ERROR");
+  }
+});
+test("update-user service: converts database duplicate-key errors to 409", async () => {
+  const duplicateError = new Error("Duplicate entry");
+  duplicateError.code = "ER_DUP_ENTRY";
+
+  const mock = mockUpdateUserDependencies({
+    updateError: duplicateError,
+  });
+
+  try {
+    await assert.rejects(
+      updateUserService.updateUser({
+        actorId: 1,
+        targetUserId: 10,
+        fields: { email: "taken@example.com" },
+      }),
+      (error) => {
+        assert.equal(error.statusCode, 409);
+        assert.equal(error.code, "DUPLICATE_ENTRY");
+        return true;
+      },
+    );
+
+    assert.deepEqual(mock.calls, ["begin", "rollback", "release"]);
   } finally {
     mock.restore();
   }

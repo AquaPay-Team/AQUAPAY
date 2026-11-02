@@ -62,11 +62,29 @@ async function getUsers(actorId, options = {}) {
     );
   }
 
+  // Search by name, mobile number, or email
+  const search =
+  typeof options.search === "string"
+    ? options.search.trim()
+    : "";
+
+const userOptions = {
+  ...options,
+};
+
+if (search) {
+  userOptions.search = search;
+} else {
+  delete userOptions.search;
+}
   if (isAdmin(actor)) {
-    return getUserModel.findAllUsers(options);
+    return getUserModel.findAllUsers(userOptions);
   }
 
-  return getUserModel.findChildrenByParentId(actor.id, options);
+  return getUserModel.findChildrenByParentId(
+    actor.id,
+    userOptions,
+  );
 }
 
 async function getUserById(actorId, userId) {

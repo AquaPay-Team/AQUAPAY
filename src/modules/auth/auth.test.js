@@ -218,6 +218,69 @@ test("login issues a signed JWT for active email and mobile accounts without exp
   }
 });
 
+test("login normalizes Indian mobile numbers across formats to canonical +91XXXXXXXXXX before lookup", async () => {
+  const originalFind = authModel.findUserByIdentifier;
+  const hash = await bcrypt.hash("correct-password", 4);
+  const lookups = [];
+  authModel.findUserByIdentifier = async (identifier, type) => {
+    lookups.push({ identifier, type });
+    return activeUser({ mobile: "+919876543210", password_hash: hash });
+  };
+
+  try {
+    const rawFormats = [
+      "9876543210",
+      "09876543210",
+      "919876543210",
+      "+919876543210",
+    ];
+
+    for (const raw of rawFormats) {
+      const result = await authService.login({
+        identifier: raw,
+        type: "mobile",
+        password: "correct-password",
+      });
+      assert.ok(result.accessToken);
+    }
+
+    assert.equal(lookups.length, 4);
+    for (const lookup of lookups) {
+      assert.deepEqual(lookup, {
+        identifier: "+919876543210",
+        type: "mobile",
+      });
+    }
+  } finally {
+    authModel.findUserByIdentifier = originalFind;
+  }
+});
+
+test("login preserves email identifiers without normalization changes", async () => {
+  const originalFind = authModel.findUserByIdentifier;
+  const hash = await bcrypt.hash("correct-password", 4);
+  let queriedIdentifier = null;
+  authModel.findUserByIdentifier = async (identifier, type) => {
+    queriedIdentifier = { identifier, type };
+    return activeUser({ password_hash: hash });
+  };
+
+  try {
+    await authService.login({
+      identifier: "user@example.com",
+      type: "email",
+      password: "correct-password",
+    });
+
+    assert.deepEqual(queriedIdentifier, {
+      identifier: "user@example.com",
+      type: "email",
+    });
+  } finally {
+    authModel.findUserByIdentifier = originalFind;
+  }
+});
+
 test("wrong password, unknown user, missing hash, and inactive status share a generic failure", async () => {
   const originalFind = authModel.findUserByIdentifier;
   const hash = await bcrypt.hash("correct-password", 4);

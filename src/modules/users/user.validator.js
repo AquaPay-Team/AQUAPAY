@@ -11,6 +11,7 @@ import {
 } from "../../utils/validationHelper.js";
 import ApiError from "../../utils/ApiError.js";
 import httpStatus from "../../utils/httpStatus.js";
+import { getPasswordConfig } from "../../config/auth.js";
 
 function validateCreateUser(req, res, next) {
   const body = req.body || {};
@@ -37,6 +38,7 @@ function validateCreateUser(req, res, next) {
         : body.role;
 
   const errors = [];
+  const passwordConfig = getPasswordConfig();
 
   // Name validation: string only, only alphabetic characters and spaces, 2 to 100 characters
   if (body.name === undefined || body.name === null || body.name === "") {
@@ -72,13 +74,15 @@ function validateCreateUser(req, res, next) {
     errors.push("Invalid mobile number format (must be 10 digits)");
   }
 
-  // Password validation: 8 to 128 characters
+  // Password validation: at least 8 characters and at most 72 UTF-8 bytes
   if (typeof password !== "string" || !password) {
     errors.push("Password is required");
-  } else if (password.length < 8) {
-    errors.push("Password must contain at least 8 characters");
-  } else if (password.length > 128) {
-    errors.push("Password cannot exceed 128 characters");
+  } else if (password.length < passwordConfig.passwordMinLength) {
+    errors.push(
+      `Password must contain at least ${passwordConfig.passwordMinLength} characters`,
+    );
+  } else if (Buffer.byteLength(password, "utf8") > 72) {
+    errors.push("Password must not exceed 72 bytes");
   }
 
   // Shopname validation (max 150 chars)
@@ -99,8 +103,6 @@ function validateCreateUser(req, res, next) {
     }
   }
 
-  // State & City length validation (max 100 chars)
-  // State validation
   if (body.state !== undefined && body.state !== null) {
     if (typeof body.state !== "string") {
       errors.push("State must be a string");
@@ -119,7 +121,11 @@ function validateCreateUser(req, res, next) {
   }
 
   // Pincode validation (6-digit Indian postal code)
-  if (body.pincode !== undefined && body.pincode !== null && body.pincode !== "") {
+  if (
+    body.pincode !== undefined &&
+    body.pincode !== null &&
+    body.pincode !== ""
+  ) {
     if (typeof body.pincode !== "string" && typeof body.pincode !== "number") {
       errors.push("Invalid pincode (must be a 6-digit postal code)");
     } else if (!isValidPincode(pincode)) {
@@ -128,7 +134,11 @@ function validateCreateUser(req, res, next) {
   }
 
   // Business type validation (optional, max 100 chars)
-  if (rawBusinessType !== undefined && rawBusinessType !== null && rawBusinessType !== "") {
+  if (
+    rawBusinessType !== undefined &&
+    rawBusinessType !== null &&
+    rawBusinessType !== ""
+  ) {
     if (typeof rawBusinessType !== "string") {
       errors.push("Business type must be a string");
     } else if (rawBusinessType.trim().length > 100) {
@@ -165,8 +175,8 @@ function validateCreateUser(req, res, next) {
         httpStatus.BAD_REQUEST,
         errors.join(", "),
         errors,
-        "VALIDATION_ERROR"
-      )
+        "VALIDATION_ERROR",
+      ),
     );
   }
 
@@ -192,9 +202,7 @@ function validateCreateUser(req, res, next) {
   next();
 }
 
-export {
-  validateCreateUser,
-};
+export { validateCreateUser };
 
 export default {
   validateCreateUser,

@@ -12,6 +12,13 @@ function positiveInteger(name, fallback, min, max = 10000) {
   return value;
 }
 
+function getPasswordConfig() {
+  return {
+    bcryptSaltRounds: positiveInteger("AUTH_BCRYPT_SALT_ROUNDS", 12, 10, 15),
+    passwordMinLength: positiveInteger("AUTH_PASSWORD_MIN_LENGTH", 8, 8, 72),
+  };
+}
+
 function getAuthConfig() {
   const secret = process.env.JWT_SECRET;
   const expiresIn = process.env.JWT_EXPIRES_IN || "1h";
@@ -24,11 +31,13 @@ function getAuthConfig() {
     throw new Error("JWT_EXPIRES_IN must be a positive duration no longer than 365 days");
   }
 
+  const passwordConfig = getPasswordConfig();
+
   return {
     secret,
     expiresIn,
-    bcryptSaltRounds: positiveInteger("AUTH_BCRYPT_SALT_ROUNDS", 12, 10, 15),
-    passwordMinLength: positiveInteger("AUTH_PASSWORD_MIN_LENGTH", 8, 8, 72),
+    bcryptSaltRounds: passwordConfig.bcryptSaltRounds,
+    passwordMinLength: passwordConfig.passwordMinLength,
     resetTokenTtlMinutes: positiveInteger("AUTH_RESET_TOKEN_TTL_MINUTES", 15, 5, 60),
     rateLimits: {
       login: {
@@ -50,10 +59,11 @@ function getAuthConfig() {
   };
 }
 
-export { getAuthConfig, JWT_ISSUER, JWT_AUDIENCE };
+export { getAuthConfig, getPasswordConfig, JWT_ISSUER, JWT_AUDIENCE };
 
 export default {
   getAuthConfig,
+  getPasswordConfig,
   JWT_ISSUER,
   JWT_AUDIENCE,
 };

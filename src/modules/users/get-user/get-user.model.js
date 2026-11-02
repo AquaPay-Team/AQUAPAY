@@ -69,13 +69,31 @@ async function findActorRole(actorId) {
 }
 
 // Get all users (Admin view) with optional KYC status filter.
+// Get all users (Admin view) with optional KYC status and search filters.
 async function findAllUsers(options = {}) {
   let query = USER_PROJECTION;
+  const conditions = [];
   const params = [];
 
   if (options.kycStatus) {
-    query += ` WHERE k.status = ?`;
+    conditions.push(`k.status = ?`);
     params.push(options.kycStatus);
+  }
+
+  if (options.search) {
+    conditions.push(`(
+      u.name LIKE ?
+      OR u.mobile LIKE ?
+      OR u.email LIKE ?
+    )`);
+
+    const searchValue = `%${options.search}%`;
+
+    params.push(searchValue, searchValue, searchValue);
+  }
+
+  if (conditions.length > 0) {
+    query += ` WHERE ${conditions.join(" AND ")}`;
   }
 
   query += ` ORDER BY u.id DESC`;
@@ -97,6 +115,7 @@ async function findUserById(userId) {
 
 // Get children created by a parent.
 
+// Get children created by a parent with optional KYC status and search filters.
 async function findChildrenByParentId(parentId, options = {}) {
   let query = `${USER_PROJECTION}
     WHERE u.parent_id = ?`;
@@ -106,6 +125,18 @@ async function findChildrenByParentId(parentId, options = {}) {
   if (options.kycStatus) {
     query += ` AND k.status = ?`;
     params.push(options.kycStatus);
+  }
+
+  if (options.search) {
+    query += ` AND (
+      u.name LIKE ?
+      OR u.mobile LIKE ?
+      OR u.email LIKE ?
+    )`;
+
+    const searchValue = `%${options.search}%`;
+
+    params.push(searchValue, searchValue, searchValue);
   }
 
   query += ` ORDER BY u.id DESC`;

@@ -1,0 +1,49 @@
+
+name: AquaPay CI
+
+on:
+  push:
+    branches:
+      - main
+      - feature/phase2-kyc-reimplementation
+
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    name: Install and Test
+    runs-on: ubuntu-latest
+
+    env:
+      NODE_ENV: test
+      PORT: 3000
+
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_USER: aquapay_test
+      DB_PASSWORD: aquapay_test_password
+      DB_NAME: fintech_kyc
+
+      REDIS_URL: redis://127.0.0.1:6379
+
+      JWT_SECRET: ci_test_jwt_secret_at_least_32_characters_long
+      KYC_OTP_SECRET: ci_test_otp_secret_at_least_32_characters_long
+      ADMIN_SETUP_KEY: ci_test_admin_setup_key
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run test suite
+        run: npm test

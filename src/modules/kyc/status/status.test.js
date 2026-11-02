@@ -45,12 +45,16 @@ test("KYC status returns the existing user projection and step progress", async 
       calls.push(["steps", caseId]);
       return stepRows;
     },
+    findDevelopmentUnverifiedVerificationsByCaseId: async (caseId) => {
+      calls.push(["development-unverified", caseId]);
+      return [];
+    },
   });
 
   try {
     const result = await statusService.getKycStatus("52");
 
-    assert.deepEqual(calls, [["case", "52"], ["steps", 13]]);
+    assert.deepEqual(calls, [["case", "52"], ["steps", 13], ["development-unverified", 13]]);
     assert.deepEqual(result, {
       hasCase: true,
       kyc: {
@@ -60,6 +64,7 @@ test("KYC status returns the existing user projection and step progress", async 
       },
       currentStep: 2,
       completedSteps: [1],
+      developmentUnverifiedSteps: [],
       currentStepDetails: {
         stepNumber: 2,
         status: "in_progress",
@@ -87,6 +92,7 @@ test("KYC status returns a null projection when the user has no case", async () 
       kyc: null,
       currentStep: null,
       completedSteps: [],
+      developmentUnverifiedSteps: [],
       currentStepDetails: null,
     });
   } finally {
@@ -139,6 +145,7 @@ test("KYC status controller reads identity from authenticated request context", 
       kyc: null,
       currentStep: null,
       completedSteps: [],
+      developmentUnverifiedSteps: [],
       currentStepDetails: null,
     };
   };
@@ -171,6 +178,7 @@ test("KYC status controller reads identity from authenticated request context", 
       kyc: null,
       currentStep: null,
       completedSteps: [],
+      developmentUnverifiedSteps: [],
       currentStepDetails: null,
     });
   } finally {
@@ -189,6 +197,7 @@ test("KYC status model uses parameterized queries and approved schema columns", 
   try {
     await statusModel.findCasesByUserId("52");
     await statusModel.findStepsByCaseId(13);
+    await statusModel.findDevelopmentUnverifiedVerificationsByCaseId(13);
 
     assert.equal(calls[0].params[0], "52");
     assert.match(calls[0].sql, /steps_completed/);
@@ -197,8 +206,34 @@ test("KYC status model uses parameterized queries and approved schema columns", 
     assert.equal(calls[1].params[0], 13);
     assert.match(calls[1].sql, /completed_at/);
     assert.match(calls[1].sql, /ORDER BY step_number ASC/);
+    assert.equal(calls[2].params[0], 13);
+    assert.match(calls[2].sql, /provider = \?/);
+    assert.match(calls[2].sql, /verification_type/);
   } finally {
     pool.execute = originalExecute;
+  }
+});
+
+test("KYC status explicitly identifies development-unverified Aadhaar and PAN steps", async () => {
+  const restore = replaceModelMethods({
+    findCasesByUserId: async () => [{ ...caseRow, steps_completed: 3 }],
+    findStepsByCaseId: async () => [
+      { step_number: 1, status: "completed", completed_at: new Date() },
+      { step_number: 2, status: "completed", completed_at: new Date() },
+      { step_number: 3, status: "completed", completed_at: new Date() },
+    ],
+    findDevelopmentUnverifiedVerificationsByCaseId: async () => [
+      { verification_type: "aadhaar" },
+      { verification_type: "pan" },
+    ],
+  });
+
+  try {
+    const result = await statusService.getKycStatus("52");
+    assert.deepEqual(result.completedSteps, [1, 2, 3]);
+    assert.deepEqual(result.developmentUnverifiedSteps, [2, 3]);
+  } finally {
+    restore();
   }
 });
 

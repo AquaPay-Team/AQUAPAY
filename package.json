@@ -1,4 +1,3 @@
-
 {
   "name": "aquapay",
   "version": "1.0.0",
@@ -11,9 +10,11 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "test": "node --test src/modules/auth/auth.test.js src/modules/users/user.test.js src/modules/users/update-user/update-user.test.js src/modules/admin/admin.test.js src/modules/kyc/basic-details/basicDetails.test.js src/modules/kyc/status/status.test.js"
+    "digilocker:mock-cert": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/generate-digilocker-mock-certificate.ps1",
+    "test": "node --test src/server.test.js src/modules/auth/auth.test.js src/modules/users/user.test.js src/modules/users/update-user/update-user.test.js src/modules/admin/admin.test.js src/modules/kyc/basic-details/basicDetails.test.js src/modules/kyc/status/status.test.js src/modules/kyc/document-verification/digilocker/digilocker.test.js src/modules/kyc/document-verification/identity-data/identityData.test.js src/modules/kyc/document-verification/aadhaar/aadhaar.test.js src/modules/kyc/document-verification/pan/pan.test.js src/modules/kyc/document-verification/digilocker/digilocker.mockRoutes.test.js src/modules/kyc/document-verification/digilocker/digilocker.productionRoutes.test.js"
   },
   "dependencies": {
+    "@xmldom/xmldom": "^0.9.12",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
     "dotenv": "^16.4.7",
@@ -21,7 +22,8 @@
     "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.3",
     "mysql2": "^3.12.0",
-    "redis": "^6.3.1"
+    "redis": "^6.3.1",
+    "xml-crypto": "^6.4.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.9"

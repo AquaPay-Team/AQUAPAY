@@ -14,8 +14,10 @@ function errorHandler(err, req, res, next) {
 
   const isClientError =
     Number.isInteger(status) && status >= 400 && status < 500;
-  const isServiceUnavailable =
-    status === 503 && err.code === "SERVICE_UNAVAILABLE";
+  // Preserve explicit 503 errors from any module (for example, DigiLocker).
+  // Previously only SERVICE_UNAVAILABLE was recognized, so other typed 503s
+  // were incorrectly turned into generic 500 responses.
+  const isServiceUnavailable = status === 503;
 
   const statusCode = isClientError ? status : isServiceUnavailable ? 503 : 500;
 

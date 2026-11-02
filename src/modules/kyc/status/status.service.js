@@ -25,6 +25,7 @@ async function getKycStatus(userId) {
       kyc: null,
       currentStep: null,
       completedSteps: [],
+      developmentUnverifiedSteps: [],
       currentStepDetails: null,
     };
   }
@@ -39,8 +40,10 @@ async function getKycStatus(userId) {
 
   const kycCase = cases[0];
   let steps;
+  let developmentUnverifiedRows;
   try {
     steps = await statusModel.findStepsByCaseId(kycCase.id);
+    developmentUnverifiedRows = await statusModel.findDevelopmentUnverifiedVerificationsByCaseId(kycCase.id);
   } catch {
     throw serviceUnavailable();
   }
@@ -49,6 +52,10 @@ async function getKycStatus(userId) {
     .filter((step) => step.status === "completed")
     .map((step) => Number(step.step_number));
   const currentStepRow = steps.find((step) => step.status !== "completed") || null;
+  const verificationSteps = { aadhaar: 2, pan: 3 };
+  const developmentUnverifiedSteps = developmentUnverifiedRows
+    .map((row) => verificationSteps[row.verification_type])
+    .filter(Number.isInteger);
 
   return {
     hasCase: true,
@@ -59,6 +66,7 @@ async function getKycStatus(userId) {
     },
     currentStep: currentStepRow ? Number(currentStepRow.step_number) : null,
     completedSteps,
+    developmentUnverifiedSteps,
     currentStepDetails: currentStepRow
       ? {
           stepNumber: Number(currentStepRow.step_number),

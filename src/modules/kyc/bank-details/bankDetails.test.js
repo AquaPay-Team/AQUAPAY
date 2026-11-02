@@ -270,6 +270,14 @@ test("Bank service: saves new bank details", async () => {
       insertedDetails = { caseId, ...details };
       return 101;
     },
+
+    async completeStep4() {
+      return true;
+    },
+
+    async updateCompletedStepsCount() {
+      return 1;
+    },
   });
 
   try {
@@ -315,6 +323,14 @@ test("Bank service: updates existing bank details", async () => {
     async updateBankAccount(conn, accountId, details) {
       updatedAccountId = accountId;
       updatedDetails = details;
+    },
+
+    async completeStep4() {
+      return true;
+    },
+
+    async updateCompletedStepsCount() {
+      return 1;
     },
   });
 

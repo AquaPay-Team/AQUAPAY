@@ -2,8 +2,6 @@ import { Router } from "express";
 import digilockerController from "./digilocker.controller.js";
 import digilockerProvider from "./digilocker.provider.js";
 import { validateCallbackRequest } from "./digilocker.validator.js";
-import "../aadhaar/aadhaar.service.js";
-import "../pan/pan.service.js";
 
 const router = Router();
 

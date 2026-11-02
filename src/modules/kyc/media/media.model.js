@@ -106,6 +106,40 @@ async function findMediaByIdAndCaseId(connection, assetId, caseId) {
   return rows[0] || null;
 }
 
+async function completeStep5(connection, caseId) {
+  const [result] = await connection.execute(
+    `UPDATE kyc_steps
+        SET status = 'completed',
+            completed_at = CURRENT_TIMESTAMP,
+            failure_code = NULL,
+            updated_at = CURRENT_TIMESTAMP
+      WHERE case_id = ?
+        AND step_number = 5
+        AND status <> 'completed'`,
+    [caseId],
+  );
+  return Number(result.affectedRows || 0) === 1;
+}
+
+async function updateCompletedStepsCount(connection, caseId) {
+  const [rows] = await connection.execute(
+    `SELECT COUNT(*) AS steps_completed
+       FROM kyc_steps
+      WHERE case_id = ?
+        AND status = 'completed'`,
+    [caseId],
+  );
+  const stepsCompleted = Number(rows[0]?.steps_completed || 0);
+  await connection.execute(
+    `UPDATE kyc_cases
+        SET steps_completed = ?,
+            updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?`,
+    [stepsCompleted, caseId],
+  );
+  return stepsCompleted;
+}
+
 export {
   getConnection,
   findCasesByUserIdForUpdate,
@@ -113,4 +147,6 @@ export {
   insertMediaAsset,
   findMediaByCaseId,
   findMediaByIdAndCaseId,
+  completeStep5,
+  updateCompletedStepsCount,
 };

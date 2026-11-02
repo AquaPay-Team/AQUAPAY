@@ -12,6 +12,7 @@ import redisConnection from "./config/redis.js";
 import { getAuthConfig } from "./config/auth.js";
 import { assertDigiLockerSignaturePolicy } from "./modules/kyc/document-verification/digilocker/digilocker.signatureConfig.js";
 import { assertIdentityEncryptionConfiguration } from "./modules/kyc/document-verification/identity-data/identityData.crypto.js";
+import "./modules/kyc/document-verification/registerHandlers.js";
 
 async function start() {
   try {

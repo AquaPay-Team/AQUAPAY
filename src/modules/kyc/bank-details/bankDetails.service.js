@@ -160,6 +160,18 @@ async function saveBankDetails(userId, bankDetails) {
 
     await connection.commit();
 
+    const step4Completed = await bankDetailsModel.completeStep4(
+      connection,
+      kycCase.id,
+    );
+    if (!step4Completed) {
+      throw new Error("KYC Step 4 completion update failed");
+    }
+    const stepsCompleted = await bankDetailsModel.updateCompletedStepsCount(
+      connection,
+      kycCase.id,
+    );
+
     return {
       id: accountId,
       accountHolderName: bankDetails.accountHolderName,
@@ -168,6 +180,7 @@ async function saveBankDetails(userId, bankDetails) {
       accountNumberLast4,
       verificationStatus: "pending",
       stepNumber: BANK_DETAILS_STEP,
+      steps_completed: stepsCompleted,
       message: "Bank details saved. Verification is pending.",
     };
   } catch (error) {

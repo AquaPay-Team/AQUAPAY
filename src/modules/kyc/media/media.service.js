@@ -317,6 +317,15 @@ async function uploadMedia(userId, assetType, file) {
     await connection.commit();
     databaseSaved = true;
 
+    const step5Completed = await mediaModel.completeStep5(connection, caseId);
+    if (!step5Completed) {
+      throw new Error("KYC Step 5 completion update failed");
+    }
+    const stepsCompleted = await mediaModel.updateCompletedStepsCount(
+      connection,
+      caseId,
+    );
+
     return {
       id: mediaId,
       assetType,
@@ -324,6 +333,7 @@ async function uploadMedia(userId, assetType, file) {
       mimeType: file.detectedMimeType,
       fileSizeBytes: file.size,
       status: "uploaded",
+      steps_completed: stepsCompleted,
     };
   } catch (error) {
     rollback = true;

@@ -17,9 +17,7 @@ function serviceUnavailable() {
   );
 }
 
-function logDevelopmentFailure(operation, error) {
-  if (process.env.NODE_ENV !== "development") return;
-
+function logKycFailure(operation, error) {
   const details = {};
   if (typeof error?.code === "string" && /^[A-Z0-9_]+$/.test(error.code)) {
     details.code = error.code;
@@ -34,6 +32,7 @@ function logDevelopmentFailure(operation, error) {
 
   console.error(`[AquaPay KYC] ${operation} failed`, details);
 }
+const logDevelopmentFailure = logKycFailure;
 
 function invalidOtp() {
   return new ApiError(
@@ -229,7 +228,8 @@ async function requestStep1Otp(userId, ipAddress) {
   let connection;
   try {
     connection = await basicDetailsModel.getConnection();
-  } catch {
+  } catch (error) {
+    logKycFailure("Step 1 OTP database connection", error);
     throw serviceUnavailable();
   }
 
@@ -289,6 +289,7 @@ async function requestStep1Otp(userId, ipAddress) {
       }).catch(() => {});
     }
     if (error instanceof ApiError) throw error;
+    logKycFailure("Step 1 OTP request", error);
     throw serviceUnavailable();
   } finally {
     if (connection) await releaseConnection(connection);
@@ -308,7 +309,8 @@ async function verifyStep1Otp(userId, otp, ipAddress) {
   let connection;
   try {
     connection = await basicDetailsModel.getConnection();
-  } catch {
+  } catch (error) {
+    logKycFailure("Step 1 OTP verification database connection", error);
     throw serviceUnavailable();
   }
 
@@ -383,6 +385,7 @@ async function verifyStep1Otp(userId, otp, ipAddress) {
 
     if (committed && result) return result;
     if (error instanceof ApiError) throw error;
+    logKycFailure("Step 1 OTP verification", error);
     throw serviceUnavailable();
   } finally {
     if (connection) await releaseConnection(connection);
@@ -402,7 +405,7 @@ async function saveBasicDetails(userId, { businessType, shopAddress, city, pinco
   try {
     connection = await basicDetailsModel.getConnection();
   } catch (error) {
-    logDevelopmentFailure("Basic Details database connection", error);
+    logKycFailure("Basic Details database connection", error);
     throw serviceUnavailable();
   }
 
@@ -510,12 +513,13 @@ async function saveBasicDetails(userId, { businessType, shopAddress, city, pinco
       },
     };
   } catch (error) {
-    await connection.rollback().catch(() => {});
+    await releaseConnection(connection, true);
+    connection = null;
     if (error instanceof ApiError) throw error;
-    logDevelopmentFailure("Basic Details save", error);
+    logKycFailure("Basic Details save", error);
     throw serviceUnavailable();
   } finally {
-    connection.release();
+    if (connection) await releaseConnection(connection);
   }
 }
 

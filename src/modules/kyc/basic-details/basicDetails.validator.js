@@ -49,7 +49,9 @@ function validateBasicDetails(req, res, next) {
   if (!city) errors.push("City is required");
   else if (city.length > 100) errors.push("City must not exceed 100 characters");
 
-  if (!isValidPincode(pincode)) {
+  if (!pincode) {
+    errors.push("Pincode is required");
+  } else if (!isValidPincode(pincode)) {
     errors.push("Pincode must be a valid 6-digit postal code");
   }
 
@@ -70,7 +72,10 @@ function validateBasicDetails(req, res, next) {
 
 function validateKycOtpRequest(req, res, next) {
   const body = req.body;
-  if (!body || typeof body !== "object" || Array.isArray(body)) {
+  if (body === undefined || body === null || body === "") {
+    return next();
+  }
+  if (typeof body !== "object" || Array.isArray(body)) {
     return next(
       new ApiError(
         httpStatus.BAD_REQUEST,

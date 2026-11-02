@@ -8,6 +8,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import pool from "../../config/db.js";
 import authModel from "./auth.model.js";
+import authController from "./auth.controller.js";
 import authService from "./auth.service.js";
 import recoveryDelivery from "./recoveryDelivery.js";
 import app from "../../app.js";
@@ -95,8 +96,11 @@ test("validators reject missing, oversized, and unexpected input", () => {
     "VALIDATION_ERROR",
   );
   assert.equal(
-    validate(validateResetPassword, { token: "bad", password: "short" }).error
-      .code,
+    validate(validateResetPassword, {
+      token: "bad",
+      otp: "12345x",
+      password: "short",
+    }).error.code,
     "VALIDATION_ERROR",
   );
 });
@@ -501,9 +505,11 @@ test("health and auth endpoints respond with the documented authorization and sa
 });
 
 test("forgot password stays generic and stores no token without an approved provider", async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
   const originalConfigured = recoveryDelivery.isConfigured;
   const originalFind = authModel.findUserByIdentifier;
   const originalCreate = authModel.createPasswordReset;
+  process.env.NODE_ENV = "test";
   recoveryDelivery.isConfigured = () => false;
   authModel.findUserByIdentifier = async () => {
     throw new Error("must not enumerate accounts");
@@ -519,13 +525,15 @@ test("forgot password stays generic and stores no token without an approved prov
     assert.match(result.message, /If the account exists/);
     assert.equal(JSON.stringify(result).includes("token"), false);
   } finally {
+    process.env.NODE_ENV = previousNodeEnv;
     recoveryDelivery.isConfigured = originalConfigured;
     authModel.findUserByIdentifier = originalFind;
     authModel.createPasswordReset = originalCreate;
   }
 });
 
-test("configured recovery stores only a hash and returns the same generic response", async () => {
+test("configured recovery stores token and OTP hashes and returns a generic response", async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
   const originalConfigured = recoveryDelivery.isConfigured;
   const originalSend = recoveryDelivery.sendPasswordReset;
   const originalFind = authModel.findUserByIdentifier;
@@ -542,6 +550,7 @@ test("configured recovery stores only a hash and returns the same generic respon
     return new Date();
   };
   try {
+        process.env.NODE_ENV = "test";
     const result = await authService.forgotPassword({
       identifier: "user@example.com",
       type: "email",
@@ -551,8 +560,18 @@ test("configured recovery stores only a hash and returns the same generic respon
       stored.tokenHash,
       crypto.createHash("sha256").update(delivered.token).digest("hex"),
     );
+    assert.equal(
+      stored.otpHash,
+      crypto.createHmac("sha256", getAuthConfig().secret)
+        .update(`aquapay:password-reset:otp:${delivered.token}:${delivered.otp}`)
+        .digest("hex"),
+    );
+    assert.equal(stored.otpTtlMinutes, 5);
+    assert.match(delivered.otp, /^\d{6}$/);
     assert.equal(JSON.stringify(result).includes(delivered.token), false);
+    assert.equal(JSON.stringify(result).includes(delivered.otp), false);
   } finally {
+    process.env.NODE_ENV = previousNodeEnv;
     recoveryDelivery.isConfigured = originalConfigured;
     recoveryDelivery.sendPasswordReset = originalSend;
     authModel.findUserByIdentifier = originalFind;
@@ -560,24 +579,230 @@ test("configured recovery stores only a hash and returns the same generic respon
   }
 });
 
+test("development recovery returns only the reset token and logs only the OTP", async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const originalFind = authModel.findUserByIdentifier;
+  const originalCreate = authModel.createPasswordReset;
+  const originalInfo = console.info;
+  const terminal = [];
+  let stored;
+  process.env.NODE_ENV = "development";
+  authModel.findUserByIdentifier = async () => activeUser();
+  authModel.createPasswordReset = async (values) => {
+    stored = values;
+    return new Date();
+  };
+  console.info = (message) => terminal.push(message);
+
+  try {
+    const result = await authService.forgotPassword({
+      identifier: "user@example.com",
+      type: "email",
+    });
+
+    assert.match(result.developmentResetToken, /^[A-Za-z0-9_-]{43}$/);
+    assert.equal(Object.hasOwn(result, "otp"), false);
+    assert.equal(terminal.length, 1);
+    assert.match(terminal[0], /^\[AquaPay DEVELOPMENT OTP\] \d{6}$/);
+    const otp = terminal[0].slice(-6);
+    assert.equal(
+      stored.tokenHash,
+      crypto.createHash("sha256").update(result.developmentResetToken).digest("hex"),
+    );
+    assert.equal(
+      stored.otpHash,
+      crypto.createHmac("sha256", getAuthConfig().secret)
+        .update(`aquapay:password-reset:otp:${result.developmentResetToken}:${otp}`)
+        .digest("hex"),
+    );
+    assert.equal(JSON.stringify(result).includes(otp), false);
+    assert.equal(terminal.join(" ").includes(result.developmentResetToken), false);
+  } finally {
+    process.env.NODE_ENV = previousNodeEnv;
+    authModel.findUserByIdentifier = originalFind;
+    authModel.createPasswordReset = originalCreate;
+    console.info = originalInfo;
+  }
+});
+
+test("unknown development account gets the generic response shape without OTP output or storage", async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const originalFind = authModel.findUserByIdentifier;
+  const originalCreate = authModel.createPasswordReset;
+  const originalInfo = console.info;
+  const terminal = [];
+  process.env.NODE_ENV = "development";
+  authModel.findUserByIdentifier = async () => null;
+  authModel.createPasswordReset = async () => {
+    throw new Error("unknown accounts must not create credentials");
+  };
+  console.info = (message) => terminal.push(message);
+
+  try {
+    const result = await authService.forgotPassword({
+      identifier: "nobody@example.com",
+      type: "email",
+    });
+    assert.match(result.message, /If the account exists/);
+    assert.match(result.developmentResetToken, /^[A-Za-z0-9_-]{43}$/);
+    assert.deepEqual(terminal, []);
+  } finally {
+    process.env.NODE_ENV = previousNodeEnv;
+    authModel.findUserByIdentifier = originalFind;
+    authModel.createPasswordReset = originalCreate;
+    console.info = originalInfo;
+  }
+});
+
+test("production recovery delivers credentials without returning or logging either one", async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const originalConfigured = recoveryDelivery.isConfigured;
+  const originalSend = recoveryDelivery.sendPasswordReset;
+  const originalFind = authModel.findUserByIdentifier;
+  const originalCreate = authModel.createPasswordReset;
+  const originalInfo = console.info;
+  const terminal = [];
+  let delivered;
+  process.env.NODE_ENV = "production";
+  recoveryDelivery.isConfigured = () => true;
+  recoveryDelivery.sendPasswordReset = async (payload) => { delivered = payload; };
+  authModel.findUserByIdentifier = async () => activeUser();
+  authModel.createPasswordReset = async () => new Date();
+  console.info = (message) => terminal.push(message);
+
+  try {
+    const result = await authService.forgotPassword({
+      identifier: "user@example.com",
+      type: "email",
+    });
+    assert.equal(Object.hasOwn(result, "developmentResetToken"), false);
+    assert.equal(JSON.stringify(result).includes(delivered.token), false);
+    assert.equal(JSON.stringify(result).includes(delivered.otp), false);
+    assert.deepEqual(terminal, []);
+    assert.match(delivered.token, /^[A-Za-z0-9_-]{43}$/);
+    assert.match(delivered.otp, /^\d{6}$/);
+  } finally {
+    process.env.NODE_ENV = previousNodeEnv;
+    recoveryDelivery.isConfigured = originalConfigured;
+    recoveryDelivery.sendPasswordReset = originalSend;
+    authModel.findUserByIdentifier = originalFind;
+    authModel.createPasswordReset = originalCreate;
+    console.info = originalInfo;
+  }
+});
+
+test("production recovery delivery requires secure provider URLs and never logs credentials", async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousEndpoint = process.env.AUTH_RECOVERY_EMAIL_URL;
+  const previousApiKey = process.env.AUTH_RECOVERY_EMAIL_API_KEY;
+  const previousBaseUrl = process.env.AUTH_RECOVERY_BASE_URL;
+  const originalFetch = globalThis.fetch;
+  const originalInfo = console.info;
+  const terminal = [];
+  let request;
+  process.env.NODE_ENV = "production";
+  process.env.AUTH_RECOVERY_EMAIL_URL = "https://recovery.example.test/send";
+  process.env.AUTH_RECOVERY_EMAIL_API_KEY = "test-provider-key";
+  process.env.AUTH_RECOVERY_BASE_URL = "https://app.example.test";
+  globalThis.fetch = async (url, options) => {
+    request = { url, options };
+    return { ok: true };
+  };
+  console.info = (...args) => terminal.push(args);
+
+  try {
+    await recoveryDelivery.sendPasswordReset({
+      destination: "user@example.com",
+      type: "email",
+      token: "test-reset-token",
+      otp: "000001",
+    });
+    assert.equal(request.url, process.env.AUTH_RECOVERY_EMAIL_URL);
+    assert.match(request.options.headers.authorization, /^Bearer /);
+    assert.match(request.options.body, /test-reset-token/);
+    assert.match(request.options.body, /000001/);
+    assert.deepEqual(terminal, []);
+
+    process.env.AUTH_RECOVERY_EMAIL_URL = "http://recovery.example.test/send";
+    assert.equal(recoveryDelivery.isConfigured("email"), false);
+  } finally {
+    process.env.NODE_ENV = previousNodeEnv;
+    if (previousEndpoint === undefined) delete process.env.AUTH_RECOVERY_EMAIL_URL;
+    else process.env.AUTH_RECOVERY_EMAIL_URL = previousEndpoint;
+    if (previousApiKey === undefined) delete process.env.AUTH_RECOVERY_EMAIL_API_KEY;
+    else process.env.AUTH_RECOVERY_EMAIL_API_KEY = previousApiKey;
+    if (previousBaseUrl === undefined) delete process.env.AUTH_RECOVERY_BASE_URL;
+    else process.env.AUTH_RECOVERY_BASE_URL = previousBaseUrl;
+    globalThis.fetch = originalFetch;
+    console.info = originalInfo;
+  }
+});
+
+test("forgot-password controller exposes the reset token only in development", async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const originalForgotPassword = authService.forgotPassword;
+  authService.forgotPassword = async () => ({
+    message: "If the account exists, instructions will be sent.",
+    developmentResetToken: "A".repeat(43),
+  });
+  const invokeController = async () => {
+    const response = {
+      status(statusCode) {
+        this.statusCode = statusCode;
+        return this;
+      },
+      json(body) {
+        this.body = body;
+        return this;
+      },
+    };
+    await authController.forgotPassword({ validatedBody: {} }, response, (error) => {
+      throw error;
+    });
+    return response;
+  };
+
+  try {
+    process.env.NODE_ENV = "development";
+    const developmentResponse = await invokeController();
+    assert.equal(developmentResponse.body.data.resetToken, "A".repeat(43));
+
+    process.env.NODE_ENV = "production";
+    const productionResponse = await invokeController();
+    assert.equal(productionResponse.body.data, null);
+    assert.equal(JSON.stringify(productionResponse.body).includes("A".repeat(43)), false);
+  } finally {
+    process.env.NODE_ENV = previousNodeEnv;
+    authService.forgotPassword = originalForgotPassword;
+  }
+});
+
 test("reset validates before hashing and only one concurrent request consumes a token", async () => {
-  const originalValid = authModel.hasValidPasswordReset;
+  const originalCheck = authModel.checkPasswordResetCredentials;
   const originalConsume = authModel.consumePasswordReset;
+  const originalFindUser = authModel.findUserByIdentifier;
   const originalSendChanged = recoveryDelivery.sendPasswordChanged;
   const originalConfigured = recoveryDelivery.isConfigured;
   recoveryDelivery.isConfigured = () => false;
   const token = crypto.randomBytes(32).toString("base64url");
   const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+  const otp = "123456";
   let used = false;
-  authModel.hasValidPasswordReset = async (hash) => hash === tokenHash;
+  let currentPasswordHash = await bcrypt.hash("old-password", 4);
+  authModel.findUserByIdentifier = async () =>
+    activeUser({ password_hash: currentPasswordHash });
+  authModel.checkPasswordResetCredentials = async ({ tokenHash: hash }) => hash === tokenHash;
   authModel.consumePasswordReset = async ({
     tokenHash: hash,
+    otpHash,
     passwordHash,
   }) => {
     assert.equal(hash, tokenHash);
+    assert.equal(otpHash.length, 64);
     if (used) return null;
     used = true;
     assert.equal(await bcrypt.compare("new-password", passwordHash), true);
+    currentPasswordHash = passwordHash;
     return { email: "user@example.com", mobile: "+14155552671" };
   };
   try {
@@ -589,8 +814,8 @@ test("reset validates before hashing and only one concurrent request consumes a 
     };
     try {
       const results = await Promise.allSettled([
-        authService.resetPassword({ token, password: "new-password" }),
-        authService.resetPassword({ token, password: "new-password" }),
+        authService.resetPassword({ token, otp, password: "new-password" }),
+        authService.resetPassword({ token, otp, password: "new-password" }),
       ]);
       assert.equal(
         results.filter((result) => result.status === "fulfilled").length,
@@ -600,7 +825,7 @@ test("reset validates before hashing and only one concurrent request consumes a 
         results.filter(
           (result) =>
             result.status === "rejected" &&
-            result.reason.code === "INVALID_RESET_TOKEN",
+            result.reason.code === "INVALID_RESET_CREDENTIALS",
         ).length,
         1,
       );
@@ -609,7 +834,22 @@ test("reset validates before hashing and only one concurrent request consumes a 
       bcrypt.hash = originalHash;
     }
 
-    authModel.hasValidPasswordReset = async () => false;
+    const loginResult = await authService.login({
+      identifier: "user@example.com",
+      type: "email",
+      password: "new-password",
+    });
+    assert.equal(loginResult.user.id, "42");
+    await assert.rejects(
+      authService.login({
+        identifier: "user@example.com",
+        type: "email",
+        password: "old-password",
+      }),
+      { code: "INVALID_CREDENTIALS" },
+    );
+
+    authModel.checkPasswordResetCredentials = async () => false;
     let shouldNotHash = true;
     const oldHash = bcrypt.hash;
     bcrypt.hash = async () => {
@@ -618,27 +858,28 @@ test("reset validates before hashing and only one concurrent request consumes a 
     };
     try {
       await assert.rejects(
-        authService.resetPassword({ token, password: "new-password" }),
-        { code: "INVALID_RESET_TOKEN" },
+        authService.resetPassword({ token, otp, password: "new-password" }),
+        { code: "INVALID_RESET_CREDENTIALS" },
       );
       assert.equal(shouldNotHash, true);
     } finally {
       bcrypt.hash = oldHash;
     }
   } finally {
-    authModel.hasValidPasswordReset = originalValid;
+    authModel.checkPasswordResetCredentials = originalCheck;
     authModel.consumePasswordReset = originalConsume;
+    authModel.findUserByIdentifier = originalFindUser;
     recoveryDelivery.sendPasswordChanged = originalSendChanged;
     recoveryDelivery.isConfigured = originalConfigured;
   }
 });
 
 test("expired recovery tokens are rejected before password hashing", async () => {
-  const originalValid = authModel.hasValidPasswordReset;
+  const originalCheck = authModel.checkPasswordResetCredentials;
   const originalHash = bcrypt.hash;
   const expiredToken = crypto.randomBytes(32).toString("base64url");
   let hashCalled = false;
-  authModel.hasValidPasswordReset = async () => false;
+  authModel.checkPasswordResetCredentials = async () => false;
   bcrypt.hash = async () => {
     hashCalled = true;
     throw new Error("must not hash an expired token");
@@ -647,14 +888,95 @@ test("expired recovery tokens are rejected before password hashing", async () =>
     await assert.rejects(
       authService.resetPassword({
         token: expiredToken,
+        otp: "123456",
         password: "new-password",
       }),
-      { code: "INVALID_RESET_TOKEN" },
+      { code: "INVALID_RESET_CREDENTIALS" },
     );
     assert.equal(hashCalled, false);
   } finally {
-    authModel.hasValidPasswordReset = originalValid;
+    authModel.checkPasswordResetCredentials = originalCheck;
     bcrypt.hash = originalHash;
+  }
+});
+
+test("password-reset OTP failures increment a token-scoped counter and stop at five", async () => {
+  const originalGetConnection = pool.getConnection;
+  const tokenHash = "a".repeat(64);
+  const otpHash = "b".repeat(64);
+  const wrongOtpHash = "c".repeat(64);
+  const attemptBucketHash = "d".repeat(64);
+  let active = true;
+  let attempts = 0;
+  let commits = 0;
+  let releases = 0;
+
+  pool.getConnection = async () => ({
+    async beginTransaction() {},
+    async execute(sql, params) {
+      if (sql.includes("SELECT user_id")) return [[{ user_id: 42 }], []];
+      if (sql.startsWith("SELECT id FROM users")) return [[{ id: 42 }], []];
+      if (sql.includes("SELECT id, user_id, expires_at")) {
+        return active && params[0] === tokenHash
+          ? [[{ id: 10, user_id: 42, expires_at: new Date(Date.now() + 60000) }], []]
+          : [[], []];
+      }
+      if (sql.includes("SELECT request_count")) {
+        return attempts > 0 ? [[{ request_count: attempts }], []] : [[], []];
+      }
+      if (sql.includes("SELECT id, token_hash")) {
+        return active ? [[{ id: 11, token_hash: otpHash }], []] : [[], []];
+      }
+      if (sql.startsWith("INSERT INTO auth_rate_limits")) {
+        assert.equal(params[0], attemptBucketHash);
+        attempts += 1;
+        return [{ affectedRows: 1 }, []];
+      }
+      if (sql.startsWith("UPDATE auth_password_reset_tokens")) {
+        active = false;
+        return [{ affectedRows: 2 }, []];
+      }
+      throw new Error(`Unexpected SQL in OTP attempt test: ${sql}`);
+    },
+    async commit() { commits += 1; },
+    async rollback() { throw new Error("Unexpected rollback"); },
+    release() { releases += 1; },
+  });
+
+  try {
+    assert.equal(
+      await authModel.checkPasswordResetCredentials({
+        tokenHash,
+        otpHash,
+        attemptBucketHash,
+      }),
+      true,
+    );
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      assert.equal(
+        await authModel.checkPasswordResetCredentials({
+          tokenHash,
+          otpHash: wrongOtpHash,
+          attemptBucketHash,
+        }),
+        false,
+      );
+    }
+    assert.equal(attempts, 5);
+    assert.equal(active, false);
+    assert.equal(
+      await authModel.checkPasswordResetCredentials({
+        tokenHash,
+        otpHash,
+        attemptBucketHash,
+      }),
+      false,
+    );
+    assert.equal(attempts, 5);
+    assert.equal(commits, 7);
+    assert.equal(releases, 7);
+  } finally {
+    pool.getConnection = originalGetConnection;
   }
 });
 
@@ -685,7 +1007,9 @@ test("password-reset transaction failures roll back and release the connection",
       authModel.createPasswordReset({
         userId: 42,
         tokenHash: "a".repeat(64),
+        otpHash: "b".repeat(64),
         ttlMinutes: 15,
+        otpTtlMinutes: 5,
       }),
     );
     assert.deepEqual(calls, [

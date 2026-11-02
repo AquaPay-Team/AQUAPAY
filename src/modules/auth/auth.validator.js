@@ -59,14 +59,17 @@ function validateResetPassword(req, res, next) {
   if (typeof body.token !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(body.token)) {
     errors.push("A valid password reset token is required");
   }
+  if (typeof body.otp !== "string" || !/^\d{6}$/.test(body.otp)) {
+    errors.push("A valid 6-digit OTP is required");
+  }
   if (typeof body.password !== "string" || body.password.length < config.passwordMinLength) {
     errors.push(`Password must contain at least ${config.passwordMinLength} characters`);
   } else if (Buffer.byteLength(body.password, "utf8") > 72) {
     errors.push("Password must not exceed 72 bytes");
   }
-  if (rejectUnknownKeys(body, ["token", "password"])) errors.push("Unexpected request field");
+  if (rejectUnknownKeys(body, ["token", "otp", "password"])) errors.push("Unexpected request field");
   if (errors.length) return next(new ApiError(400, errors.join(", "), "VALIDATION_ERROR"));
-  req.validatedBody = { token: body.token, password: body.password };
+  req.validatedBody = { token: body.token, otp: body.otp, password: body.password };
   return next();
 }
 

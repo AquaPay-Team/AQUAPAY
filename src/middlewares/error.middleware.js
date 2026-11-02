@@ -14,26 +14,30 @@ function errorHandler(err, req, res, next) {
 
   const isClientError =
     Number.isInteger(status) && status >= 400 && status < 500;
+  const isServiceUnavailable =
+    status === 503 && err.code === "SERVICE_UNAVAILABLE";
 
-  const statusCode = isClientError ? status : 500;
+  const statusCode = isClientError ? status : isServiceUnavailable ? 503 : 500;
 
   const message =
     err.type === "entity.parse.failed"
       ? "Invalid request body"
       : isClientError
         ? err.message || "Request failed"
-        : "Internal server error";
+        : isServiceUnavailable
+          ? "Service temporarily unavailable"
+          : "Internal server error";
 
-    if (!isClientError) {
-      console.error("Request failed with server error");
-    }
+  if (!isClientError) {
+    console.error("Request failed with server error");
+  }
 
   const response = {
     success: false,
     message,
   };
 
-  if (isClientError && typeof err.code === "string") {
+  if ((isClientError || isServiceUnavailable) && typeof err.code === "string") {
     response.code = err.code;
   }
 

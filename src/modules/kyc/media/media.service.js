@@ -1,4 +1,4 @@
-import crypto from "node:crypto";
+﻿import crypto from "node:crypto";
 // import mediaModel from "./media.model.js";
 import * as mediaModel from "./media.model.js";
 import getCloudinary from "../../../config/cloudinary.js";
@@ -314,17 +314,25 @@ async function uploadMedia(userId, assetType, file) {
       fileSizeBytes: file.size,
     });
 
-    await connection.commit();
-    databaseSaved = true;
-
-    const step5Completed = await mediaModel.completeStep5(connection, caseId);
-    if (!step5Completed) {
-      throw new Error("KYC Step 5 completion update failed");
-    }
-    const stepsCompleted = await mediaModel.updateCompletedStepsCount(
+    // Count distinct asset types uploaded so far (including the one just inserted).
+    // Step 5 is only marked complete when all three required types are present.
+    const REQUIRED_ASSET_TYPE_COUNT = Object.keys(MEDIA_RULES).length; // 3
+    const uploadedTypeCount = await mediaModel.countUploadedAssetTypes(
       connection,
       caseId,
     );
+
+    let stepsCompleted = null;
+    if (uploadedTypeCount >= REQUIRED_ASSET_TYPE_COUNT) {
+      await mediaModel.completeStep5(connection, caseId);
+      stepsCompleted = await mediaModel.updateCompletedStepsCount(
+        connection,
+        caseId,
+      );
+    }
+
+    await connection.commit();
+    databaseSaved = true;
 
     return {
       id: mediaId,
@@ -333,7 +341,8 @@ async function uploadMedia(userId, assetType, file) {
       mimeType: file.detectedMimeType,
       fileSizeBytes: file.size,
       status: "uploaded",
-      steps_completed: stepsCompleted,
+      allUploadsComplete: uploadedTypeCount >= REQUIRED_ASSET_TYPE_COUNT,
+      ...(stepsCompleted !== null ? { steps_completed: stepsCompleted } : {}),
     };
   } catch (error) {
     rollback = true;

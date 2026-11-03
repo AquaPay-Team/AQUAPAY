@@ -237,7 +237,7 @@ test("initiateAuthorization rejects when consent is not true", async () => {
 test("initiateAuthorization creates pending verification and authorization state", async () => {
   const counters = mockModel();
   const stateStore = {
-    createAuthorizationState: async () => ({ state: "abc123def456ghi789jkl012mno345pqr678stu901", expiresIn: 600 }),
+    createAuthorizationState: async () => ({ state: "abc123def456ghi789jkl012mno345pqr678stu9012", expiresIn: 600 }),
     consumeAuthorizationState: async () => null,
     discardAuthorizationState: async () => true,
   };
@@ -301,7 +301,7 @@ test("completeCallback consumes state only once (single-use)", async () => {
   };
   const consumeResultRef = { consumeResult };
   const stateStore = {
-    createAuthorizationState: async () => ({ state: "abc123def456ghi789jkl012mno345pqr678stu901", expiresIn: 600 }),
+    createAuthorizationState: async () => ({ state: "abc123def456ghi789jkl012mno345pqr678stu9012", expiresIn: 600 }),
     consumeAuthorizationState: async (s) => {
       consumeResultRef.calls = (consumeResultRef.calls || 0) + 1;
       return consumeResultRef.consumeResult;

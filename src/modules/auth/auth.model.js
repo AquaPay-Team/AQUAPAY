@@ -1,4 +1,4 @@
-import crypto from "node:crypto";
+﻿import crypto from "node:crypto";
 import pool from "../../config/db.js";
 
 const SAFE_USER_FIELDS = `u.id, u.name AS name, u.email, u.mobile,
@@ -30,7 +30,17 @@ async function findActiveUserById(userId) {
        k.id AS kyc_case_id,
        k.status AS kyc_status,
        k.steps_completed AS kyc_steps_completed,
-       k.business_type AS kyc_business_type
+       k.business_type AS kyc_business_type,
+       (
+         SELECT GROUP_CONCAT(ks.step_number ORDER BY ks.step_number ASC)
+           FROM kyc_steps ks
+          WHERE ks.case_id = k.id AND ks.status = 'completed'
+       ) AS kyc_completed_steps_csv,
+       (
+         SELECT MIN(ks2.step_number)
+           FROM kyc_steps ks2
+          WHERE ks2.case_id = k.id AND ks2.status <> 'completed'
+       ) AS kyc_current_step
      FROM users u
      JOIN roles r ON r.id = u.role_id
      LEFT JOIN companies c ON c.id = u.company_id
@@ -48,8 +58,14 @@ async function findActiveUserById(userId) {
     kyc_status,
     kyc_steps_completed,
     kyc_business_type,
+    kyc_completed_steps_csv,
+    kyc_current_step,
     ...user
   } = row;
+
+  const completedSteps = kyc_completed_steps_csv
+    ? kyc_completed_steps_csv.split(',').map(Number)
+    : [];
 
   return {
     ...user,
@@ -58,6 +74,8 @@ async function findActiveUserById(userId) {
           status: kyc_status,
           steps_completed: kyc_steps_completed,
           business_type: kyc_business_type,
+          completedSteps,
+          currentStep: kyc_current_step ?? null,
         }
       : null,
   };

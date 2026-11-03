@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "AquaPay Complete API Test Suite (Phase 2 KYC & Auth)",
-    "description": "Comprehensive Postman collection for the AquaPay Backend API. Includes Health, Admin, Auth, Users, and all 7 KYC Steps with dynamic tokens and auto-chained variables.",
+    "description": "Comprehensive, ordered Postman collection for the AquaPay Backend API. Follows the exact operational onboarding sequence:\n1. SuperAdmin Account Creation & Admin Login (captures adminToken)\n2. Admin creates Retailer Agent Rohan Sharma (captures agentUserId)\n3. Agent Rohan Sharma logs in (captures userToken)\n4. Agent completes all 7 KYC Steps in strict sequence with automatic token chaining.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -11,29 +11,79 @@
       "type": "string"
     },
     {
-      "key": "userToken",
-      "value": "",
-      "type": "string"
-    },
-    {
       "key": "adminSetupKey",
       "value": "aquapay_admin_setup_secret_key_2026",
       "type": "string"
     },
     {
-      "key": "userId",
+      "key": "adminEmail",
+      "value": "admin@aquapay.com",
+      "type": "string"
+    },
+    {
+      "key": "adminMobile",
+      "value": "+919876543210",
+      "type": "string"
+    },
+    {
+      "key": "adminPassword",
+      "value": "AdminPassword@123",
+      "type": "string"
+    },
+    {
+      "key": "adminToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "agentName",
+      "value": "Rohan Sharma",
+      "type": "string"
+    },
+    {
+      "key": "agentEmail",
+      "value": "rohan.sharma@example.com",
+      "type": "string"
+    },
+    {
+      "key": "agentMobile",
+      "value": "+919811122233",
+      "type": "string"
+    },
+    {
+      "key": "agentPassword",
+      "value": "SecureUser@123",
+      "type": "string"
+    },
+    {
+      "key": "agentUserId",
       "value": "1",
       "type": "string"
     },
     {
-      "key": "digilockerState",
+      "key": "userToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "digilockerAadhaarState",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "digilockerPanState",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "resetToken",
       "value": "",
       "type": "string"
     }
   ],
   "item": [
     {
-      "name": "1. System Health",
+      "name": "01. System Health",
       "item": [
         {
           "name": "GET System Health Check",
@@ -50,10 +100,24 @@
       ]
     },
     {
-      "name": "2. Admin Management",
+      "name": "02. SuperAdmin Setup & Admin Login",
       "item": [
         {
-          "name": "POST Create SuperAdmin Account",
+          "name": "POST 1. Create SuperAdmin Account",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (pm.response.code === 201 || pm.response.code === 409) {",
+                  "    console.log(\"SuperAdmin account ready for login.\");",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [
@@ -68,7 +132,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"System SuperAdmin\",\n  \"email\": \"admin@aquapay.com\",\n  \"mobile\": \"+919876543210\",\n  \"companyName\": \"AquaPay Fintech Solutions Private Limited\",\n  \"password\": \"AdminPassword@123\"\n}",
+              "raw": "{\n  \"name\": \"System SuperAdmin\",\n  \"email\": \"{{adminEmail}}\",\n  \"mobile\": \"{{adminMobile}}\",\n  \"companyName\": \"AquaPay Fintech Solutions Private Limited\",\n  \"password\": \"{{adminPassword}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -81,14 +145,9 @@
               "path": ["api", "admin", "create"]
             }
           }
-        }
-      ]
-    },
-    {
-      "name": "3. Authentication Module",
-      "item": [
+        },
         {
-          "name": "POST Login (Auto-captures userToken)",
+          "name": "POST 2. SuperAdmin Login (Captures adminToken)",
           "event": [
             {
               "listen": "test",
@@ -96,8 +155,8 @@
                 "exec": [
                   "const res = pm.response.json();",
                   "if (res.data && res.data.accessToken) {",
-                  "    pm.collectionVariables.set(\"userToken\", res.data.accessToken);",
-                  "    console.log(\"Saved userToken to collection variables\");",
+                  "    pm.collectionVariables.set(\"adminToken\", res.data.accessToken);",
+                  "    console.log(\"Admin Token successfully captured into collection variables!\");",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -114,7 +173,172 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"identifier\": \"rohan.sharma@example.com\",\n  \"password\": \"SecureUser@123\"\n}"
+              "raw": "{\n  \"identifier\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "03. User Management (Admin creates Agent)",
+      "item": [
+        {
+          "name": "POST 1. Create Retailer Agent (Captures agentUserId)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.data && res.data.id) {",
+                  "    pm.collectionVariables.set(\"agentUserId\", res.data.id.toString());",
+                  "    console.log(\"Agent user created with ID:\", res.data.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{agentName}}\",\n  \"email\": \"{{agentEmail}}\",\n  \"mobile\": \"{{agentMobile}}\",\n  \"password\": \"{{agentPassword}}\",\n  \"role_id\": 8,\n  \"shopname\": \"Rohan Digital Kendra\",\n  \"address\": \"Shop 12, Main Bazar\",\n  \"state\": \"Delhi\",\n  \"city\": \"New Delhi\",\n  \"pincode\": \"110001\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/users",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users"]
+            }
+          }
+        },
+        {
+          "name": "GET 2. List All Users (Admin Scope)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/users",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users"]
+            }
+          }
+        },
+        {
+          "name": "GET 3. Get User By ID (Admin Scope)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/{{agentUserId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users", "{{agentUserId}}"]
+            }
+          }
+        },
+        {
+          "name": "PATCH 4. Update Agent User (Admin Scope)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"shopname\": \"Rohan Payments & Telecom Store\",\n  \"address\": \"Shop 14, Commercial Center\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/users/{{agentUserId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users", "{{agentUserId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "04. Agent Authentication & Profile",
+      "item": [
+        {
+          "name": "POST 1. Agent Login (Captures userToken for KYC)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.data && res.data.accessToken) {",
+                  "    pm.collectionVariables.set(\"userToken\", res.data.accessToken);",
+                  "    console.log(\"Saved Agent userToken for all KYC steps!\");",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"{{agentEmail}}\",\n  \"password\": \"{{agentPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{baseUrl}}/api/auth/login",
@@ -124,7 +348,7 @@
           }
         },
         {
-          "name": "GET Current User & Saved KYC Step (/api/auth/me)",
+          "name": "GET 2. Current Agent Profile & Saved KYC Step (/api/auth/me)",
           "request": {
             "method": "GET",
             "header": [
@@ -141,7 +365,22 @@
           }
         },
         {
-          "name": "POST Forgot Password",
+          "name": "POST 3. Forgot Password",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.data && res.data.resetToken) {",
+                  "    pm.collectionVariables.set(\"resetToken\", res.data.resetToken);",
+                  "    console.log(\"Captured development resetToken:\", res.data.resetToken);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [
@@ -152,7 +391,12 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"identifier\": \"rohan.sharma@example.com\",\n  \"type\": \"email\"\n}"
+              "raw": "{\n  \"identifier\": \"{{agentEmail}}\",\n  \"type\": \"email\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{baseUrl}}/api/auth/forgot-password",
@@ -162,7 +406,7 @@
           }
         },
         {
-          "name": "POST Reset Password",
+          "name": "POST 4. Reset Password",
           "request": {
             "method": "POST",
             "header": [
@@ -173,7 +417,12 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"token\": \"RESET_TOKEN_RECEIVED_FROM_FORGOT_PW\",\n  \"otp\": \"123456\",\n  \"password\": \"NewPassword@1234\"\n}"
+              "raw": "{\n  \"token\": \"{{resetToken}}\",\n  \"otp\": \"123456\",\n  \"password\": \"SecureUser@123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{baseUrl}}/api/auth/reset-password",
@@ -185,96 +434,7 @@
       ]
     },
     {
-      "name": "4. Users Management",
-      "item": [
-        {
-          "name": "POST Create Agent User",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{userToken}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"Rohan Sharma\",\n  \"email\": \"rohan.sharma@example.com\",\n  \"mobile\": \"+919811122233\",\n  \"password\": \"SecureUser@123\",\n  \"role_id\": 3,\n  \"shopname\": \"Rohan Digital Kendra\",\n  \"address\": \"Shop 12, Main Bazar\",\n  \"state\": \"Delhi\",\n  \"city\": \"New Delhi\",\n  \"pincode\": \"110001\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/users",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "users"]
-            }
-          }
-        },
-        {
-          "name": "GET All Users (Admin / Scoped)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{userToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/users",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "users"]
-            }
-          }
-        },
-        {
-          "name": "GET User By ID",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{userToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/users/{{userId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "users", "{{userId}}"]
-            }
-          }
-        },
-        {
-          "name": "PATCH Update User Details",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{userToken}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"shopname\": \"Rohan Payments & Telecom Store\",\n  \"address\": \"Shop 14, Commercial Center\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/users/{{userId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "users", "{{userId}}"]
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "5. Overall KYC Status",
+      "name": "05. KYC Pipeline — Overall Status",
       "item": [
         {
           "name": "GET KYC Status & Saved Progress",
@@ -296,10 +456,10 @@
       ]
     },
     {
-      "name": "6. KYC Step 1 — Basic Details & Contact OTP",
+      "name": "06. KYC Step 1 — Basic Details & Contact OTP",
       "item": [
         {
-          "name": "PUT Save Basic Details",
+          "name": "PUT 1. Save Shop & Business Details",
           "request": {
             "method": "PUT",
             "header": [
@@ -314,7 +474,12 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"businessType\": \"Business Correspondent / Retail Banking\",\n  \"shopAddress\": \"Shop 12, Ground Floor, Central Plaza\",\n  \"city\": \"New Delhi\",\n  \"pincode\": \"110001\"\n}"
+              "raw": "{\n  \"businessType\": \"Retail Banking & Financial Services\",\n  \"shopAddress\": \"Shop 12, Ground Floor, Central Plaza\",\n  \"city\": \"New Delhi\",\n  \"pincode\": \"110001\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{baseUrl}}/api/kyc/basic-details",
@@ -324,7 +489,7 @@
           }
         },
         {
-          "name": "POST Request Step 1 Contact OTP",
+          "name": "POST 2. Request Step 1 Contact OTP",
           "request": {
             "method": "POST",
             "header": [
@@ -349,7 +514,7 @@
           }
         },
         {
-          "name": "POST Verify Step 1 Contact OTP (Completes Step 1)",
+          "name": "POST 3. Verify Step 1 Contact OTP (Completes Step 1)",
           "request": {
             "method": "POST",
             "header": [
@@ -364,7 +529,12 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"otp\": \"123456\"\n}"
+              "raw": "{\n  \"otp\": \"123456\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{baseUrl}}/api/kyc/basic-details/verify-otp",
@@ -376,10 +546,10 @@
       ]
     },
     {
-      "name": "7. KYC Step 2 — Aadhaar Document Verification",
+      "name": "07. KYC Step 2 — Aadhaar Document Verification (DigiLocker)",
       "item": [
         {
-          "name": "POST Initiate Aadhaar Verification (Auto-captures state)",
+          "name": "POST 1. Initiate Aadhaar Verification (Captures state)",
           "event": [
             {
               "listen": "test",
@@ -391,8 +561,8 @@
                   "        const parsed = new URL(res.data.authorizationUrl);",
                   "        const state = parsed.searchParams.get(\"state\");",
                   "        if (state) {",
-                  "            pm.collectionVariables.set(\"digilockerState\", state);",
-                  "            console.log(\"Captured digilockerState:\", state);",
+                  "            pm.collectionVariables.set(\"digilockerAadhaarState\", state);",
+                  "            console.log(\"Captured digilockerAadhaarState:\", state);",
                   "        }",
                   "    } catch (e) {",
                   "        console.error(\"Could not parse state from URL:\", e);",
@@ -417,7 +587,12 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"consent\": true\n}"
+              "raw": "{\n  \"consent\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{baseUrl}}/api/kyc/digilocker/aadhaar/initiate",
@@ -427,18 +602,18 @@
           }
         },
         {
-          "name": "GET DigiLocker Mock Authorize (Sandbox Simulator)",
+          "name": "GET 2. DigiLocker Mock Authorize (Sandbox Simulator)",
           "request": {
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/kyc/digilocker/mock-authorize?state={{digilockerState}}&document=ADHAR",
+              "raw": "{{baseUrl}}/api/kyc/digilocker/mock-authorize?state={{digilockerAadhaarState}}&document=ADHAR",
               "host": ["{{baseUrl}}"],
               "path": ["api", "kyc", "digilocker", "mock-authorize"],
               "query": [
                 {
                   "key": "state",
-                  "value": "{{digilockerState}}"
+                  "value": "{{digilockerAadhaarState}}"
                 },
                 {
                   "key": "document",
@@ -449,12 +624,12 @@
           }
         },
         {
-          "name": "GET DigiLocker Callback (Completes Step 2)",
+          "name": "GET 3. DigiLocker Callback for Aadhaar (Completes Step 2)",
           "request": {
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/kyc/digilocker/callback?code=aquapay-mock-adhar-v1&state={{digilockerState}}",
+              "raw": "{{baseUrl}}/api/kyc/digilocker/callback?code=aquapay-mock-adhar-v1&state={{digilockerAadhaarState}}",
               "host": ["{{baseUrl}}"],
               "path": ["api", "kyc", "digilocker", "callback"],
               "query": [
@@ -464,7 +639,7 @@
                 },
                 {
                   "key": "state",
-                  "value": "{{digilockerState}}"
+                  "value": "{{digilockerAadhaarState}}"
                 }
               ]
             }
@@ -473,10 +648,10 @@
       ]
     },
     {
-      "name": "8. KYC Step 3 — PAN Document Verification",
+      "name": "08. KYC Step 3 — PAN Document Verification (DigiLocker)",
       "item": [
         {
-          "name": "POST Initiate PAN Verification",
+          "name": "POST 1. Initiate PAN Verification (Captures state)",
           "event": [
             {
               "listen": "test",
@@ -488,10 +663,12 @@
                   "        const parsed = new URL(res.data.authorizationUrl);",
                   "        const state = parsed.searchParams.get(\"state\");",
                   "        if (state) {",
-                  "            pm.collectionVariables.set(\"digilockerState\", state);",
-                  "            console.log(\"Captured digilockerState for PAN:\", state);",
+                  "            pm.collectionVariables.set(\"digilockerPanState\", state);",
+                  "            console.log(\"Captured digilockerPanState:\", state);",
                   "        }",
-                  "    } catch (e) {}",
+                  "    } catch (e) {",
+                  "        console.error(\"Could not parse PAN state from URL:\", e);",
+                  "    }",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -512,7 +689,12 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"consent\": true\n}"
+              "raw": "{\n  \"consent\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{baseUrl}}/api/kyc/digilocker/pan/initiate",
@@ -522,12 +704,34 @@
           }
         },
         {
-          "name": "GET DigiLocker Callback for PAN (Completes Step 3)",
+          "name": "GET 2. DigiLocker Mock Authorize for PAN (Sandbox Simulator)",
           "request": {
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/kyc/digilocker/callback?code=aquapay-mock-pan-v1&state={{digilockerState}}",
+              "raw": "{{baseUrl}}/api/kyc/digilocker/mock-authorize?state={{digilockerPanState}}&document=PAN",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "kyc", "digilocker", "mock-authorize"],
+              "query": [
+                {
+                  "key": "state",
+                  "value": "{{digilockerPanState}}"
+                },
+                {
+                  "key": "document",
+                  "value": "PAN"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET 3. DigiLocker Callback for PAN (Completes Step 3)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/kyc/digilocker/callback?code=aquapay-mock-pan-v1&state={{digilockerPanState}}",
               "host": ["{{baseUrl}}"],
               "path": ["api", "kyc", "digilocker", "callback"],
               "query": [
@@ -537,7 +741,7 @@
                 },
                 {
                   "key": "state",
-                  "value": "{{digilockerState}}"
+                  "value": "{{digilockerPanState}}"
                 }
               ]
             }
@@ -546,10 +750,10 @@
       ]
     },
     {
-      "name": "9. KYC Step 4 — Bank Account Details",
+      "name": "09. KYC Step 4 — Bank Account Details",
       "item": [
         {
-          "name": "PUT Save Bank Details (Encrypted in DB, Completes Step 4)",
+          "name": "PUT 1. Save Bank Details (Encrypted in DB, Completes Step 4)",
           "request": {
             "method": "PUT",
             "header": [
@@ -564,7 +768,12 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"accountHolderName\": \"Rohan Sharma\",\n  \"accountNumber\": \"9182736450192\",\n  \"ifscCode\": \"HDFC0001234\",\n  \"bankName\": \"HDFC Bank\"\n}"
+              "raw": "{\n  \"accountHolderName\": \"Rohan Sharma\",\n  \"accountNumber\": \"9182736450192\",\n  \"ifscCode\": \"HDFC0001234\",\n  \"bankName\": \"HDFC Bank\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{baseUrl}}/api/kyc/bank-details",
@@ -574,7 +783,7 @@
           }
         },
         {
-          "name": "GET Retrieve Saved Bank Details (Masked)",
+          "name": "GET 2. Retrieve Saved Bank Details (Masked)",
           "request": {
             "method": "GET",
             "header": [
@@ -596,7 +805,7 @@
       "name": "10. KYC Step 5 — Media Uploads (Cloudinary)",
       "item": [
         {
-          "name": "POST Upload Shop Image",
+          "name": "POST 1. Upload Shop Image",
           "request": {
             "method": "POST",
             "header": [
@@ -628,7 +837,7 @@
           }
         },
         {
-          "name": "POST Upload Selfie Image",
+          "name": "POST 2. Upload Selfie Image",
           "request": {
             "method": "POST",
             "header": [
@@ -660,7 +869,7 @@
           }
         },
         {
-          "name": "POST Upload Consent Video (Completes Step 5)",
+          "name": "POST 3. Upload Consent Video (Completes Step 5)",
           "request": {
             "method": "POST",
             "header": [
@@ -697,7 +906,7 @@
       "name": "11. KYC Step 6 — Agent Agreement Acceptance",
       "item": [
         {
-          "name": "GET Agreement Clauses & Dynamic Signing Details",
+          "name": "GET 1. Read Agreement Clauses & Signing Details",
           "request": {
             "method": "GET",
             "header": [
@@ -714,7 +923,7 @@
           }
         },
         {
-          "name": "POST Accept Agent Agreement (Completes Step 6)",
+          "name": "POST 2. Accept Agent Agreement (Completes Step 6)",
           "request": {
             "method": "POST",
             "header": [
@@ -729,7 +938,12 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"accepted\": true,\n  \"agreementCode\": \"AQUAPAY_AGENT_AGREEMENT\",\n  \"agreementVersion\": \"v1.0\"\n}"
+              "raw": "{\n  \"accepted\": true,\n  \"agreementCode\": \"AQUAPAY_AGENT_AGREEMENT\",\n  \"agreementVersion\": \"v1.0\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{baseUrl}}/api/kyc/agreement/accept",
@@ -741,10 +955,10 @@
       ]
     },
     {
-      "name": "12. KYC Step 7 — Final Submission & Confirmation",
+      "name": "12. KYC Step 7 — Final Review & Submission",
       "item": [
         {
-          "name": "GET Check Submission Readiness & Incomplete Steps",
+          "name": "GET 1. Check Submission Readiness & Incomplete Steps",
           "request": {
             "method": "GET",
             "header": [
@@ -761,7 +975,7 @@
           }
         },
         {
-          "name": "GET Check Submission Status (Alias: /submission-status)",
+          "name": "GET 2. Check Submission Status (Alias: /submission-status)",
           "request": {
             "method": "GET",
             "header": [
@@ -778,7 +992,7 @@
           }
         },
         {
-          "name": "POST Final KYC Submission (Transitions status to submitted)",
+          "name": "POST 3. Submit KYC Application for Review (Completes Step 7)",
           "request": {
             "method": "POST",
             "header": [
@@ -793,7 +1007,12 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"confirm\": true,\n  \"notes\": \"All verification documents and declarations submitted.\"\n}"
+              "raw": "{\n  \"confirm\": true,\n  \"notes\": \"All verification documents, biometric declarations, and banking details submitted.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{baseUrl}}/api/kyc/submit",
@@ -801,9 +1020,25 @@
               "path": ["api", "kyc", "submit"]
             }
           }
+        },
+        {
+          "name": "GET 4. Verify Final KYC Status (Status: submitted)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/kyc/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "kyc", "status"]
+            }
+          }
         }
       ]
     }
   ]
 }
-

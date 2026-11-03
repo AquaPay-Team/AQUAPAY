@@ -3,6 +3,7 @@ import pool from "../../../../config/db.js";
 import { getDigiLockerSignaturePolicy } from "./digilocker.signatureConfig.js";
 
 const PROVIDER_NAME = "idto_digilocker_v1";
+const AADHAAR_USER_DETAILS_PROVIDER_NAME = "idto_digilocker_user_details_v1";
 const DEVELOPMENT_UNVERIFIED_PROVIDER_NAME = "idto_digilocker_v1_dev_unverified";
 const ATTEMPT_TTL_MINUTES = 10;
 
@@ -171,6 +172,7 @@ function createDigilockerModel({ dbPool = pool, env = process.env } = {}) {
     verificationId,
     authorizationSessionId,
     verificationType,
+    verificationMode,
     maskedIdentifier,
     verifiedName,
     persistIdentity,
@@ -181,12 +183,33 @@ function createDigilockerModel({ dbPool = pool, env = process.env } = {}) {
     if (typeof signatureVerified !== "boolean") throw new Error("INVALID_SIGNATURE_VERIFICATION_RESULT");
     if (typeof persistIdentity !== "function") throw new Error("INVALID_IDENTITY_DATA");
     let providerName = PROVIDER_NAME;
-    if (!signatureVerified) {
+
+    const isAadhaarUserDetailsMode =
+      verificationType === "aadhaar" &&
+      verificationMode === "idto_user_details";
+    if (
+      isAadhaarUserDetailsMode &&
+      (typeof verifiedName !== "string" ||
+        !verifiedName.trim() ||
+        verifiedName.trim().length > 100)
+    ) {
+      throw new Error("INVALID_VERIFICATION_RESULT");
+    }
+     if (isAadhaarUserDetailsMode) {
+      verifiedName = verifiedName.trim();
+
+      if (signatureVerified !== false) {
+        throw new Error("INVALID_SIGNATURE_VERIFICATION_RESULT");
+      }
+
+      providerName = AADHAAR_USER_DETAILS_PROVIDER_NAME;
+    } else if (!signatureVerified) {
       const signaturePolicy = getDigiLockerSignaturePolicy(env);
-      if (!signaturePolicy.developmentOnly) throw new Error("SIGNATURE_VERIFICATION_REQUIRED");
+      if (!signaturePolicy.developmentOnly) {
+        throw new Error("SIGNATURE_VERIFICATION_REQUIRED");
+      }
       providerName = DEVELOPMENT_UNVERIFIED_PROVIDER_NAME;
     }
-
     const connection = await dbPool.getConnection();
     try {
       await connection.beginTransaction();

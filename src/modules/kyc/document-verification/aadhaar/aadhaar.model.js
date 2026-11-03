@@ -7,16 +7,20 @@ function createAadhaarModel({ identityModel = identityDataModel } = {}) {
     verificationId,
     verificationType,
     verifiedName,
-    aadhaarNumber,
-    address,
     dateOfBirth,
+    gender,
+    eaadhaar,
   }) {
     if (
-      !connection || verificationType !== "aadhaar" ||
-      typeof verifiedName !== "string" || verifiedName.length < 1 || verifiedName.length > 100 ||
-      typeof aadhaarNumber !== "string" || !/^\d{12}$/.test(aadhaarNumber) ||
-      !Array.isArray(address) || address.length === 0 ||
-      typeof dateOfBirth !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)
+      !connection ||
+      verificationType !== "aadhaar" ||
+      typeof verifiedName !== "string" ||
+      verifiedName.trim().length < 1 ||
+      verifiedName.trim().length > 100 ||
+      typeof dateOfBirth !== "string" ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth) ||
+      !["M", "F", "T"].includes(gender) ||
+      eaadhaar !== "Y"
     ) {
       const error = new Error("Aadhaar identity data is invalid");
       error.code = "INVALID_IDENTITY_DATA";
@@ -28,13 +32,19 @@ function createAadhaarModel({ identityModel = identityDataModel } = {}) {
       caseId,
       verificationId,
       identityType: "aadhaar",
-      payload: { aadhaarNumber, address, dateOfBirth },
+      payload: {
+        dateOfBirth,
+        gender,
+        eaadhaar,
+        verificationMode: "idto_user_details",
+      },
     });
+
     await connection.execute(
       `UPDATE users
           SET name = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?`,
-      [verifiedName, userId],
+      [verifiedName.trim(), userId],
     );
   }
 

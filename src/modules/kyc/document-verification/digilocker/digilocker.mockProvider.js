@@ -108,6 +108,26 @@ function createDigilockerMockProvider({ env = process.env } = {}) {
         expires_at: "2099-01-01T00:00:00.000Z",
       };
     },
+    getUserDetails: async ({ reference_key: referenceKey } = {}) => {
+      const document = MOCK_REFERENCES.get(referenceKey);
+
+      if (!document || document.verificationType !== "aadhaar") {
+        throw new Error("Invalid mock Aadhaar user-details request");
+      }
+
+      return {
+        status: "success",
+        user: {
+          name: "AquaPay Mock User",
+          dob: "1990-05-21",
+          gender: "M",
+          eaadhaar: "Y",
+          reference_key: referenceKey,
+        },
+        chargeble: "true",
+        user_consent: "true",
+      };
+    },
     getIssuedDocs: async ({ reference_key: referenceKey } = {}) => {
       const document = MOCK_REFERENCES.get(referenceKey);
       if (!document) throw new Error("Invalid mock reference key");

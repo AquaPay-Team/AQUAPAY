@@ -1,7 +1,6 @@
 import digilockerService from "../digilocker/digilocker.service.js";
 import digilockerModel from "../digilocker/digilocker.model.js";
 import aadhaarIdentityModel from "./aadhaar.model.js";
-import { validateAadhaarXml } from "./aadhaar.validator.js";
 
 const AADHAAR_HANDLER = Object.freeze({
   documentCode: "ADHAR",
@@ -9,12 +8,24 @@ const AADHAAR_HANDLER = Object.freeze({
   consentPurpose: "To complete AquaPay KYC using Aadhaar verification",
   stepNumber: 2,
 });
+function isValidDateOfBirth(value) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return false;
+  }
 
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
 function createAadhaarService({
   digilocker = digilockerService,
   model = digilockerModel,
   identityModel = aadhaarIdentityModel,
-  validateDocument = validateAadhaarXml,
 } = {}) {
   async function initiateVerification(userId, input = {}) {
     return digilocker.initiateAuthorization(userId, "aadhaar", input);
@@ -22,32 +33,52 @@ function createAadhaarService({
 
   async function verifyAndPersist({
     attempt,
-    xml,
+    userDetails,
     setDiagnosticStage = () => {},
-    setDocumentDiagnostics = () => {},
   }) {
-    setDiagnosticStage("aadhaar_xml_validation");
-    const extracted = validateDocument(xml, {
-      onValidationDiagnostic: setDocumentDiagnostics,
-    });
+    setDiagnosticStage("aadhaar_user_details_validation");
+
+    const user = userDetails?.user;
+
     if (
-      typeof extracted?.signatureVerified !== "boolean" ||
-      extracted.developmentOnly !== !extracted.signatureVerified ||
-      extracted.verificationMode !== (extracted.signatureVerified ? "issuer_certificate" : "development_unverified")
-    ) throw new Error("INVALID_SIGNATURE_VERIFICATION_RESULT");
+      userDetails?.status !== "success" ||
+      !user ||
+      typeof user !== "object" ||
+      typeof user.name !== "string" ||
+      !user.name.trim() ||
+      user.name.trim().length > 100 ||
+      !isValidDateOfBirth(user.dob) ||
+      !["M", "F", "T"].includes(user.gender) ||
+      user.eaadhaar !== "Y"
+    ) {
+      throw new Error("INVALID_AADHAAR_USER_DETAILS");
+    }
+
+    const extracted = {
+      verifiedName: user.name.trim(),
+      dateOfBirth: user.dob,
+      gender: user.gender,
+      eaadhaar: user.eaadhaar,
+      verificationMode: "idto_user_details",
+    };
+
     setDiagnosticStage("aadhaar_transactional_persistence");
+
     const completion = await model.completeVerification({
       ...attempt,
-      maskedIdentifier: extracted.maskedIdentifier,
+      verificationMode: extracted.verificationMode,
+      maskedIdentifier: null,
       verifiedName: extracted.verifiedName,
-      persistIdentity: (connection, context) => identityModel.persistVerifiedIdentity(connection, {
-        ...context,
-        aadhaarNumber: extracted.aadhaarNumber,
-        address: extracted.address,
-        dateOfBirth: extracted.dateOfBirth,
-      }),
-      signatureVerified: extracted.signatureVerified,
+      persistIdentity: (connection, context) =>
+        identityModel.persistVerifiedIdentity(connection, {
+          ...context,
+          dateOfBirth: extracted.dateOfBirth,
+          gender: extracted.gender,
+          eaadhaar: extracted.eaadhaar,
+        }),
+      signatureVerified: false,
     });
+
     return { extracted, completion };
   }
 

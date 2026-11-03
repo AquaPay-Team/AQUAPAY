@@ -309,7 +309,12 @@ function createRealDigilockerProvider({
       onResponseMeta: options.onResponseMeta,
       expectedFields: ["reference_key"],
     }),
-    getUserDetails: (body) => request({ endpoint: ENDPOINTS.userDetails, body }),
+    getUserDetails: (body, options = {}) => request({
+      endpoint: ENDPOINTS.userDetails,
+      body,
+      onResponseMeta: options.onResponseMeta,
+      expectedFields: ["status", "user"],
+    }),
     getIssuedDocs: (body, options = {}) => request({
       endpoint: ENDPOINTS.issuedDocs,
       body,

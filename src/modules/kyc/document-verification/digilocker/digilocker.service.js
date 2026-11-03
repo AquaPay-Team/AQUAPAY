@@ -372,6 +372,65 @@ function createDigilockerService({
           : undefined,
       );
       if (!validReferenceResponse(referenceResponse)) throw new Error("INVALID_REFERENCE_RESPONSE");
+            // Aadhaar uses IDTO user_details instead of the XML document flow.
+      if (attempt.verificationType === "aadhaar") {
+        diagnostic.stage = "provider_user_details";
+        diagnostic.providerEndpoint = "user_details";
+        diagnostic.responseMetadata = null;
+
+        const userDetails = await provider.getUserDetails(
+          { reference_key: referenceResponse.reference_key },
+          env.NODE_ENV === "development"
+            ? {
+                onResponseMeta: (metadata) => {
+                  diagnostic.responseMetadata = metadata;
+                },
+              }
+            : undefined,
+        );
+
+        diagnostic.stage = "aadhaar_transactional_persistence";
+
+        const { extracted, completion } = await handler.verifyAndPersist({
+          attempt,
+          userDetails,
+          setDiagnosticStage(stage) {
+            if (
+              typeof stage === "string" &&
+              /^[a-z][a-z0-9_]{1,80}$/.test(stage)
+            ) {
+              diagnostic.stage = stage;
+              if (stage.endsWith("_transactional_persistence")) {
+                diagnostic.providerEndpoint = null;
+              }
+            }
+          },
+        });
+
+        if (
+          !extracted ||
+          typeof extracted.verifiedName !== "string" ||
+          !extracted.verifiedName.trim() ||
+          extracted.verificationMode !== "idto_user_details" ||
+          !completion ||
+          !Number.isInteger(completion.stepNumber) ||
+          !Number.isInteger(completion.steps_completed)
+        ) {
+          throw new Error("INVALID_VERIFICATION_RESULT");
+        }
+
+        return {
+          verificationType: attempt.verificationType,
+          verificationStatus: "verified",
+          signatureVerified: false,
+          developmentOnly: false,
+          verificationMode: extracted.verificationMode,
+          maskedIdentifier: null,
+          verifiedName: extracted.verifiedName,
+          stepNumber: completion.stepNumber,
+          steps_completed: completion.steps_completed,
+        };
+      }
       diagnostic.stage = "provider_issued_docs";
       diagnostic.providerEndpoint = "issued_docs";
       diagnostic.responseMetadata = null;

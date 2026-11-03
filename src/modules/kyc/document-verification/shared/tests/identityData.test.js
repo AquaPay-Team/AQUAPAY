@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { test } from "node:test";
-import { assertIdentityEncryptionConfiguration, createIdentityDataCrypto } from "./identityData.crypto.js";
-import { createIdentityDataModel } from "./identityData.model.js";
+import { assertIdentityEncryptionConfiguration, createIdentityDataCrypto } from "../identityData.crypto.js";
+import { createIdentityDataModel } from "../identityData.model.js";
 
 const KEY_V1 = randomBytes(32).toString("base64");
 const KEY_V2 = randomBytes(32).toString("base64");
@@ -60,6 +60,16 @@ test("identity encryption rejects missing configuration and invalid identity fie
     ...AADHAAR_PAYLOAD,
     address: [],
   }, CONTEXT), { code: "INVALID_IDENTITY_DATA" });
+});
+
+test("Aadhaar encryption accepts documented POA without optional country", () => {
+  const crypto = createIdentityDataCrypto({ env: TEST_ENV });
+  const payload = {
+    ...AADHAAR_PAYLOAD,
+    address: [{ line1: "Example Street", vtc: "Example Town", state: "Example State" }],
+  };
+  const encrypted = crypto.encryptIdentityPayload("aadhaar", payload, CONTEXT);
+  assert.deepEqual(crypto.decryptIdentityPayload("aadhaar", encrypted, CONTEXT), payload);
 });
 
 test("production cannot consume the local development encryption key", () => {

@@ -1,4 +1,4 @@
-import "../../../auth/setupEnv.js";
+import "../../../../auth/setupEnv.js";
 import assert from "node:assert/strict";
 import express from "express";
 import { test } from "node:test";
@@ -8,7 +8,7 @@ process.env.IDTO_PROVIDER_MODE = "mock";
 process.env.IDTO_SKIP_XML_SIGNATURE_VERIFICATION = "false";
 process.env.IDTO_MOCK_BASE_URL = "http://127.0.0.1:3000";
 
-const { default: kycRoutes } = await import("../../kyc.routes.js");
+const { default: kycRoutes } = await import("../../../kyc.routes.js");
 
 test("mock authorization route exists only in the explicit local mock app and returns the callback contract", async () => {
   const app = express();
@@ -47,6 +47,11 @@ test("mock authorization route exists only in the explicit local mock app and re
       { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ consent: true }) },
     );
     assert.equal(protectedAadhaarInitiation.status, 401);
+
+    const protectedAadhaarStatus = await fetch(
+      `http://127.0.0.1:${address.port}/api/kyc/digilocker/aadhaar/status/`,
+    );
+    assert.equal(protectedAadhaarStatus.status, 401);
   } finally {
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   }

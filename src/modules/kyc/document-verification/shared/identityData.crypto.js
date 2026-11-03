@@ -51,7 +51,9 @@ function validateAddress(address) {
         throw invalidIdentityData();
       }
     }
-    if (!["line1", "vtc", "state", "country"].every((key) => entry[key]?.trim())) {
+    // Country is optional in the documented IDTO POA structure; the address
+    // still requires a line, VTC, and state for AquaPay's KYC identity record.
+    if (!["line1", "vtc", "state"].every((key) => entry[key]?.trim())) {
       throw invalidIdentityData();
     }
   }

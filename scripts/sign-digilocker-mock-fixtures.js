@@ -79,14 +79,28 @@ function signFixture(xml) {
 }
 
 const fixtures = {
-  "aadhaar.xml": `<Certificate language="99" name="Aadhaar Card" type="ADHAR" number="MOCK-ADHAR-0001" issueDate="01-01-2025" status="A"><IssuedBy><Organization name="Unique Identification Authority of India" type="CG"/></IssuedBy><IssuedTo><Person uid="999999999999" name="AquaPay Mock Aadhaar" dob="01-01-1990" gender="M"><Address type="permanent" line1="42 Example Road" line2="Unit 7" house="42" landmark="Test Park" locality="Mock Layout" vtc="Fictional Town" district="Test District" pin="000000" state="Test State" country="IN"/></Person></IssuedTo><CertificateData/></Certificate>`,
+  "aadhaar.xml": `<?xml version="1.0" encoding="UTF-8"?>
+<Certificate>
+  <CertificateData>
+    <KycRes ret="Y" ts="${new Date().toISOString()}">
+      <UidData uid="123456789012">
+        <Poi dob="1990-05-21" gender="M" name="Synthetic AquaPay Person"/>
+        <Poa house="Synthetic Unit" street="Example Street" vtc="Example Town" dist="Example District" state="Example State" pc="000001"/>
+        <LData lang="en"><Name>Synthetic Local Person</Name><Address>Synthetic Local Address</Address></LData>
+        <Pht>U1lOVEhFVElDX1BIT1RP</Pht>
+      </UidData>
+    </KycRes>
+  </CertificateData>
+</Certificate>`,
   "pan.xml": `<Certificate language="99" name="PAN Card" type="PANCR" number="AAAAA0000A" issuedAt="DigiLocker" issueDate="01-01-2025" status="A"><IssuedBy><Organization name="Income Tax Department" type="CG"/></IssuedBy><IssuedTo><Person name="AquaPay Mock PAN" gender="M"/></IssuedTo><CertificateData><PAN num="AAAAA0000A" verifiedOn="01-01-2025 00:00:00"/></CertificateData></Certificate>`,
 };
 
 fs.mkdirSync(fixtureDirectory, { recursive: true });
 fs.copyFileSync(certificatePath, path.join(fixtureDirectory, "mock-signing-cert.crt"));
 for (const [filename, xml] of Object.entries(fixtures)) {
-  fs.writeFileSync(path.join(fixtureDirectory, filename), signFixture(xml), { mode: 0o644 });
+  // Aadhaar tests cover XML/business validation only. Keep the existing signed PAN
+  // fixture because PAN's established verification behavior remains unchanged.
+  fs.writeFileSync(path.join(fixtureDirectory, filename), filename === "pan.xml" ? signFixture(xml) : `${xml}\n`, { mode: 0o644 });
 }
 
 keyMaterialBytes.fill(0);

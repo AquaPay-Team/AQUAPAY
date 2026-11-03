@@ -10,6 +10,15 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const FIXTURE_DIR = path.join(__dirname, "..", "digilocker", "fixtures");
 
+const TEST_ENV = {
+  NODE_ENV: "development",
+  IDTO_SKIP_XML_SIGNATURE_VERIFICATION: "true",
+  IDTO_PROVIDER_MODE: "idto",
+  IDTO_DEV_UNVERIFIED_DATABASE: "true",
+  DB_HOST: "127.0.0.1",
+  DB_NAME: "fintech_kyc",
+};
+
 function readFixture(name) {
   return fs.readFileSync(path.join(FIXTURE_DIR, name), "utf8");
 }
@@ -18,14 +27,7 @@ test("validatePanXml returns masked identifier and verified name from valid mock
   const xml = readFixture("pan.xml");
 
   const result = validatePanXml(xml, {
-    env: {
-      NODE_ENV: "development",
-      IDTO_SKIP_XML_SIGNATURE_VERIFICATION: "true",
-      IDTO_PROVIDER_MODE: "idto",
-      IDTO_DEV_UNVERIFIED_DATABASE: "true",
-      DB_HOST: "127.0.0.1",
-      DB_NAME: "fintech_kyc",
-    },
+    env: TEST_ENV,
   });
 
   assert.equal(result.signatureVerified, false);
@@ -40,13 +42,15 @@ test("validatePanXml returns masked identifier and verified name from valid mock
 test("validatePanXml rejects tampered XML", () => {
   const xml = readFixture("pan.xml").replace("PANCR", "WRONG");
 
-  assert.throws(() => validatePanXml(xml), {
-    code: "INVALID_PAN_DOCUMENT",
-  });
+  assert.throws(
+    () => validatePanXml(xml, { env: TEST_ENV }),
+    { code: "INVALID_PAN_DOCUMENT" }
+  );
 });
 
 test("validatePanXml rejects empty input", () => {
-  assert.throws(() => validatePanXml(""), {
-    code: "INVALID_PAN_DOCUMENT",
-  });
+  assert.throws(
+    () => validatePanXml("", { env: TEST_ENV }),
+    { code: "INVALID_PAN_DOCUMENT" }
+  );
 });

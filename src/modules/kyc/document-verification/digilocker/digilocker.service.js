@@ -372,6 +372,106 @@ function createDigilockerService({
           : undefined,
       );
       if (!validReferenceResponse(referenceResponse)) throw new Error("INVALID_REFERENCE_RESPONSE");
+      // Aadhaar: fetch user details and the signed Aadhaar XML.
+if (attempt.verificationType === "aadhaar") {
+  diagnostic.stage = "provider_user_details";
+  diagnostic.providerEndpoint = "user_details";
+  diagnostic.responseMetadata = null;
+
+  const userDetails = await provider.getUserDetails(
+  { reference_key: referenceResponse.reference_key },
+  env.NODE_ENV === "development"
+    ? {
+        onResponseMeta: (metadata) => {
+          diagnostic.responseMetadata = metadata;
+        },
+      }
+    : undefined,
+);
+
+if (env.NODE_ENV === "development") {
+  console.dir(userDetails, { depth: null, colors: true });
+}
+
+  diagnostic.stage = "provider_fetch_aadhaar";
+  diagnostic.providerEndpoint = "fetch_aadhaar";
+  diagnostic.responseMetadata = null;
+
+  const xml = await provider.fetchAadhaar(
+    { reference_key: referenceResponse.reference_key },
+    env.NODE_ENV === "development"
+      ? {
+          onResponseMeta: (metadata) => {
+            diagnostic.responseMetadata = metadata;
+          },
+        }
+      : undefined,
+  );
+
+  if (typeof xml !== "string" || !xml.trim()) {
+    throw new Error("INVALID_DOCUMENT_RESPONSE");
+  }
+
+  diagnostic.stage = "aadhaar_transactional_persistence";
+
+  const { extracted, completion } = await handler.verifyAndPersist({
+    attempt,
+    userDetails,
+    xml,
+    setDiagnosticStage(stage) {
+      if (
+        typeof stage === "string" &&
+        /^[a-z][a-z0-9_]{1,80}$/.test(stage)
+      ) {
+        diagnostic.stage = stage;
+
+        if (stage.endsWith("_transactional_persistence")) {
+          diagnostic.providerEndpoint = null;
+        }
+      }
+    },
+    setDocumentDiagnostics(metadata) {
+      if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
+        diagnostic.documentDiagnostics = {
+          ...(diagnostic.documentDiagnostics || {}),
+          ...metadata,
+        };
+      }
+    },
+  });
+
+  if (
+    !extracted ||
+    typeof extracted.verifiedName !== "string" ||
+    !extracted.verifiedName.trim() ||
+    typeof extracted.maskedIdentifier !== "string" ||
+    typeof extracted.signatureVerified !== "boolean" ||
+    extracted.developmentOnly !== !extracted.signatureVerified ||
+    extracted.verificationMode !==
+      (extracted.signatureVerified
+        ? "issuer_certificate"
+        : "development_unverified") ||
+    !completion ||
+    !Number.isInteger(completion.stepNumber) ||
+    !Number.isInteger(completion.steps_completed)
+  ) {
+    throw new Error("INVALID_VERIFICATION_RESULT");
+  }
+
+  return {
+    verificationType: attempt.verificationType,
+    verificationStatus: extracted.signatureVerified
+      ? "verified"
+      : "development_unverified",
+    signatureVerified: extracted.signatureVerified,
+    developmentOnly: extracted.developmentOnly,
+    verificationMode: extracted.verificationMode,
+    maskedIdentifier: extracted.maskedIdentifier,
+    verifiedName: extracted.verifiedName,
+    stepNumber: completion.stepNumber,
+    steps_completed: completion.steps_completed,
+  };
+}
       diagnostic.stage = "provider_issued_docs";
       diagnostic.providerEndpoint = "issued_docs";
       diagnostic.responseMetadata = null;

@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { validateAadhaarXml } from "../aadhaar.validator.js";
 import { parseAadhaarXml } from "../aadhaar.parser.js";
+import { createAadhaarModel } from "../aadhaar.model.js";
 import aadhaarService from "../aadhaar.service.js";
 import aadhaarController from "../aadhaar.controller.js";
 
@@ -102,7 +103,7 @@ test("IDTO document structure, status and required fields fail closed", () => {
     xml.replace('ret="Y"', 'ret="Y" err="provider-error"'),
     xml.replace(/\s+ts="[^"]+"/, ""),
     xml.replace(/\s+ts="[^"]+"/, ' ts="2025-02-30T12:05:21Z"'),
-    xml.replace('uid="123456789012"', 'uid="xxxxxx1234"'),
+    xml.replace('uid="123456789012"', 'uid="12AB56789012"'),
     xml.replace('name="Synthetic AquaPay Person"', ""),
     xml.replace('dob="1990-05-21"', ""),
     xml.replace('street="Example Street"', "").replace('house="Synthetic Unit"', ""),
@@ -118,23 +119,50 @@ test("IDTO document structure, status and required fields fail closed", () => {
   }
 });
 
-test("masked UID is classified safely and rejected because AquaPay requires full Aadhaar for encrypted persistence", () => {
+test("masked Limited KYC UID is accepted as a masked identifier and never exposed as a full Aadhaar number", () => {
   const maskedUid = "xxxxxx9012";
   const diagnostics = [];
   const xml = withoutSignature().replace('uid="123456789012"', `uid="${maskedUid}"`);
 
-  assert.throws(() => parseAadhaarXml(xml, {
+  const result = parseAadhaarXml(xml, {
     onValidationDiagnostic: (metadata) => diagnostics.push(metadata),
-  }), {
-    code: "INVALID_AADHAAR_DOCUMENT",
-    validationReason: "aadhaar_identifier_masked_limited_kyc",
   });
 
-  const failure = diagnostics.at(-1);
-  assert.equal(failure.aadhaarIdentifierFormat, "masked_last_four");
+  assert.equal(result.data.aadhaarMaskedIdentifier, "XXXXXX9012");
+  assert.equal(Object.hasOwn(result.data, "aadhaarNumber"), false);
+  assert.equal(result.data.maskedIdentifier, "XXXXXX9012");
+  assert.equal(diagnostics[0].aadhaarIdentifierFormat, "masked_last_four");
   const serialized = JSON.stringify(diagnostics);
   assert.equal(serialized.includes(maskedUid), false);
   assert.equal(serialized.includes("123456789012"), false);
+});
+
+test("Aadhaar model persists a Limited KYC mask under an explicitly masked encrypted-payload field", async () => {
+  const captured = [];
+  const model = createAadhaarModel({
+    identityModel: {
+      async insertIdentityData(_connection, input) { captured.push(input); },
+    },
+  });
+  const connection = { async execute() { return [{ affectedRows: 1 }]; } };
+
+  await model.persistVerifiedIdentity(connection, {
+    userId: "52",
+    caseId: "13",
+    verificationId: "31",
+    verificationType: "aadhaar",
+    verifiedName: "Synthetic AquaPay Person",
+    aadhaarMaskedIdentifier: "XXXXXX9012",
+    address: [{ line1: "Example Street", vtc: "Example Town", state: "Example State" }],
+    dateOfBirth: "1990-05-21",
+  });
+
+  assert.deepEqual(captured[0].payload, {
+    aadhaarMaskedIdentifier: "XXXXXX9012",
+    address: [{ line1: "Example Street", vtc: "Example Town", state: "Example State" }],
+    dateOfBirth: "1990-05-21",
+  });
+  assert.equal(Object.hasOwn(captured[0].payload, "aadhaarNumber"), false);
 });
 
 test("POA country and optional fields may be absent while required address components remain enforced", () => {

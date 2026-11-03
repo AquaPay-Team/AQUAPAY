@@ -965,19 +965,31 @@ test("development callback logs bounded Aadhaar XML diagnostics and never logs d
   ]) assert.equal(serialized.includes(sensitive), false);
 });
 
-test("masked Limited KYC UID is safely diagnosed and cannot reach Aadhaar persistence", async () => {
+test("masked Limited KYC UID completes through Aadhaar service and persists only a masked encrypted-payload field", async () => {
   const logs = [];
-  let persisted = false;
+  const persisted = [];
   const attempt = {
     userId: "52", caseId: "13", verificationId: "31",
     digilockerSessionId: "8f2e7a21-917b-4ce3-96ad-5209db9ac9aa",
     authorizationSessionHash: createHash("sha256").update(SESSION).digest("hex"),
     verificationType: "aadhaar",
   };
+  const completeVerification = async (input) => {
+    await input.persistIdentity({}, {
+      userId: attempt.userId,
+      caseId: attempt.caseId,
+      verificationId: attempt.verificationId,
+      verificationType: "aadhaar",
+      verifiedName: input.verifiedName,
+    });
+    return { stepNumber: 2, steps_completed: 2 };
+  };
   const service = createDigilockerService({
     provider: {
       mode: "idto",
       async getReference() { return { status: "success", reference_key: "synthetic-reference" }; },
+      async getUserDetails() { return { status: "success" }; },
+      async fetchAadhaar() { return MASKED_UID_XML; },
     },
     stateStore: {
       async consumeAuthorizationState() { return attempt; },
@@ -987,33 +999,31 @@ test("masked Limited KYC UID is safely diagnosed and cannot reach Aadhaar persis
     },
     model: {
       async failVerification() {},
-      async completeVerification() { persisted = true; return { stepNumber: 2, steps_completed: 2 }; },
+      async completeVerification(input) { return completeVerification(input); },
     },
     env: { NODE_ENV: "development" },
     logger: { error: (...args) => logs.push(args) },
   });
-  service.registerVerificationHandler("aadhaar", {
-    documentCode: "ADHAR", issuerId: "in.gov.uidai", consentPurpose: "synthetic test", stepNumber: 2,
-    async retrieveDocument() { return MASKED_UID_XML; },
-    async verifyAndPersist({ xml, setDocumentDiagnostics, setDiagnosticStage }) {
-      await setDiagnosticStage("aadhaar_xml_validation");
-      const extracted = validateAadhaarXml(xml, { onValidationDiagnostic: setDocumentDiagnostics });
-      persisted = true;
-      return { extracted, completion: { stepNumber: 2, steps_completed: 2 } };
+  createAadhaarService({
+    digilocker: service,
+    model: { completeVerification },
+    identityModel: {
+      async persistVerifiedIdentity(_connection, input) { persisted.push(input); },
     },
   });
 
-  await assert.rejects(service.completeCallback({
+  const result = await service.completeCallback({
     code: "synthetic-authorization-code", code_verifier: VERIFIER, state: STATE,
-  }), { code: "INVALID_AADHAAR_DOCUMENT" });
+  });
 
-  assert.equal(persisted, false);
-  assert.equal(logs.length, 1);
-  const diagnostic = logs[0][1].documentDiagnostics;
-  assert.equal(diagnostic.aadhaarIdentifierFormat, "masked_last_four");
-  assert.equal(diagnostic.validationFailureReason, "aadhaar_identifier_masked_limited_kyc");
-  const serialized = JSON.stringify(logs);
-  for (const sensitive of [MASKED_UID_XML, "xxxxxx9012", "123456789012", "Synthetic AquaPay Person", VERIFIER, STATE]) {
+  assert.equal(result.verificationStatus, "verified");
+  assert.equal(result.maskedIdentifier, "XXXXXX9012");
+  assert.equal(persisted.length, 1);
+  assert.equal(persisted[0].aadhaarNumber, undefined);
+  assert.equal(persisted[0].aadhaarMaskedIdentifier, "XXXXXX9012");
+  assert.equal(logs.length, 0);
+  const serialized = JSON.stringify({ result, persisted, logs });
+  for (const sensitive of [MASKED_UID_XML, "xxxxxx9012", "123456789012", VERIFIER, STATE, "synthetic-reference"]) {
     assert.equal(serialized.includes(sensitive), false);
   }
 });

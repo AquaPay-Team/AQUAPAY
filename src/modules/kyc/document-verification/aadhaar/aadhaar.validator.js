@@ -7,6 +7,58 @@ import {
   verifyDigiLockerXmlSignature,
 } from "../digilocker/digilocker.signature.js";
 import { getDigiLockerSignaturePolicy } from "../digilocker/digilocker.signatureConfig.js";
+import { X509Certificate } from "node:crypto";
+import fs from "node:fs";
+function logEmbeddedSignerCertificate(root) {
+  try {
+    const found = [];
+    for (const node of descendantsByName(root, "X509Certificate")) {
+      const body = (node.textContent || "").replace(/\s+/g, "");
+      const pem =
+        "-----BEGIN CERTIFICATE-----\n" +
+        body.match(/.{1,64}/g).join("\n") +
+        "\n-----END CERTIFICATE-----\n";
+      const cert = new X509Certificate(pem);
+      found.push({
+        subject: cert.subject.replace(/\n/g, ", "),
+        issuer: cert.issuer.replace(/\n/g, ", "),
+        validFrom: cert.validFrom,
+        validTo: cert.validTo,
+        serialNumber: cert.serialNumber,
+        sha256Fingerprint: cert.fingerprint256,
+        keyType: cert.publicKey.asymmetricKeyType,
+      });
+      fs.writeFileSync(`embedded-signer-${found.length}.pem`, pem);
+    }
+    console.log(
+      "[TEMP embedded signer certificate]",
+      JSON.stringify(found, null, 2),
+    );
+  } catch (error) {
+    console.log(
+      "[TEMP embedded signer certificate] could not read:",
+      error.message,
+    );
+  }
+}
+
+// Real IDTO/DigiLocker Aadhaar documents are UIDAI offline eKYC XML:
+//   Certificate > CertificateData > KycRes > UidData > (Poi, Poa, LData, Pht)
+// followed by a Certificate-level enveloped Signature. The Pht (photo) and
+// LData (local-language address) elements are deliberately never read.
+
+// Poa attribute -> field name accepted by identityData.crypto.js.
+// "co" (care-of), "po" and "subdist" have no destination field and are dropped.
+const POA_FIELD_MAP = Object.freeze({
+  lm: "landmark",
+  loc: "locality",
+  vtc: "vtc",
+  dist: "district",
+  pc: "pin",
+  state: "state",
+  country: "country",
+});
+const REQUIRED_ADDRESS_FIELDS = ["vtc", "state", "country"];
 
 function reportAadhaarDiagnostic(onValidationDiagnostic, metadata) {
   if (typeof onValidationDiagnostic !== "function") return;
@@ -17,28 +69,67 @@ function reportAadhaarDiagnostic(onValidationDiagnostic, metadata) {
   }
 }
 
-function reportAadhaarStructure(xml, onValidationDiagnostic, signatureBypassActive) {
+function locateKycElements(root) {
+  const within = (parent, name) =>
+    parent ? descendantsByName(parent, name) : [];
+  const certificateData = within(root, "CertificateData");
+  const kycRes =
+    certificateData.length === 1 ? within(certificateData[0], "KycRes") : [];
+  const uidData = kycRes.length === 1 ? within(kycRes[0], "UidData") : [];
+  const poi = uidData.length === 1 ? within(uidData[0], "Poi") : [];
+  const poa = uidData.length === 1 ? within(uidData[0], "Poa") : [];
+  return { certificateData, kycRes, uidData, poi, poa };
+}
+
+// Booleans only: diagnostics must never carry identity values.
+function describeFieldPresence(found) {
+  const kycRes = found.kycRes[0];
+  const uidData = found.uidData[0];
+  const poi = found.poi[0];
+  const poa = found.poa[0];
+  return {
+    certificateData: found.certificateData.length === 1,
+    kycRes: found.kycRes.length === 1,
+    uidData: found.uidData.length === 1,
+    poi: found.poi.length === 1,
+    poa: found.poa.length === 1,
+    kycResultOk: getAttribute(kycRes, "ret") === "Y",
+    aadhaarNumber: Boolean(uidData?.hasAttribute("uid")),
+    name: Boolean(poi?.hasAttribute("name")),
+    dateOfBirth: Boolean(poi?.hasAttribute("dob")),
+    addressVtc: Boolean(getAttribute(poa, "vtc")),
+    addressState: Boolean(getAttribute(poa, "state")),
+    addressCountry: Boolean(getAttribute(poa, "country")),
+  };
+}
+
+function reportAadhaarStructure(
+  xml,
+  onValidationDiagnostic,
+  signatureBypassActive,
+) {
   let providerXmlFormat = null;
   let providerXmlRootElementName = null;
   let providerXmlNamespace = null;
-  const certificateXml = extractCertificateXml(xml, "INVALID_AADHAAR_DOCUMENT", (metadata) => {
-    if (metadata?.validationStage === "provider_xml_container") {
-      providerXmlFormat = metadata.documentFormat;
-      providerXmlRootElementName = metadata.xmlRootElementName;
-      providerXmlNamespace = metadata.xmlNamespace;
-    }
-    reportAadhaarDiagnostic(onValidationDiagnostic, { ...metadata, signatureBypassActive });
-  });
-  const root = parseXml(certificateXml, "INVALID_AADHAAR_DOCUMENT").documentElement;
-  const issuedTo = descendantsByName(root, "IssuedTo");
-  const people = issuedTo.length === 1 ? descendantsByName(issuedTo[0], "Person") : [];
-  const issuedBy = descendantsByName(root, "IssuedBy");
-  const organizations = issuedBy.length === 1
-    ? descendantsByName(issuedBy[0], "Organization")
-    : [];
-  const person = people.length === 1 ? people[0] : null;
-  const organization = organizations.length === 1 ? organizations[0] : null;
-  const addresses = person ? descendantsByName(person, "Address") : [];
+  const certificateXml = extractCertificateXml(
+    xml,
+    "INVALID_AADHAAR_DOCUMENT",
+    (metadata) => {
+      if (metadata?.validationStage === "provider_xml_container") {
+        providerXmlFormat = metadata.documentFormat;
+        providerXmlRootElementName = metadata.xmlRootElementName;
+        providerXmlNamespace = metadata.xmlNamespace;
+      }
+      reportAadhaarDiagnostic(onValidationDiagnostic, {
+        ...metadata,
+        signatureBypassActive,
+      });
+    },
+  );
+  const root = parseXml(
+    certificateXml,
+    "INVALID_AADHAAR_DOCUMENT",
+  ).documentElement;
 
   reportAadhaarDiagnostic(onValidationDiagnostic, {
     validationStage: "aadhaar_document_structure",
@@ -49,23 +140,11 @@ function reportAadhaarStructure(xml, onValidationDiagnostic, signatureBypassActi
     xmlRootElementName: root.localName,
     xmlRootPrefixPresent: Boolean(root.prefix),
     documentTypeAttributePresent: root.hasAttribute("type"),
-    expectedDocumentTypeMatched: getAttribute(root, "type") === "ADHAR",
-    expectedIssuerPresent: Boolean(
-      organization && getAttribute(organization, "name") === "Unique Identification Authority of India",
-    ),
-    requiredFieldPresence: {
-      issuedTo: issuedTo.length === 1,
-      person: Boolean(person),
-      aadhaarNumber: Boolean(person?.hasAttribute("uid")),
-      name: Boolean(person?.hasAttribute("name")),
-      dateOfBirth: Boolean(person?.hasAttribute("dob")),
-      address: addresses.length > 0,
-      addressLine1: addresses.some((entry) => Boolean(getAttribute(entry, "line1"))),
-      addressVtc: addresses.some((entry) => Boolean(getAttribute(entry, "vtc"))),
-      addressState: addresses.some((entry) => Boolean(getAttribute(entry, "state"))),
-      addressCountry: addresses.some((entry) => Boolean(getAttribute(entry, "country"))),
-    },
+    expectedDocumentTypeMatched: "not_applicable",
+    expectedIssuerPresent: "not_applicable",
+    requiredFieldPresence: describeFieldPresence(locateKycElements(root)),
     validationFailureReason: null,
+    signatureBypassActive,
   });
   return certificateXml;
 }
@@ -82,8 +161,8 @@ function parseAadhaarFields(xml, { onValidationDiagnostic } = {}) {
       xmlNamespace: null,
       xmlRootPrefixPresent: null,
       documentTypeAttributePresent: null,
-      expectedDocumentTypeMatched: false,
-      expectedIssuerPresent: "not_evaluated",
+      expectedDocumentTypeMatched: "not_applicable",
+      expectedIssuerPresent: "not_applicable",
       requiredFieldPresence: { status: "not_evaluated" },
       validationFailureReason: "xml_parse_failed",
     });
@@ -91,41 +170,16 @@ function parseAadhaarFields(xml, { onValidationDiagnostic } = {}) {
   }
 
   const root = document.documentElement;
-  const documentTypeAttributePresent = root.hasAttribute("type");
-  const expectedDocumentTypeMatched = getAttribute(root, "type") === "ADHAR";
-  const issuedTo = descendantsByName(root, "IssuedTo");
-  const people = issuedTo.length === 1 ? descendantsByName(issuedTo[0], "Person") : [];
-  const issuedBy = descendantsByName(root, "IssuedBy");
-  const organizations = issuedBy.length === 1
-    ? descendantsByName(issuedBy[0], "Organization")
-    : [];
-  const person = people.length === 1 ? people[0] : null;
-  const organization = organizations.length === 1 ? organizations[0] : null;
-  const addressElements = person ? descendantsByName(person, "Address") : [];
-  const requiredFieldPresence = {
-    issuedTo: issuedTo.length === 1,
-    person: Boolean(person),
-    aadhaarNumber: Boolean(person?.hasAttribute("uid")),
-    name: Boolean(person?.hasAttribute("name")),
-    dateOfBirth: Boolean(person?.hasAttribute("dob")),
-    address: addressElements.length > 0,
-    addressLine1: addressElements.some((entry) => Boolean(getAttribute(entry, "line1"))),
-    addressVtc: addressElements.some((entry) => Boolean(getAttribute(entry, "vtc"))),
-    addressState: addressElements.some((entry) => Boolean(getAttribute(entry, "state"))),
-    addressCountry: addressElements.some((entry) => Boolean(getAttribute(entry, "country"))),
-  };
-  const expectedIssuerPresent = Boolean(
-    organization && getAttribute(organization, "name") === "Unique Identification Authority of India",
-  );
+  const found = locateKycElements(root);
   const baseDiagnostic = {
     validationStage: "aadhaar_identity_fields",
     documentFormat: "certificate_xml",
     xmlRootElementName: root.localName,
     xmlRootPrefixPresent: Boolean(root.prefix),
-    documentTypeAttributePresent,
-    expectedDocumentTypeMatched,
-    expectedIssuerPresent,
-    requiredFieldPresence,
+    documentTypeAttributePresent: root.hasAttribute("type"),
+    expectedDocumentTypeMatched: "not_applicable",
+    expectedIssuerPresent: "not_applicable",
+    requiredFieldPresence: describeFieldPresence(found),
   };
   const fail = (reason) => {
     reportAadhaarDiagnostic(onValidationDiagnostic, {
@@ -136,23 +190,33 @@ function parseAadhaarFields(xml, { onValidationDiagnostic } = {}) {
   };
 
   if (root.localName !== "Certificate") fail("certificate_root_mismatch");
-  if (!documentTypeAttributePresent) fail("document_type_missing");
-  if (!expectedDocumentTypeMatched) fail("document_type_mismatch");
-  if (issuedTo.length !== 1) fail("issued_to_element_count_invalid");
-  if (people.length !== 1) fail("person_element_count_invalid");
-  if (issuedBy.length !== 1) fail("issued_by_element_count_invalid");
-  if (organizations.length !== 1) fail("issuer_organization_count_invalid");
-  if (!expectedIssuerPresent) fail("issuer_name_mismatch");
+  if (found.certificateData.length !== 1)
+    fail("certificate_data_element_count_invalid");
+  if (found.kycRes.length !== 1) fail("kyc_response_element_count_invalid");
+  if (found.uidData.length !== 1) fail("uid_data_element_count_invalid");
+  if (found.poi.length !== 1) fail("poi_element_count_invalid");
+  if (found.poa.length !== 1) fail("poa_element_count_invalid");
 
-  const uid = getAttribute(person, "uid").replace(/[\s-]/g, "");
+  const [kycRes] = found.kycRes;
+  const [uidData] = found.uidData;
+  const [poi] = found.poi;
+  const [poa] = found.poa;
+
+  if (getAttribute(kycRes, "ret") !== "Y") fail("kyc_result_not_successful");
+
+  const uid = getAttribute(uidData, "uid").replace(/[\s-]/g, "");
   if (!/^\d{12}$/.test(uid)) fail("aadhaar_number_format_invalid");
 
-  const verifiedName = getAttribute(person, "name").replace(/\s+/g, " ").trim();
-  if (!verifiedName || verifiedName.length > 100 || /[\u0000-\u001f\u007f]/.test(verifiedName)) {
+  const verifiedName = getAttribute(poi, "name").replace(/\s+/g, " ").trim();
+  if (
+    !verifiedName ||
+    verifiedName.length > 100 ||
+    /[\u0000-\u001f\u007f]/.test(verifiedName)
+  ) {
     fail("name_invalid_or_missing");
   }
 
-  const birthDate = getAttribute(person, "dob");
+  const birthDate = getAttribute(poi, "dob");
   const dobMatch = /^(\d{2})-(\d{2})-(\d{4})$/.exec(birthDate);
   if (!dobMatch) fail("date_of_birth_format_invalid");
   const [, dayText, monthText, yearText] = dobMatch;
@@ -161,27 +225,30 @@ function parseAadhaarFields(xml, { onValidationDiagnostic } = {}) {
   const year = Number(yearText);
   const dobDate = new Date(Date.UTC(year, month - 1, day));
   if (
-    dobDate.getUTCFullYear() !== year || dobDate.getUTCMonth() !== month - 1 ||
-    dobDate.getUTCDate() !== day || year < 1900 || dobDate.getTime() > Date.now()
-  ) fail("date_of_birth_invalid");
+    dobDate.getUTCFullYear() !== year ||
+    dobDate.getUTCMonth() !== month - 1 ||
+    dobDate.getUTCDate() !== day ||
+    year < 1900 ||
+    dobDate.getTime() > Date.now()
+  ) {
+    fail("date_of_birth_invalid");
+  }
 
-  const addressFields = ["type", "line1", "line2", "house", "landmark", "locality", "vtc", "district", "pin", "state", "country"];
-  if (addressElements.length < 1 || addressElements.length > 8) fail("address_element_count_invalid");
-  const address = addressElements.map((element) => {
-    const entry = {};
-    for (const field of addressFields) {
-      if (!element.hasAttribute(field)) continue;
-      const value = getAttribute(element, field).trim();
-      if (/[\u0000-\u001f\u007f]/.test(value) || value.length > 500) {
-        fail("address_field_value_invalid");
-      }
-      entry[field] = value;
+  const entry = {};
+  for (const [attributeName, fieldName] of Object.entries(POA_FIELD_MAP)) {
+    if (!poa.hasAttribute(attributeName)) continue;
+    const value = getAttribute(poa, attributeName);
+    if (/[\u0000-\u001f\u007f]/.test(value) || value.length > 500) {
+      fail("address_field_value_invalid");
     }
-    if (!["line1", "vtc", "state", "country"].every((field) => entry[field]?.trim())) {
-      fail("required_address_field_missing");
-    }
-    return entry;
-  });
+    if (value) entry[fieldName] = value;
+  }
+  if (!REQUIRED_ADDRESS_FIELDS.every((field) => entry[field])) {
+    fail("required_address_field_missing");
+  }
+  if (entry.pin !== undefined && !/^\d{6}$/.test(entry.pin)) {
+    fail("address_pin_invalid");
+  }
 
   reportAadhaarDiagnostic(onValidationDiagnostic, {
     ...baseDiagnostic,
@@ -192,12 +259,15 @@ function parseAadhaarFields(xml, { onValidationDiagnostic } = {}) {
     aadhaarNumber: uid,
     maskedIdentifier: `XXXXXX${uid.slice(-4)}`,
     verifiedName,
-    address,
+    address: [entry],
     dateOfBirth: `${yearText}-${monthText}-${dayText}`,
   };
 }
 
-function validateAadhaarXml(xml, { env = process.env, onValidationDiagnostic } = {}) {
+function validateAadhaarXml(
+  xml,
+  { env = process.env, onValidationDiagnostic } = {},
+) {
   const signaturePolicy = getDigiLockerSignaturePolicy(env);
   const certificateXml = reportAadhaarStructure(
     xml,
@@ -206,7 +276,9 @@ function validateAadhaarXml(xml, { env = process.env, onValidationDiagnostic } =
   );
   const verification = verifyDigiLockerXmlSignature(certificateXml, {
     certificateEnvironmentKey: "IDTO_AADHAAR_XML_TRUSTED_CERT_PATH",
-    expectedDocumentType: "ADHAR",
+    // The eKYC format has no "type" attribute; the structure is enforced in
+    // parseAadhaarFields on the signed content instead.
+    expectedDocumentType: null,
     invalidDocumentCode: "INVALID_AADHAAR_DOCUMENT",
     env,
     onValidationDiagnostic,

@@ -18,7 +18,8 @@ const ALLOWED_CANONICALIZATION_METHODS = new Set([
   "http://www.w3.org/TR/2001/REC-xml-c14n-20010315",
   "http://www.w3.org/2001/10/xml-exc-c14n#",
 ]);
-const ENVELOPED_SIGNATURE = "http://www.w3.org/2000/09/xmldsig#enveloped-signature";
+const ENVELOPED_SIGNATURE =
+  "http://www.w3.org/2000/09/xmldsig#enveloped-signature";
 const SHA256_DIGEST = "http://www.w3.org/2001/04/xmlenc#sha256";
 
 class DigiLockerDocumentError extends Error {
@@ -43,7 +44,8 @@ function parseXml(xml, invalidDocumentCode = "INVALID_DOCUMENT") {
   try {
     document = new DOMParser({
       onError(level) {
-        if (level === "error" || level === "fatalError") parseErrors.push(level);
+        if (level === "error" || level === "fatalError")
+          parseErrors.push(level);
       },
     }).parseFromString(xml, "application/xml");
   } catch {
@@ -83,9 +85,12 @@ function safeNamespaceInfo(node) {
   if (!namespace) return null;
   if (
     namespace.length <= 256 &&
-    (/^https?:\/\/[A-Za-z0-9.-]+(?::\d+)?(?:\/[A-Za-z0-9._~:/-]*)?$/.test(namespace) ||
+    (/^https?:\/\/[A-Za-z0-9.-]+(?::\d+)?(?:\/[A-Za-z0-9._~:/-]*)?$/.test(
+      namespace,
+    ) ||
       /^urn:[A-Za-z0-9:._-]{1,240}$/.test(namespace))
-  ) return namespace;
+  )
+    return namespace;
   return "other";
 }
 
@@ -115,9 +120,13 @@ function getTrustedCertificate(environmentKey, env = process.env) {
   try {
     const certificate = fs.readFileSync(certificatePath);
     const text = certificate.toString("utf8");
-    const certificateBlocks = text.match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g);
+    const certificateBlocks = text.match(
+      /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g,
+    );
     if (certificateBlocks && certificateBlocks.length !== 1) {
-      throw new Error("Configure one pinned issuer signing certificate per document type");
+      throw new Error(
+        "Configure one pinned issuer signing certificate per document type",
+      );
     }
 
     // Trust comes from a pinned certificate configured through an independent channel.
@@ -132,7 +141,9 @@ function getTrustedCertificate(environmentKey, env = process.env) {
       Date.now() < validFrom ||
       Date.now() > validTo
     ) {
-      throw new Error("Pinned issuer signing certificate is invalid or outside its validity period");
+      throw new Error(
+        "Pinned issuer signing certificate is invalid or outside its validity period",
+      );
     }
     return x509.toString();
   } catch {
@@ -140,7 +151,11 @@ function getTrustedCertificate(environmentKey, env = process.env) {
   }
 }
 
-function extractCertificateXml(xml, invalidDocumentCode = "INVALID_DOCUMENT", onValidationDiagnostic) {
+function extractCertificateXml(
+  xml,
+  invalidDocumentCode = "INVALID_DOCUMENT",
+  onValidationDiagnostic,
+) {
   let document;
   try {
     document = parseXml(xml, invalidDocumentCode);
@@ -159,11 +174,12 @@ function extractCertificateXml(xml, invalidDocumentCode = "INVALID_DOCUMENT", on
     throw error;
   }
   const root = document.documentElement;
-  const documentFormat = root.localName === "Certificate"
-    ? "certificate_xml"
-    : root.localName === "PullDocResponse"
-      ? "pull_doc_response_xml"
-      : "unexpected_xml_root";
+  const documentFormat =
+    root.localName === "Certificate"
+      ? "certificate_xml"
+      : root.localName === "PullDocResponse"
+        ? "pull_doc_response_xml"
+        : "unexpected_xml_root";
   reportValidationDiagnostic(onValidationDiagnostic, {
     validationStage: "provider_xml_container",
     documentFormat,
@@ -173,9 +189,10 @@ function extractCertificateXml(xml, invalidDocumentCode = "INVALID_DOCUMENT", on
     expectedDocumentTypeMatched: null,
     expectedIssuerPresent: "not_evaluated",
     requiredFieldPresence: { status: "not_evaluated" },
-    validationFailureReason: root.localName === "Certificate" || root.localName === "PullDocResponse"
-      ? null
-      : "unexpected_xml_root",
+    validationFailureReason:
+      root.localName === "Certificate" || root.localName === "PullDocResponse"
+        ? null
+        : "unexpected_xml_root",
   });
   if (root.localName === "Certificate") return xml;
   if (root.localName !== "PullDocResponse") {
@@ -184,20 +201,22 @@ function extractCertificateXml(xml, invalidDocumentCode = "INVALID_DOCUMENT", on
 
   const statuses = descendantsByName(root, "ResponseStatus");
   const details = descendantsByName(root, "DocDetails");
-  const dataContents = details.length === 1
-    ? descendantsByName(details[0], "DataContent")
-    : [];
-  const responseStatusSuccess = statuses.length === 1 && getAttribute(statuses[0], "status") === "1";
-  const dataContentNonEmpty = dataContents.length === 1 && Boolean(dataContents[0].textContent?.trim());
-  const wrapperFailureReason = statuses.length !== 1
-    ? "response_status_count_invalid"
-    : !responseStatusSuccess
-      ? "response_status_not_success"
-      : details.length !== 1
-        ? "doc_details_count_invalid"
-        : dataContents.length !== 1
-          ? "data_content_count_invalid"
-          : null;
+  const dataContents =
+    details.length === 1 ? descendantsByName(details[0], "DataContent") : [];
+  const responseStatusSuccess =
+    statuses.length === 1 && getAttribute(statuses[0], "status") === "1";
+  const dataContentNonEmpty =
+    dataContents.length === 1 && Boolean(dataContents[0].textContent?.trim());
+  const wrapperFailureReason =
+    statuses.length !== 1
+      ? "response_status_count_invalid"
+      : !responseStatusSuccess
+        ? "response_status_not_success"
+        : details.length !== 1
+          ? "doc_details_count_invalid"
+          : dataContents.length !== 1
+            ? "data_content_count_invalid"
+            : null;
   const wrapperDiagnostic = {
     validationStage: "pull_doc_response_structure",
     documentFormat: "pull_doc_response_xml",
@@ -226,24 +245,30 @@ function extractCertificateXml(xml, invalidDocumentCode = "INVALID_DOCUMENT", on
     ? "data_content_empty"
     : encoded.length > MAX_DOCUMENT_XML_BYTES * 2
       ? "data_content_too_large"
-      : !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)
+      : !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(
+            encoded,
+          )
         ? "data_content_not_base64"
         : null;
   if (encodedFailureReason) {
     reportValidationDiagnostic(onValidationDiagnostic, {
       ...wrapperDiagnostic,
-      pullDocResponseChecks: { ...wrapperDiagnostic.pullDocResponseChecks, dataContentNonEmpty: Boolean(encoded) },
+      pullDocResponseChecks: {
+        ...wrapperDiagnostic.pullDocResponseChecks,
+        dataContentNonEmpty: Boolean(encoded),
+      },
       validationFailureReason: encodedFailureReason,
     });
     throw new DigiLockerDocumentError(invalidDocumentCode);
   }
 
   const decoded = Buffer.from(encoded, "base64");
-  const decodedFailureReason = !decoded.length || decoded.length > MAX_DOCUMENT_XML_BYTES
-    ? "decoded_content_length_invalid"
-    : decoded.toString("base64") !== encoded
-      ? "base64_encoding_noncanonical"
-      : null;
+  const decodedFailureReason =
+    !decoded.length || decoded.length > MAX_DOCUMENT_XML_BYTES
+      ? "decoded_content_length_invalid"
+      : decoded.toString("base64") !== encoded
+        ? "base64_encoding_noncanonical"
+        : null;
   if (decodedFailureReason) {
     reportValidationDiagnostic(onValidationDiagnostic, {
       ...wrapperDiagnostic,
@@ -272,9 +297,10 @@ function extractCertificateXml(xml, invalidDocumentCode = "INVALID_DOCUMENT", on
     expectedDocumentTypeMatched: null,
     expectedIssuerPresent: "not_evaluated",
     requiredFieldPresence: { status: "not_evaluated" },
-    validationFailureReason: certificateDocument.documentElement.localName === "Certificate"
-      ? null
-      : "decoded_certificate_root_mismatch",
+    validationFailureReason:
+      certificateDocument.documentElement.localName === "Certificate"
+        ? null
+        : "decoded_certificate_root_mismatch",
   });
   if (certificateDocument.documentElement.localName !== "Certificate") {
     throw new DigiLockerDocumentError(invalidDocumentCode);
@@ -282,40 +308,63 @@ function extractCertificateXml(xml, invalidDocumentCode = "INVALID_DOCUMENT", on
   return certificateXml;
 }
 
-function verifyDigiLockerXmlSignature(xml, {
-  certificateEnvironmentKey,
-  expectedDocumentType,
-  invalidDocumentCode = "INVALID_DOCUMENT",
-  env = process.env,
-  onValidationDiagnostic,
-} = {}) {
+function verifyDigiLockerXmlSignature(
+  xml,
+  {
+    certificateEnvironmentKey,
+    expectedDocumentType,
+    invalidDocumentCode = "INVALID_DOCUMENT",
+    env = process.env,
+    onValidationDiagnostic,
+  } = {},
+) {
   const signaturePolicy = getDigiLockerSignaturePolicy(env);
   let documentFormat = "unknown_xml";
   const reportDocumentDiagnostic = (metadata) => {
-    if (typeof metadata?.documentFormat === "string") documentFormat = metadata.documentFormat;
+    if (typeof metadata?.documentFormat === "string")
+      documentFormat = metadata.documentFormat;
     reportValidationDiagnostic(onValidationDiagnostic, {
       ...metadata,
-      signatureBypassActive: metadata?.signatureBypassActive ?? signaturePolicy.developmentOnly,
+      signatureBypassActive:
+        metadata?.signatureBypassActive ?? signaturePolicy.developmentOnly,
     });
   };
-  const certificateXml = extractCertificateXml(xml, invalidDocumentCode, reportDocumentDiagnostic);
+  const certificateXml = extractCertificateXml(
+    xml,
+    invalidDocumentCode,
+    reportDocumentDiagnostic,
+  );
   const document = parseXml(certificateXml, invalidDocumentCode);
   const root = document.documentElement;
-  const typeAttributeByLocalName = Array.from(root.attributes || []).find((attribute) =>
-    attribute.localName === "type" || attribute.name?.split(":").at(-1) === "type",
+  const typeAttributeByLocalName = Array.from(root.attributes || []).find(
+    (attribute) =>
+      attribute.localName === "type" ||
+      attribute.name?.split(":").at(-1) === "type",
   );
   const documentTypeAttributePresent = root.hasAttribute("type");
-  const documentTypeAttributeLocalNamePresent = Boolean(typeAttributeByLocalName);
-  const expectedDocumentTypeMatched = getAttribute(root, "type") === expectedDocumentType;
-  const validationFailureReason = root.localName !== "Certificate"
-    ? "certificate_root_mismatch"
-    : !documentTypeAttributePresent
-      ? documentTypeAttributeLocalNamePresent
+  const documentTypeAttributeLocalNamePresent = Boolean(
+    typeAttributeByLocalName,
+  );
+  // Some document formats (for example the UIDAI offline eKYC Aadhaar XML) carry no
+  // "type" attribute. Those callers pass no expectedDocumentType and must validate
+  // the document structure themselves on the signed content.
+  const documentTypeRequired =
+    typeof expectedDocumentType === "string" && expectedDocumentType !== "";
+  const expectedDocumentTypeMatched = documentTypeRequired
+    ? getAttribute(root, "type") === expectedDocumentType
+    : "not_applicable";
+  let validationFailureReason = null;
+  if (root.localName !== "Certificate") {
+    validationFailureReason = "certificate_root_mismatch";
+  } else if (documentTypeRequired) {
+    if (!documentTypeAttributePresent) {
+      validationFailureReason = documentTypeAttributeLocalNamePresent
         ? "namespaced_document_type_attribute"
-        : "document_type_missing"
-      : !expectedDocumentTypeMatched
-        ? "document_type_mismatch"
-        : null;
+        : "document_type_missing";
+    } else if (!expectedDocumentTypeMatched) {
+      validationFailureReason = "document_type_mismatch";
+    }
+  }
   reportValidationDiagnostic(onValidationDiagnostic, {
     validationStage: "document_type_validation",
     documentFormat,
@@ -346,23 +395,51 @@ function verifyDigiLockerXmlSignature(xml, {
     throw new DigiLockerDocumentError("INVALID_DOCUMENT_SIGNATURE");
   }
 
-  const signedInfo = descendantsByName(signatures[0], "SignedInfo", XMLDSIG_NAMESPACE);
-  const references = descendantsByName(signatures[0], "Reference", XMLDSIG_NAMESPACE);
-  const signatureMethods = descendantsByName(signatures[0], "SignatureMethod", XMLDSIG_NAMESPACE);
-  const digestMethods = descendantsByName(signatures[0], "DigestMethod", XMLDSIG_NAMESPACE);
-  const canonicalizationMethods = descendantsByName(signatures[0], "CanonicalizationMethod", XMLDSIG_NAMESPACE);
-  const transforms = descendantsByName(signatures[0], "Transform", XMLDSIG_NAMESPACE);
+  const signedInfo = descendantsByName(
+    signatures[0],
+    "SignedInfo",
+    XMLDSIG_NAMESPACE,
+  );
+  const references = descendantsByName(
+    signatures[0],
+    "Reference",
+    XMLDSIG_NAMESPACE,
+  );
+  const signatureMethods = descendantsByName(
+    signatures[0],
+    "SignatureMethod",
+    XMLDSIG_NAMESPACE,
+  );
+  const digestMethods = descendantsByName(
+    signatures[0],
+    "DigestMethod",
+    XMLDSIG_NAMESPACE,
+  );
+  const canonicalizationMethods = descendantsByName(
+    signatures[0],
+    "CanonicalizationMethod",
+    XMLDSIG_NAMESPACE,
+  );
+  const transforms = descendantsByName(
+    signatures[0],
+    "Transform",
+    XMLDSIG_NAMESPACE,
+  );
 
   if (
     signedInfo.length !== 1 ||
     references.length !== 1 ||
     references[0].getAttribute("URI") !== "" ||
     signatureMethods.length !== 1 ||
-    !ALLOWED_SIGNATURE_METHODS.has(getAttribute(signatureMethods[0], "Algorithm")) ||
+    !ALLOWED_SIGNATURE_METHODS.has(
+      getAttribute(signatureMethods[0], "Algorithm"),
+    ) ||
     digestMethods.length !== 1 ||
     getAttribute(digestMethods[0], "Algorithm") !== SHA256_DIGEST ||
     canonicalizationMethods.length !== 1 ||
-    !ALLOWED_CANONICALIZATION_METHODS.has(getAttribute(canonicalizationMethods[0], "Algorithm")) ||
+    !ALLOWED_CANONICALIZATION_METHODS.has(
+      getAttribute(canonicalizationMethods[0], "Algorithm"),
+    ) ||
     transforms.length !== 1 ||
     getAttribute(transforms[0], "Algorithm") !== ENVELOPED_SIGNATURE
   ) {

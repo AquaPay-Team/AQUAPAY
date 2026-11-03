@@ -66,6 +66,13 @@ function createInlineMockProvider() {
         },
       };
     },
+    fetchAadhaar: async ({ reference_key } = {}) => {
+      if (reference_key !== "aquapay_mock_reference_adhar_v1") {
+        throw new Error("Invalid mock Aadhaar fetch reference");
+      }
+
+      return "<mock-aadhaar-xml />";
+    },
     getIssuedDocs: async ({ reference_key } = {}) => {
       const docs = {
         aquapay_mock_reference_adhar_v1: {
@@ -209,41 +216,42 @@ function registerTestHandlers(service, type = "aadhaar") {
     issuerId: type === "aadhaar" ? "in.gov.uidai" : "in.gov.pan",
     consentPurpose: `Test ${type} verification`,
     stepNumber: type === "aadhaar" ? 2 : 3,
-    async verifyAndPersist({ userDetails } = {}) {
-      if (type === "aadhaar") {
-        assert.equal(userDetails?.status, "success");
-        assert.equal(userDetails?.user?.name, "Test User");
+    async verifyAndPersist({ userDetails, xml } = {}) {
+  if (type === "aadhaar") {
+    assert.equal(userDetails?.status, "success");
+    assert.equal(userDetails?.user?.name, "Test User");
+    assert.equal(xml, "<mock-aadhaar-xml />");
 
-        return {
-          extracted: {
-            maskedIdentifier: null,
-            verifiedName: "Test User",
-            signatureVerified: false,
-            developmentOnly: false,
-            verificationMode: "idto_user_details",
-          },
-          completion: {
-            stepNumber: 2,
-            steps_completed: 2,
-          },
-        };
-      }
+    return {
+      extracted: {
+        maskedIdentifier: "XXXX-XXXX-9999",
+        verifiedName: "Test User",
+        signatureVerified: false,
+        developmentOnly: true,
+        verificationMode: "development_unverified",
+      },
+      completion: {
+        stepNumber: 2,
+        steps_completed: 2,
+      },
+    };
+  }
 
-      // Keep existing PAN test behavior unchanged
-      return {
-        extracted: {
-          maskedIdentifier: "XXXXXX5678",
-          verifiedName: "Test User",
-          signatureVerified: false,
-          developmentOnly: true,
-          verificationMode: "development_unverified",
-        },
-        completion: {
-          stepNumber: 3,
-          steps_completed: 3,
-        },
-      };
+  // Keep existing PAN test behavior unchanged
+  return {
+    extracted: {
+      maskedIdentifier: "XXXXXX5678",
+      verifiedName: "Test User",
+      signatureVerified: false,
+      developmentOnly: true,
+      verificationMode: "development_unverified",
     },
+    completion: {
+      stepNumber: 3,
+      steps_completed: 3,
+    },
+  };
+},
   };
   service.registerVerificationHandler(type, handler);
   return () => service.registerVerificationHandler(type, null) || service;
@@ -364,11 +372,11 @@ test("completeCallback consumes state only once (single-use)", async () => {
       { correlationId: "test-correlation" }
     );
 
-    assert.equal(result.verificationStatus, "verified");
+    assert.equal(result.verificationStatus, "development_unverified");
     assert.equal(result.signatureVerified, false);
-    assert.equal(result.developmentOnly, false);
-    assert.equal(result.verificationMode, "idto_user_details");
-    assert.equal(result.maskedIdentifier, null);
+    assert.equal(result.developmentOnly, true);
+    assert.equal(result.verificationMode, "development_unverified");
+    assert.equal(result.maskedIdentifier, "XXXX-XXXX-9999");
     assert.equal(result.verifiedName, "Test User");
     assert.equal(result.steps_completed, 2);
   } catch (e) {

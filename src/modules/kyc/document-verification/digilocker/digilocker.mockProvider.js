@@ -128,6 +128,21 @@ function createDigilockerMockProvider({ env = process.env } = {}) {
         user_consent: "true",
       };
     },
+    fetchAadhaar: async ({ reference_key: referenceKey } = {}) => {
+      const document = MOCK_REFERENCES.get(referenceKey);
+
+      if (!document || document.verificationType !== "aadhaar") {
+        throw new Error("Invalid mock Aadhaar fetch request");
+      }
+
+      const fixturePath = path.join(FIXTURE_DIRECTORY, document.fixture);
+
+      try {
+        return fs.readFileSync(fixturePath, "utf8");
+      } catch {
+        throw new Error("Mock Aadhaar XML fixture is not available");
+      }
+    },
     getIssuedDocs: async ({ reference_key: referenceKey } = {}) => {
       const document = MOCK_REFERENCES.get(referenceKey);
       if (!document) throw new Error("Invalid mock reference key");

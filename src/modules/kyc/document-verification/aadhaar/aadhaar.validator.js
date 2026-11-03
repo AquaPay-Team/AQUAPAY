@@ -204,9 +204,24 @@ function parseAadhaarFields(xml, { onValidationDiagnostic } = {}) {
 
   if (getAttribute(kycRes, "ret") !== "Y") fail("kyc_result_not_successful");
 
-  const uid = getAttribute(uidData, "uid").replace(/[\s-]/g, "");
-  if (!/^\d{12}$/.test(uid)) fail("aadhaar_number_format_invalid");
+const rawUid = getAttribute(uidData, "uid").replace(/\s/g, "");
 
+const fullUid = rawUid.replace(/-/g, "");
+const isFullUid = /^\d{12}$/.test(fullUid);
+
+// Accept a masked UID only when it clearly represents 8 masked
+// characters followed by the final 4 digits.
+const isMaskedUid =
+  /^(?:[xX*]{4}[-\s]?[xX*]{4}[-\s]?\d{4}|[xX*]{8}\d{4})$/.test(rawUid);
+
+if (!isFullUid && !isMaskedUid) {
+  fail("aadhaar_number_format_invalid");
+}
+
+const uid = isFullUid ? fullUid : null;
+const maskedIdentifier = isFullUid
+  ? `XXXXXX${fullUid.slice(-4)}`
+  : `XXXXXX${rawUid.replace(/\D/g, "").slice(-4)}`;
   const verifiedName = getAttribute(poi, "name").replace(/\s+/g, " ").trim();
   if (
     !verifiedName ||
@@ -257,7 +272,7 @@ function parseAadhaarFields(xml, { onValidationDiagnostic } = {}) {
 
   return {
     aadhaarNumber: uid,
-    maskedIdentifier: `XXXXXX${uid.slice(-4)}`,
+    maskedIdentifier,
     verifiedName,
     address: [entry],
     dateOfBirth: `${yearText}-${monthText}-${dayText}`,

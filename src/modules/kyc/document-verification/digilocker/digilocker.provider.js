@@ -8,6 +8,7 @@ const ENDPOINTS = Object.freeze({
   initiateSession: "/verify/digilocker/initiate_session",
   getReference: "/verify/digilocker/get_reference",
   userDetails: "/verify/digilocker/user_details",
+  fetchAadhaar: "/verify/digilocker/fetch_aadhaar",
   issuedDocs: "/verify/digilocker/issued_docs",
   getIssuedDocs: "/verify/digilocker/get_issued_docs",
   getIssuedDocsXml: "/verify/digilocker/get_issued_docs_xml",
@@ -314,6 +315,12 @@ function createRealDigilockerProvider({
       body,
       onResponseMeta: options.onResponseMeta,
       expectedFields: ["status", "user"],
+    }),
+    fetchAadhaar: (body, options = {}) => request({
+      endpoint: ENDPOINTS.fetchAadhaar,
+      body,
+      responseType: "xml",
+      onResponseMeta: options.onResponseMeta,
     }),
     getIssuedDocs: (body, options = {}) => request({
       endpoint: ENDPOINTS.issuedDocs,

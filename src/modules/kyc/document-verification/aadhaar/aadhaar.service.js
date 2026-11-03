@@ -56,6 +56,7 @@ function createAadhaarService({
       persistIdentity: (connection, context) => identityModel.persistVerifiedIdentity(connection, {
         ...context,
         aadhaarNumber: extracted.aadhaarNumber,
+        aadhaarMaskedIdentifier: extracted.aadhaarMaskedIdentifier,
         address: extracted.address,
         dateOfBirth: extracted.dateOfBirth,
       }),

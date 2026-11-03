@@ -62,9 +62,16 @@ function validateAddress(address) {
 function validateIdentityPayload(identityType, payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) throw invalidIdentityData();
   if (identityType === "aadhaar") {
+    const hasAadhaarNumber = Object.hasOwn(payload, "aadhaarNumber");
+    const hasMaskedAadhaarIdentifier = Object.hasOwn(payload, "aadhaarMaskedIdentifier");
+    const validAadhaarNumber = hasAadhaarNumber && typeof payload.aadhaarNumber === "string" && /^\d{12}$/.test(payload.aadhaarNumber);
+    const validMaskedAadhaarIdentifier = hasMaskedAadhaarIdentifier &&
+      typeof payload.aadhaarMaskedIdentifier === "string" && /^[X*]{4,8}\d{4}$/.test(payload.aadhaarMaskedIdentifier);
     if (
-      Object.keys(payload).some((key) => !["aadhaarNumber", "address", "dateOfBirth"].includes(key)) ||
-      typeof payload.aadhaarNumber !== "string" || !/^\d{12}$/.test(payload.aadhaarNumber) ||
+      Object.keys(payload).some((key) => !["aadhaarNumber", "aadhaarMaskedIdentifier", "address", "dateOfBirth"].includes(key)) ||
+      validAadhaarNumber === validMaskedAadhaarIdentifier ||
+      (hasAadhaarNumber && !validAadhaarNumber) ||
+      (hasMaskedAadhaarIdentifier && !validMaskedAadhaarIdentifier) ||
       typeof payload.dateOfBirth !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(payload.dateOfBirth)
     ) throw invalidIdentityData();
     const [year, month, day] = payload.dateOfBirth.split("-").map(Number);

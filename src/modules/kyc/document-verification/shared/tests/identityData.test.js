@@ -72,6 +72,23 @@ test("Aadhaar encryption accepts documented POA without optional country", () =>
   assert.deepEqual(crypto.decryptIdentityPayload("aadhaar", encrypted, CONTEXT), payload);
 });
 
+test("Limited KYC masked Aadhaar identifier is encrypted distinctly and round-trips without a full number", () => {
+  const crypto = createIdentityDataCrypto({ env: TEST_ENV });
+  const payload = {
+    aadhaarMaskedIdentifier: "XXXXXX9012",
+    address: [{ line1: "Example Street", vtc: "Example Town", state: "Example State" }],
+    dateOfBirth: "1990-01-01",
+  };
+  const encrypted = crypto.encryptIdentityPayload("aadhaar", payload, CONTEXT);
+
+  assert.equal(encrypted.ciphertext.toString("utf8").includes("XXXXXX9012"), false);
+  assert.deepEqual(crypto.decryptIdentityPayload("aadhaar", encrypted, CONTEXT), payload);
+  assert.throws(() => crypto.encryptIdentityPayload("aadhaar", {
+    ...payload,
+    aadhaarNumber: "999999999999",
+  }, CONTEXT), { code: "INVALID_IDENTITY_DATA" });
+});
+
 test("production cannot consume the local development encryption key", () => {
   const productionCrypto = createIdentityDataCrypto({ env: {
     NODE_ENV: "production",

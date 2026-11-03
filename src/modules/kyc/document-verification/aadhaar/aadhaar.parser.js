@@ -140,8 +140,8 @@ function parseAadhaarXml(input, { onValidationDiagnostic } = {}) {
   const uid = rawUid.replace(/[\s-]/g, "");
   const uidIsFull = /^\d{12}$/.test(uid);
   // UIDAI e-KYC may return a Limited KYC UID with only the final four digits
-  // visible. Classify that shape without logging the value; AquaPay currently
-  // requires the full UID for its encrypted identity payload, so fail closed.
+  // visible. Keep that representation distinct from a full Aadhaar number
+  // through persistence; diagnostics report only the bounded format class.
   const uidIsMasked = /^(?:[x*]{4,8})\d{4}$/i.test(uid);
   const issuedBy = descendantsByName(root, "IssuedBy");
   const organizations = issuedBy.length === 1
@@ -239,8 +239,7 @@ function parseAadhaarXml(input, { onValidationDiagnostic } = {}) {
   if (!isValidTimestamp(timestamp)) fail("kyc_timestamp_missing_or_invalid");
   if (!issuerValid) fail("issuer_name_mismatch");
 
-  if (uidIsMasked) fail("aadhaar_identifier_masked_limited_kyc");
-  if (!uidIsFull) fail("aadhaar_number_format_invalid");
+  if (!uidIsFull && !uidIsMasked) fail("aadhaar_number_format_invalid");
 
   const verifiedName = getAttribute(poi, "name").replace(/\s+/g, " ").trim();
   if (!verifiedName || verifiedName.length > 100 || /[\u0000-\u001f\u007f]/.test(verifiedName)) {
@@ -268,11 +267,12 @@ function parseAadhaarXml(input, { onValidationDiagnostic } = {}) {
 
   // Pht is intentionally not decoded or persisted: AquaPay has no Aadhaar-photo
   // storage or image-validation policy. The bounded XML cap and duplicate check remain.
+  const maskedIdentifier = `XXXXXX${uid.slice(-4)}`;
   return {
     xml,
     data: {
-      aadhaarNumber: uid,
-      maskedIdentifier: `XXXXXX${uid.slice(-4)}`,
+      ...(uidIsFull ? { aadhaarNumber: uid } : { aadhaarMaskedIdentifier: maskedIdentifier }),
+      maskedIdentifier,
       verifiedName,
       gender: gender || null,
       address: [address],

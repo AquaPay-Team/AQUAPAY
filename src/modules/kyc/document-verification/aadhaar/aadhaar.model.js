@@ -1,4 +1,4 @@
-import identityDataModel from "../identity-data/identityData.model.js";
+import identityDataModel from "../shared/identityData.model.js";
 
 function createAadhaarModel({ identityModel = identityDataModel } = {}) {
   async function persistVerifiedIdentity(connection, {

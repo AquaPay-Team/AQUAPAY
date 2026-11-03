@@ -3,8 +3,8 @@ import {
   descendantsByName,
   getAttribute,
   parseXml,
-  verifyDigiLockerXmlSignature,
-} from "../digilocker/digilocker.signature.js";
+} from "../digilocker/digilocker.xml.js";
+import { verifyDigiLockerXmlSignature } from "../digilocker/digilocker.signature.js";
 
 function parsePanFields(xml) {
   const document = parseXml(xml, "INVALID_PAN_DOCUMENT");

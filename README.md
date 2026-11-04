@@ -1,10 +1,11 @@
 # Fintech KYC Backend
 
-Shared starter structure for the team. Stack: Node.js, Express, MySQL, MVC + service layer.
+Shared starter structure for the team. Stack: Node.js, Express, MySQL, Redis, MVC + service layer.
 
 ## Requirements
 - Node.js LTS and npm
-- MySQL Server
+- Oracle MySQL Community Server 8+
+- Redis Server 6+ (for KYC Step 1 OTP challenge storage, cooldowns, and rate limiting)
 - Git
 
 ## Setup
@@ -13,7 +14,10 @@ Shared starter structure for the team. Stack: Node.js, Express, MySQL, MVC + ser
    ```bash
    npm install
    ```
-3. Create the database and tables using the SQL files in `database/migrations/`.
+3. Run database migrations:
+   ```bash
+   node database/migrate.js
+   ```
 4. Start in development:
    ```bash
    npm run dev
@@ -33,7 +37,7 @@ The server starts on `http://localhost:3000`. `GET /api/health` is a basic healt
 - `models/`: parameterized SQL and data access
 - `middlewares/`: authentication, authorization, error handling
 - `validators/`: request validation
-- `config/`: shared configuration, including database connection
+- `config/`: shared configuration, including database connection and Redis client
 - `database/migrations/`: versioned SQL schema
 - `database/seeds/`: development reference data
 
@@ -49,10 +53,8 @@ The server starts on `http://localhost:3000`. `GET /api/health` is a basic healt
 
 The application requires **Oracle MySQL Community Server**; MariaDB is not supported.
 Startup checks the configured server identity and refuses MariaDB rather than
-silently using it. The initial schema uses MySQL 8-compatible SQL and retains the
-existing `full_name`, `company_name`, and `parent_user_id` column names. The project
-was exercised with Node.js 26.7.0; require Node.js 20.13.0 or newer (the dev script
-uses Node's built-in watch mode) and Oracle MySQL 8 or newer.
+silently using it. The initial schema uses MySQL 8-compatible SQL. The project
+requires Node.js 20.13.0 or newer and Oracle MySQL 8 or newer.
 
 ### Local setup
 
@@ -61,10 +63,7 @@ uses Node's built-in watch mode) and Oracle MySQL 8 or newer.
 2. Find the installed service name with `Get-Service *mysql*` and start only the
    verified Oracle MySQL service. If port `3306` is occupied, configure Oracle MySQL
    on a free port such as `3307`; do not stop or repurpose XAMPP/MariaDB.
-3. Review and apply `database/migrations/001_initial_schema.sql` to a new, verified
-   development database. Apply `database/seeds/001_roles.sql` only for a fresh
-   database, then apply `database/migrations/002_auth_security_tables.sql`. The app
-   never runs migrations automatically.
+3. Review and apply migrations using `node database/migrate.js`.
 4. Create an application database account with least privilege after schema setup.
    Copy `.env.example` to `.env` and fill in the local connection values. `.env` is
    ignored by Git. No credentials belong in source control.
@@ -72,9 +71,15 @@ uses Node's built-in watch mode) and Oracle MySQL 8 or newer.
    connects to the selected DB, verifies Oracle MySQL identity, and only then starts
    the HTTP listener. `GET /api/health` is a basic liveness endpoint.
 
-Do not point the application at an existing MariaDB database. Port 3307 is the sample
-Oracle MySQL port because a local service may already own 3306. No database is
-created or migrated by startup.
+### KYC Step 1 OTP and Redis Configuration
+
+The Basic Details KYC verification (Step 1) requires a Redis instance for temporary OTP challenge storage, atomic claim leases, and rate-limiting:
+
+- `REDIS_URL`: URL of the Redis server (e.g. `redis://127.0.0.1:6379` or `rediss://` for TLS).
+- `KYC_OTP_SECRET`: A cryptographically secure random string of at least 32 characters used for HMAC-SHA256 OTP hashing and details fingerprinting. Never use placeholder strings.
+
+**Development-only OTP Delivery Notice**:
+Because an external SMS/telephony provider (e.g. Twilio, AWS SNS, MSG91) has not yet been integrated for KYC OTP delivery, `POST /api/kyc/basic-details/request-otp` logs generated OTP codes directly to the server terminal (`[AquaPay KYC DEVELOPMENT OTP] XXXXXX`) in `development` mode (`NODE_ENV=development`). In any other environment (`production`, `staging`), OTP requests fail closed with `503 SERVICE_UNAVAILABLE` until an approved delivery provider is configured.
 
 ### Auth API
 
@@ -99,7 +104,7 @@ requirement, add a per-user token version checked on authenticated requests; thi
 requires a schema change and an extra read per request. It is not added by default.
 
 Required environment values and safe placeholders are listed in `.env.example`.
-Set `JWT_SECRET` to at least 32 random bytes. Schedule bounded cleanup for expired
+Set `JWT_SECRET` and `KYC_OTP_SECRET` to at least 32 random bytes. Schedule bounded cleanup for expired
 rows in the authentication tables. Tests use mocks and do not replace verification
 against a real Oracle MySQL test database.
 

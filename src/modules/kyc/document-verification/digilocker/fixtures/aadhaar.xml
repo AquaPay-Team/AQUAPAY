@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Certificate>
+  <CertificateData>
+    <KycRes ret="Y" ts="2025-11-01T12:05:21.187+05:30">
+      <UidData uid="123456789012">
+        <Poi dob="1990-05-21" gender="M" name="Synthetic AquaPay Person"/>
+        <Poa house="Synthetic Unit" street="Example Street" vtc="Example Town" dist="Example District" state="Example State" pc="000001"/>
+        <LData lang="en"><Name>Synthetic Local Person</Name><Address>Synthetic Local Address</Address></LData>
+        <Pht>U1lOVEhFVElDX1BIT1RP</Pht>
+      </UidData>
+    </KycRes>
+  </CertificateData>
+</Certificate>

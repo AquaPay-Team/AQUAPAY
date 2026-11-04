@@ -13,7 +13,10 @@ const getCurrentUser = asyncHandler(async (req, res) => {
 
 const forgotPassword = asyncHandler(async (req, res) => {
   const result = await authService.forgotPassword(req.validatedBody);
-  res.status(200).json({ success: true, message: result.message, data: null });
+  const data = process.env.NODE_ENV === "development" && result.developmentResetToken
+    ? { resetToken: result.developmentResetToken }
+    : null;
+  res.status(200).json({ success: true, message: result.message, data });
 });
 
 const resetPassword = asyncHandler(async (req, res) => {

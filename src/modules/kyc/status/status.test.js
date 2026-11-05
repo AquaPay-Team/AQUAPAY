@@ -207,7 +207,8 @@ test("KYC status model uses parameterized queries and approved schema columns", 
     assert.match(calls[1].sql, /completed_at/);
     assert.match(calls[1].sql, /ORDER BY step_number ASC/);
     assert.equal(calls[2].params[0], 13);
-    assert.match(calls[2].sql, /provider = \?/);
+    assert.match(calls[2].sql, /provider IN \(\?, \?\)/);
+    assert.deepEqual(calls[2].params, [13, "idto_digilocker_v1_dev_unverified", "idto_pan_detailed_v2_mock"]);
     assert.match(calls[2].sql, /verification_type/);
   } finally {
     pool.execute = originalExecute;

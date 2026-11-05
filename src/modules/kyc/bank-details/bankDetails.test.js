@@ -237,6 +237,12 @@ function mockValidContext() {
     async findCasesByUserIdForUpdate() {
       return [{ id: 13, user_id: 52, status: "pending" }];
     },
+
+    async findKycStepForUpdate(connection, caseId, stepNumber) {
+      assert.equal(caseId, 13);
+      assert.equal(stepNumber, 3);
+      return { id: 203, status: "completed" };
+    },
   };
 }
 
@@ -352,6 +358,50 @@ test("Bank service: updates existing bank details", async () => {
   }
 });
 
+test("Bank service: blocks Step 4 writes until PAN Step 3 is completed", async () => {
+  const connection = createMockConnection();
+  mockBankDetailsModel({
+    ...mockValidContext(),
+    async getConnection() { return connection; },
+    async findKycStepForUpdate() { return { id: 203, status: "in_progress" }; },
+  });
+
+  try {
+    await assert.rejects(
+      bankDetailsService.saveBankDetails(52, sampleBankDetails),
+      (error) => error instanceof ApiError && error.code === "KYC_PREREQUISITE_NOT_COMPLETED",
+    );
+    assert.equal(connection.calls.commit, 0);
+    assert.equal(connection.calls.rollback, 1);
+    assert.equal(connection.calls.release, 1);
+  } finally {
+    restoreBankDetailsModel();
+  }
+});
+
+test("Bank service: blocks Step 4 writes when PAN is pending or failed", async (t) => {
+  for (const status of ["pending", "failed"]) {
+    await t.test(status, async () => {
+      const connection = createMockConnection();
+      mockBankDetailsModel({
+        ...mockValidContext(),
+        async getConnection() { return connection; },
+        async findKycStepForUpdate() { return { id: 203, status }; },
+      });
+      try {
+        await assert.rejects(
+          bankDetailsService.saveBankDetails(52, sampleBankDetails),
+          (error) => error instanceof ApiError && error.code === "KYC_PREREQUISITE_NOT_COMPLETED",
+        );
+        assert.equal(connection.calls.commit, 0);
+        assert.equal(connection.calls.rollback, 1);
+      } finally {
+        restoreBankDetailsModel();
+      }
+    });
+  }
+});
+
 test("Bank service: retrieves bank details without full account number", async () => {
   const connection = createMockConnection();
 
@@ -389,6 +439,37 @@ test("Bank service: retrieves bank details without full account number", async (
     assert.equal(connection.calls.release, 1);
   } finally {
     restoreBankDetailsModel();
+  }
+});
+
+test("Bank service: blocks Step 4 bank-details reads until PAN Step 3 is completed", async (t) => {
+  for (const status of ["pending", "in_progress", "failed"]) {
+    await t.test(status, async () => {
+      const connection = createMockConnection();
+      let bankDetailsRead = false;
+      mockBankDetailsModel({
+        ...mockValidContext(),
+        async getConnection() { return connection; },
+        async findKycStepForUpdate() { return { id: 203, status }; },
+        async findBankAccountByCaseId() {
+          bankDetailsRead = true;
+          return null;
+        },
+      });
+
+      try {
+        await assert.rejects(
+          bankDetailsService.getBankDetails(52),
+          (error) => error instanceof ApiError && error.code === "KYC_PREREQUISITE_NOT_COMPLETED",
+        );
+        assert.equal(bankDetailsRead, false);
+        assert.equal(connection.calls.commit, 0);
+        assert.equal(connection.calls.rollback, 1);
+        assert.equal(connection.calls.release, 1);
+      } finally {
+        restoreBankDetailsModel();
+      }
+    });
   }
 });
 
@@ -649,4 +730,19 @@ test("Bank model: retrieves KYC cases using parameterized query and row locking"
   assert.match(capturedSql, /LIMIT 2/i);
   assert.match(capturedSql, /FOR UPDATE/i);
   assert.deepEqual(capturedParams, [52]);
+});
+
+test("Bank model: locks the PAN prerequisite step", async () => {
+  let capturedSql;
+  let capturedParams;
+  const result = await bankDetailsModelFunctions.findKycStepForUpdate({
+    async execute(sql, params) {
+      capturedSql = sql;
+      capturedParams = params;
+      return [[{ id: 203, status: "completed" }]];
+    },
+  }, 13, 3);
+  assert.equal(result.status, "completed");
+  assert.match(capturedSql, /FOR UPDATE/i);
+  assert.deepEqual(capturedParams, [13, 3]);
 });

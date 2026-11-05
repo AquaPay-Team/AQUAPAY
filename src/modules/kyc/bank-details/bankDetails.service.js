@@ -105,6 +105,22 @@ async function findBankDetailsContext(connection, userId) {
   return { user, kycCase };
 }
 
+async function requireCompletedPanStep(connection, caseId) {
+  const panStep = await bankDetailsModel.findKycStepForUpdate(
+    connection,
+    caseId,
+    3,
+  );
+  if (panStep?.status !== "completed") {
+    throw new ApiError(
+      httpStatus.CONFLICT,
+      "Complete PAN verification before accessing bank details",
+      [],
+      "KYC_PREREQUISITE_NOT_COMPLETED",
+    );
+  }
+}
+
 async function saveBankDetails(userId, bankDetails) {
   let connection;
 
@@ -119,6 +135,8 @@ async function saveBankDetails(userId, bankDetails) {
     await connection.beginTransaction();
 
     const { kycCase } = await findBankDetailsContext(connection, userId);
+
+    await requireCompletedPanStep(connection, kycCase.id);
 
     const existingAccount =
       await bankDetailsModel.findBankAccountByCaseIdForUpdate(
@@ -158,8 +176,6 @@ async function saveBankDetails(userId, bankDetails) {
       );
     }
 
-    await connection.commit();
-
     const step4Completed = await bankDetailsModel.completeStep4(
       connection,
       kycCase.id,
@@ -171,6 +187,8 @@ async function saveBankDetails(userId, bankDetails) {
       connection,
       kycCase.id,
     );
+
+    await connection.commit();
 
     return {
       id: accountId,
@@ -208,6 +226,7 @@ async function getBankDetails(userId) {
     await connection.beginTransaction();
 
     const { kycCase } = await findBankDetailsContext(connection, userId);
+    await requireCompletedPanStep(connection, kycCase.id);
 
     const account = await bankDetailsModel.findBankAccountByCaseId(
       connection,

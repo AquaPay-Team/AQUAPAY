@@ -10,21 +10,7 @@ const MOCK_DOCUMENTS = Object.freeze({
     verificationType: "aadhaar",
     code: "aquapay-mock-adhar-v1",
     referenceKey: "aquapay_mock_reference_adhar_v1",
-    uri: "in.gov.uidai-ADHAR-aquapay-mock-v1",
-    documentName: "Aadhaar Card",
-    issuerId: "in.gov.uidai",
-    issuerName: "Unique Identification Authority of India",
     fixture: "aadhaar.xml",
-  },
-  PANCR: {
-    verificationType: "pan",
-    code: "aquapay-mock-pancr-v1",
-    referenceKey: "aquapay_mock_reference_pancr_v1",
-    uri: "in.gov.pan-PANCR-aquapay-mock-v1",
-    documentName: "PAN Card",
-    issuerId: "in.gov.pan",
-    issuerName: "Income Tax Department",
-    fixture: "pan.xml",
   },
 });
 
@@ -118,39 +104,6 @@ function createDigilockerMockProvider({ env = process.env } = {}) {
       const fixturePath = path.join(FIXTURE_DIRECTORY, document.fixture);
       try { return fs.readFileSync(fixturePath, "utf8"); }
       catch { throw new Error("Mock DigiLocker Aadhaar XML fixture is not available"); }
-    },
-    getIssuedDocs: async ({ reference_key: referenceKey } = {}) => {
-      const document = MOCK_REFERENCES.get(referenceKey);
-      if (!document) throw new Error("Invalid mock reference key");
-      return {
-        status: "success",
-        issued_docs: {
-          items: [{
-            name: document.documentName,
-            type: "file",
-            size: "",
-            date: "2025-01-01T00:00:00Z",
-            parent: "",
-            mime: ["application/xml"],
-            uri: document.uri,
-            doctype: document.verificationType === "aadhaar" ? "ADHAR" : "PANCR",
-            issuerid: document.issuerId,
-            issuer: document.issuerName,
-          }],
-        },
-      };
-    },
-    getIssuedDocsXml: async ({ reference_key: referenceKey, uri } = {}) => {
-      const document = MOCK_REFERENCES.get(referenceKey);
-      if (!document || uri !== document.uri) {
-        throw new Error("Invalid mock document request");
-      }
-      const fixturePath = path.join(FIXTURE_DIRECTORY, document.fixture);
-      try {
-        return fs.readFileSync(fixturePath, "utf8");
-      } catch {
-        throw new Error("Mock DigiLocker XML fixture is not available");
-      }
     },
     getMockCallbackParameters,
   };

@@ -1,5 +1,5 @@
 import pool from "../../../config/db.js";
-import { DEVELOPMENT_UNVERIFIED_PROVIDER_NAME } from "../document-verification/digilocker/digilocker.model.js";
+import { DEVELOPMENT_ONLY_PROVIDER_NAMES } from "../document-verification/digilocker/digilocker.model.js";
 
 async function findCasesByUserId(userId) {
   const [rows] = await pool.execute(
@@ -29,10 +29,10 @@ async function findDevelopmentUnverifiedVerificationsByCaseId(caseId) {
     `SELECT verification_type
        FROM kyc_verifications
       WHERE case_id = ?
-        AND provider = ?
+        AND provider IN (?, ?)
         AND status = 'verified'
       ORDER BY verification_type ASC`,
-    [caseId, DEVELOPMENT_UNVERIFIED_PROVIDER_NAME],
+    [caseId, ...DEVELOPMENT_ONLY_PROVIDER_NAMES],
   );
   return rows;
 }

@@ -1,10 +1,157 @@
 import bankDetailsModel from "./bankDetails.model.js";
-// import { encryptAccountNumber } from "../../../utils/bankAccountEncryption.js";
 import { encryptAccountNumber } from "./bankAccountEncryption.js";
 import ApiError from "../../../utils/ApiError.js";
 import httpStatus from "../../../utils/httpStatus.js";
 
 const BANK_DETAILS_STEP = 4;
+
+async function getBankNameByIfsc(ifscCode) {
+  let response;
+
+  try {
+    const endpoint =
+      `https://codein.co.in/api/v1/ifsc/${encodeURIComponent(ifscCode)}`;
+
+    response = await fetch(endpoint, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+  } catch (error) {
+    logKycFailure("IFSC bank-name lookup request", error);
+    throw serviceUnavailable();
+  }
+
+  let result;
+
+  try {
+    result = await response.json();
+  } catch (error) {
+    logKycFailure("IFSC bank-name lookup response parsing", error);
+    throw serviceUnavailable();
+  }
+
+  if (response.status === 404) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      "Invalid IFSC code. Please check and try again.",
+      [],
+      "INVALID_IFSC",
+    );
+  }
+
+  if (
+    !response.ok ||
+    typeof result?.bank !== "string" ||
+    !result.bank.trim()
+  ) {
+    logKycFailure(
+      "IFSC bank-name lookup response",
+      new Error("Bank name missing or lookup unsuccessful"),
+    );
+    throw serviceUnavailable();
+  }
+
+  if (
+    typeof result.ifsc !== "string" ||
+    result.ifsc.toUpperCase() !== ifscCode.toUpperCase()
+  ) {
+    throw serviceUnavailable();
+  }
+
+  return result.bank.trim();
+}
+
+async function verifyBankAccountWithIdto(bankDetails) {
+  const bankName = await getBankNameByIfsc(bankDetails.ifscCode);
+  const clientId = process.env.IDTO_CLIENT_ID;
+  const apiKey = process.env.IDTO_API_KEY;
+  const baseUrl = process.env.IDTO_BASE_URL;
+
+  if (!clientId || !apiKey || !baseUrl) {
+    throw serviceUnavailable();
+  }
+
+  let response;
+
+  try {
+    const endpoint = `${baseUrl.replace(/\/+$/, "")}/v2/verify/bank_verification`;
+
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Client-ID": clientId,
+        "X-API-KEY": apiKey,
+      },
+      body: JSON.stringify({
+        account_number: bankDetails.accountNumber,
+        ifsc_code: bankDetails.ifscCode,
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+  } catch (error) {
+    logKycFailure("IDTO bank verification request", error);
+    throw serviceUnavailable();
+  }
+
+  let result;
+
+  try {
+    result = await response.json();
+  } catch (error) {
+    logKycFailure("IDTO bank verification response parsing", error);
+    throw serviceUnavailable();
+  }
+
+  if (result?.error_code === "IDTO_202") {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      "Bank account details could not be verified. Please check the account number and IFSC.",
+      [],
+      "BANK_DETAILS_MISMATCH",
+    );
+  }
+
+  if (!response.ok || result?.status !== "success") {
+    console.error("[AquaPay KYC] IDTO bank verification failed", {
+      httpStatus: response.status,
+      providerStatus:
+        typeof result?.status === "string" ? result.status : undefined,
+      providerErrorCode:
+        typeof result?.error_code === "string"
+          ? result.error_code
+          : undefined,
+      providerMessage:
+        typeof result?.message === "string"
+          ? result.message.slice(0, 200)
+          : undefined,
+    });
+
+    throw serviceUnavailable();
+  }
+
+  if (!result?.data?.account_holder_name) {
+    logKycFailure(
+      "IDTO bank verification response",
+      new Error("Missing account-holder data"),
+    );
+    throw serviceUnavailable();
+  }
+
+  console.log("[IDTO bank verification successful]", {
+  providerReference: result.tranx_id,
+  accountHolderName: result.data.account_holder_name,
+});
+
+return {
+  accountHolderName: result.data.account_holder_name,
+  bankName,
+  providerReference: result.tranx_id,
+};
+}
 
 function serviceUnavailable() {
   return new ApiError(
@@ -16,7 +163,13 @@ function serviceUnavailable() {
 }
 
 function logKycFailure(operation, error) {
-  const details = {};
+  const details = {
+    errorName: error?.name || "UnknownError",
+    errorMessage:
+      typeof error?.message === "string"
+        ? error.message.slice(0, 300)
+        : undefined,
+  };
 
   if (typeof error?.code === "string" && /^[A-Z0-9_]+$/.test(error.code)) {
     details.code = error.code;
@@ -26,8 +179,8 @@ function logKycFailure(operation, error) {
     details.errno = error.errno;
   }
 
-  if (Object.keys(details).length === 0) {
-    details.errorType = error?.name || "UnknownError";
+  if (typeof error?.sqlMessage === "string") {
+    details.sqlMessage = error.sqlMessage.slice(0, 300);
   }
 
   console.error(`[AquaPay KYC] ${operation} failed`, details);
@@ -106,6 +259,9 @@ async function findBankDetailsContext(connection, userId) {
 }
 
 async function saveBankDetails(userId, bankDetails) {
+  // Verify the account with IDTO before opening a database transaction.
+  const verification = await verifyBankAccountWithIdto(bankDetails);
+
   let connection;
 
   try {
@@ -118,6 +274,7 @@ async function saveBankDetails(userId, bankDetails) {
   try {
     await connection.beginTransaction();
 
+    // Re-check the user's KYC case after IDTO verification.
     const { kycCase } = await findBankDetailsContext(connection, userId);
 
     const existingAccount =
@@ -132,12 +289,13 @@ async function saveBankDetails(userId, bankDetails) {
 
     const accountNumberLast4 = bankDetails.accountNumber.slice(-4);
 
-    const encryptedDetails = {
-      accountHolderName: bankDetails.accountHolderName,
-      bankName: bankDetails.bankName,
+    const verifiedDetails = {
+      accountHolderName: verification.accountHolderName,
+      bankName: verification.bankName,
       ifscCode: bankDetails.ifscCode,
       encryptedAccountNumber,
       accountNumberLast4,
+      providerReference: verification.providerReference,
     };
 
     let accountId;
@@ -146,7 +304,8 @@ async function saveBankDetails(userId, bankDetails) {
       await bankDetailsModel.updateBankAccount(
         connection,
         existingAccount.id,
-        encryptedDetails,
+        kycCase.id,
+        verifiedDetails,
       );
 
       accountId = existingAccount.id;
@@ -154,34 +313,39 @@ async function saveBankDetails(userId, bankDetails) {
       accountId = await bankDetailsModel.insertBankAccount(
         connection,
         kycCase.id,
-        encryptedDetails,
+        verifiedDetails,
       );
     }
 
-    await connection.commit();
-
+    // Complete Step 4 inside the same transaction.
     const step4Completed = await bankDetailsModel.completeStep4(
       connection,
       kycCase.id,
     );
+
     if (!step4Completed) {
       throw new Error("KYC Step 4 completion update failed");
     }
-    const stepsCompleted = await bankDetailsModel.updateCompletedStepsCount(
-      connection,
-      kycCase.id,
-    );
+
+    const stepsCompleted =
+      await bankDetailsModel.updateCompletedStepsCount(
+        connection,
+        kycCase.id,
+      );
+
+    // Commit only after saving the account and completing Step 4.
+    await connection.commit();
 
     return {
       id: accountId,
-      accountHolderName: bankDetails.accountHolderName,
-      bankName: bankDetails.bankName,
+      accountHolderName: verification.accountHolderName,
+      bankName: verification.bankName,
       ifscCode: bankDetails.ifscCode,
       accountNumberLast4,
-      verificationStatus: "pending",
+      verificationStatus: "verified",
       stepNumber: BANK_DETAILS_STEP,
       steps_completed: stepsCompleted,
-      message: "Bank details saved. Verification is pending.",
+      message: "Bank account verified and details saved successfully.",
     };
   } catch (error) {
     await releaseConnection(connection, true);
@@ -191,6 +355,7 @@ async function saveBankDetails(userId, bankDetails) {
       throw error;
     }
 
+    // Detailed diagnostic logging for unexpected save/database errors.
     logKycFailure("Bank Details save", error);
     throw serviceUnavailable();
   } finally {
@@ -239,7 +404,9 @@ async function getBankDetails(userId) {
       connection = null;
     }
 
-    if (error instanceof ApiError) throw error;
+    if (error instanceof ApiError) {
+      throw error;
+    }
 
     logKycFailure("Bank Details retrieval", error);
     throw serviceUnavailable();

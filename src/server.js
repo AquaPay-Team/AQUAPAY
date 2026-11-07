@@ -11,13 +11,14 @@ import pool, { verifyDatabaseConnection } from "./config/db.js";
 import redisConnection from "./config/redis.js";
 import { getAuthConfig } from "./config/auth.js";
 import { assertDigiLockerSignaturePolicy } from "./modules/kyc/document-verification/digilocker/digilocker.signatureConfig.js";
-import { assertIdentityEncryptionConfiguration } from "./modules/kyc/document-verification/identity-data/identityData.crypto.js";
-import "./modules/kyc/document-verification/registerHandlers.js";
+import { assertIdentityEncryptionConfiguration } from "./modules/kyc/document-verification/shared/identityData.crypto.js";
+import { assertProviderSessionEncryptionConfiguration } from "./modules/kyc/document-verification/shared/providerSession.crypto.js";
 
 async function start() {
   try {
     const signaturePolicy = assertDigiLockerSignaturePolicy(process.env);
     assertIdentityEncryptionConfiguration(process.env);
+    assertProviderSessionEncryptionConfiguration();
 
     // Validate auth configuration early
     getAuthConfig();
@@ -29,15 +30,16 @@ async function start() {
     // Verify DB connection before starting server
     await verifyDatabaseConnection();
     const { default: digilockerModel } = await import("./modules/kyc/document-verification/digilocker/digilocker.model.js");
+    await digilockerModel.assertSessionSchema();
     await digilockerModel.assertNoDevelopmentUnverifiedRecords();
     const port = Number(process.env.PORT || 3000);
 
     const { default: digilockerProvider } = await import("./modules/kyc/document-verification/digilocker/digilocker.provider.js");
     console.info(
-      `AquaPay DigiLocker provider: ${digilockerProvider.mode}; XML signature policy: ${signaturePolicy.mode}`,
+      `AquaPay DigiLocker provider: ${digilockerProvider.mode}; Aadhaar XML signatures are not verified; PAN XML signature policy: ${signaturePolicy.mode}`,
     );
     if (signaturePolicy.developmentOnly) {
-      console.warn("DigiLocker results will be marked development-only and cryptographically unverified");
+      console.warn("PAN XML verification results will be marked development-only and cryptographically unverified");
     }
 
     const server = app.listen(port, () => {

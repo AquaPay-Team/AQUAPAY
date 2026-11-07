@@ -10,202 +10,73 @@ const AADHAAR_HANDLER = Object.freeze({
   stepNumber: 2,
 });
 
-function isValidDateOfBirth(value) {
-  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    return false;
+async function retrieveAadhaarDocument({ provider, referenceKey, reportProviderStage, onResponseMeta }) {
+  const options = onResponseMeta ? { onResponseMeta } : undefined;
+  await reportProviderStage("provider_user_details", "user_details");
+  const userDetails = await provider.getUserDetails({ reference_key: referenceKey }, options);
+  if (!userDetails || typeof userDetails !== "object" || Array.isArray(userDetails)) {
+    throw new Error("IDTO_INVALID_RESPONSE");
   }
-
-  const [year, month, day] = value.split("-").map(Number);
-  const date = new Date(Date.UTC(year, month - 1, day));
-
-  return (
-    date.getUTCFullYear() === year &&
-    date.getUTCMonth() === month - 1 &&
-    date.getUTCDate() === day
-  );
-}
-
-/**
- * IDTO formats documented:
- * - YYYY-MM-DD
- * - DDMMYYYY
- *
- * Returns normalized YYYY-MM-DD, or null for invalid/unsupported values.
- */
-function normalizeAadhaarDob(value) {
-  if (typeof value !== "string") return null;
-
-  const dob = value.trim();
-  let normalized;
-
-  if (/^\d{4}-\d{2}-\d{2}$/.test(dob)) {
-    normalized = dob;
-  } else if (/^\d{8}$/.test(dob)) {
-    const day = dob.slice(0, 2);
-    const month = dob.slice(2, 4);
-    const year = dob.slice(4, 8);
-
-    normalized = `${year}-${month}-${day}`;
-  } else {
-    return null;
+  if (userDetails && Object.hasOwn(userDetails, "status") && userDetails.status !== "success") {
+    throw new Error("IDTO_OPERATION_FAILED");
   }
-
-  return isValidDateOfBirth(normalized) ? normalized : null;
-}
-
-function normalizeName(value) {
-  if (typeof value !== "string") return null;
-
-  const normalized = value
-    .trim()
-    .replace(/\s+/g, " ")
-    .toLocaleLowerCase("en");
-
-  return normalized || null;
+  await reportProviderStage("provider_fetch_aadhaar", "fetch_aadhaar");
+  return provider.fetchAadhaar({ reference_key: referenceKey }, options);
 }
 
 function createAadhaarService({
   digilocker = digilockerService,
   model = digilockerModel,
   identityModel = aadhaarIdentityModel,
-  validator = validateAadhaarXml,
-  env = process.env,
+  validateDocument = validateAadhaarXml,
 } = {}) {
   async function initiateVerification(userId, input = {}) {
     return digilocker.initiateAuthorization(userId, "aadhaar", input);
   }
 
+  async function getVerificationStatus(userId, sessionId) {
+    return digilocker.getAadhaarSessionStatus(userId, sessionId);
+  }
+
   async function verifyAndPersist({
     attempt,
-    userDetails,
     xml,
     setDiagnosticStage = () => {},
     setDocumentDiagnostics = () => {},
   }) {
-    setDiagnosticStage("aadhaar_user_details_validation");
-
-    const user = userDetails?.user;
-    const userDetailsDob = normalizeAadhaarDob(user?.dob);
-    const userDetailsName = normalizeName(user?.name);
-
-    if (
-      userDetails?.status !== "success" ||
-      !user ||
-      typeof user !== "object" ||
-      !userDetailsName ||
-      user.name.trim().length > 100 ||
-      !userDetailsDob ||
-      !["M", "F", "T"].includes(user.gender) ||
-      user.eaadhaar !== "Y"
-    ) {
-      throw new Error("INVALID_AADHAAR_USER_DETAILS");
-    }
-
-    if (typeof xml !== "string" || !xml.trim()) {
-      throw new Error("INVALID_DOCUMENT_RESPONSE");
-    }
-
-    setDiagnosticStage("aadhaar_xml_validation");
-
-    const validatedXml = await validator(xml, {
-      env,
+    await setDiagnosticStage("aadhaar_xml_validation");
+    const extracted = validateDocument(xml, {
       onValidationDiagnostic: setDocumentDiagnostics,
     });
-
-    if (
-      !validatedXml ||
-      typeof validatedXml.verifiedName !== "string" ||
-      !validatedXml.verifiedName.trim() ||
-      typeof validatedXml.dateOfBirth !== "string" ||
-      typeof validatedXml.maskedIdentifier !== "string" ||
-      typeof validatedXml.signatureVerified !== "boolean" ||
-      typeof validatedXml.developmentOnly !== "boolean" ||
-      typeof validatedXml.verificationMode !== "string"
-    ) {
-      throw new Error("INVALID_AADHAAR_DOCUMENT");
-    }
-
-    const xmlDob = normalizeAadhaarDob(validatedXml.dateOfBirth);
-    const xmlName = normalizeName(validatedXml.verifiedName);
-
-    if (
-      !xmlDob ||
-      !xmlName ||
-      xmlDob !== userDetailsDob ||
-      xmlName !== userDetailsName
-    ) {
-      throw new Error("AADHAAR_DETAILS_MISMATCH");
-    }
-
-    const expectedVerificationMode = validatedXml.signatureVerified
-      ? "issuer_certificate"
-      : "development_unverified";
-
-    if (
-      validatedXml.developmentOnly !== !validatedXml.signatureVerified ||
-      validatedXml.verificationMode !== expectedVerificationMode
-    ) {
-      throw new Error("INVALID_AADHAAR_DOCUMENT");
-    }
-
-    const extracted = {
-      verifiedName: validatedXml.verifiedName.trim(),
-      dateOfBirth: xmlDob,
-      gender: user.gender,
-      eaadhaar: user.eaadhaar,
-      maskedIdentifier: validatedXml.maskedIdentifier,
-      aadhaarNumber: validatedXml.aadhaarNumber,
-      address: validatedXml.address,
-      signatureVerified: validatedXml.signatureVerified,
-      developmentOnly: validatedXml.developmentOnly,
-      verificationMode: validatedXml.verificationMode,
-    };
-
-    setDiagnosticStage("aadhaar_transactional_persistence");
-
+    await setDiagnosticStage("aadhaar_transactional_persistence");
     const completion = await model.completeVerification({
       ...attempt,
-      verificationMode: extracted.verificationMode,
       maskedIdentifier: extracted.maskedIdentifier,
       verifiedName: extracted.verifiedName,
-      persistIdentity: (connection, context) =>
-        identityModel.persistVerifiedIdentity(connection, {
-          ...context,
-          dateOfBirth: extracted.dateOfBirth,
-          gender: extracted.gender,
-          eaadhaar: extracted.eaadhaar,
-          aadhaarNumber: extracted.aadhaarNumber,
-          address: extracted.address,
-        }),
-      signatureVerified: extracted.signatureVerified,
+      persistIdentity: (connection, context) => identityModel.persistVerifiedIdentity(connection, {
+        ...context,
+        aadhaarNumber: extracted.aadhaarNumber,
+        aadhaarMaskedIdentifier: extracted.aadhaarMaskedIdentifier,
+        address: extracted.address,
+        dateOfBirth: extracted.dateOfBirth,
+      }),
     });
-
     return { extracted, completion };
   }
 
   const unregister = digilocker.registerVerificationHandler("aadhaar", {
     ...AADHAAR_HANDLER,
+    retrieveDocument: retrieveAadhaarDocument,
     verifyAndPersist,
   });
 
-  return {
-    initiateVerification,
-    verifyAndPersist,
-    unregister,
-  };
+  return { initiateVerification, getVerificationStatus, verifyAndPersist, unregister };
 }
 
 const defaultService = createAadhaarService();
 
 export const initiateVerification = defaultService.initiateVerification;
+export const getVerificationStatus = defaultService.getVerificationStatus;
 export const verifyAndPersist = defaultService.verifyAndPersist;
-
-export {
-  AADHAAR_HANDLER,
-  createAadhaarService,
-};
-
-export default {
-  initiateVerification,
-  verifyAndPersist,
-};
+export { AADHAAR_HANDLER, createAadhaarService, retrieveAadhaarDocument };
+export default { initiateVerification, getVerificationStatus, verifyAndPersist };

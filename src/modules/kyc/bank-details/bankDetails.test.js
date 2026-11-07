@@ -8,6 +8,7 @@ import {
   encryptAccountNumber,
   decryptAccountNumber,
 } from "./bankAccountEncryption.js";
+
 import bankDetailsService from "./bankDetails.service.js";
 import bankDetailsModel from "./bankDetails.model.js";
 import * as bankDetailsModelFunctions from "./bankDetails.model.js";
@@ -47,13 +48,11 @@ function runValidator(body) {
 
 test("Bank validation: accepts valid details", () => {
   const result = runValidator({
-    bankName: "Test Bank",
     ifscCode: "HDFC0001234",
     accountNumber: "123456789012",
   });
 
   assert.deepEqual(result, {
-    bankName: "Test Bank",
     ifscCode: "HDFC0001234",
     accountNumber: "123456789012",
   });
@@ -61,7 +60,6 @@ test("Bank validation: accepts valid details", () => {
 
 test("Bank validation: normalizes IFSC code", () => {
   const result = runValidator({
-    bankName: "Test Bank",
     ifscCode: "hdfc0001234",
     accountNumber: "123456789012",
   });
@@ -72,7 +70,6 @@ test("Bank validation: normalizes IFSC code", () => {
 test("Bank validation: rejects invalid IFSC", () => {
   assert.throws(() =>
     runValidator({
-      bankName: "Test Bank",
       ifscCode: "INVALID123",
       accountNumber: "123456789012",
     }),
@@ -82,7 +79,6 @@ test("Bank validation: rejects invalid IFSC", () => {
 test("Bank validation: rejects account number shorter than 9 digits", () => {
   assert.throws(() =>
     runValidator({
-      bankName: "Test Bank",
       ifscCode: "HDFC0001234",
       accountNumber: "12345678",
     }),
@@ -92,7 +88,6 @@ test("Bank validation: rejects account number shorter than 9 digits", () => {
 test("Bank validation: rejects account number longer than 18 digits", () => {
   assert.throws(() =>
     runValidator({
-      bankName: "Test Bank",
       ifscCode: "HDFC0001234",
       accountNumber: "1234567890123456789",
     }),
@@ -102,7 +97,6 @@ test("Bank validation: rejects account number longer than 18 digits", () => {
 test("Bank validation: rejects non-numeric account number", () => {
   assert.throws(() =>
     runValidator({
-      bankName: "Test Bank",
       ifscCode: "HDFC0001234",
       accountNumber: "12345ABC9012",
     }),
@@ -222,14 +216,27 @@ function mockValidContext() {
     async findCasesByUserIdForUpdate() {
       return [{ id: 13, user_id: 52, status: "pending" }];
     },
+
+    async findKycStepForUpdate(connection, caseId, stepNumber) {
+      assert.equal(caseId, 13);
+      assert.equal(stepNumber, 3);
+
+      return {
+        id: 103,
+        status: "completed",
+      };
+    },
   };
 }
 
 const sampleBankDetails = {
-  bankName: "Test Bank",
   ifscCode: "HDFC0001234",
   accountNumber: "123456789012",
 };
+
+// ------------------------------------------------------------
+// IFSC and IDTO API mocks
+// ------------------------------------------------------------
 
 function mockSuccessfulIdtoVerification() {
   const originalFetch = globalThis.fetch;
@@ -241,27 +248,50 @@ function mockSuccessfulIdtoVerification() {
   process.env.IDTO_API_KEY = "test-api-key";
   process.env.IDTO_BASE_URL = "https://idto.example";
 
-  globalThis.fetch = async (url, options) => {
-    assert.match(String(url), /\/v2\/verify\/bank_verification$/);
-    assert.equal(options.method, "POST");
+  globalThis.fetch = async (url, options = {}) => {
+    const requestUrl = String(url);
 
-    assert.deepEqual(JSON.parse(options.body), {
-      account_number: sampleBankDetails.accountNumber,
-      ifsc_code: sampleBankDetails.ifscCode,
-    });
+    // Mock IFSC API: fetch bank name using IFSC code.
+    if (requestUrl.includes("/api/v1/ifsc/")) {
+      assert.match(requestUrl, /HDFC0001234$/);
 
-    return {
-      ok: true,
-      async json() {
-        return {
-          status: "success",
-          tranx_id: "IDTO-TXN-123",
-          data: {
-            account_holder_name: "Test User",
-          },
-        };
-      },
-    };
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return {
+            ifsc: "HDFC0001234",
+            bank: "HDFC Bank",
+          };
+        },
+      };
+    }
+
+    // Mock IDTO API: verify bank account.
+    if (requestUrl.endsWith("/v2/verify/bank_verification")) {
+      assert.equal(options.method, "POST");
+
+      assert.deepEqual(JSON.parse(options.body), {
+        account_number: sampleBankDetails.accountNumber,
+        ifsc_code: sampleBankDetails.ifscCode,
+      });
+
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return {
+            status: "success",
+            tranx_id: "IDTO-TXN-123",
+            data: {
+              account_holder_name: "Test User",
+            },
+          };
+        },
+      };
+    }
+
+    throw new Error(`Unexpected API request in test: ${requestUrl}`);
   };
 
   return () => {
@@ -333,6 +363,7 @@ test("Bank service: saves newly verified bank details", async () => {
 
     assert.equal(result.id, 101);
     assert.equal(result.accountHolderName, "Test User");
+    assert.equal(result.bankName, "HDFC Bank");
     assert.equal(result.accountNumberLast4, "9012");
     assert.equal(result.verificationStatus, "verified");
     assert.equal(result.stepNumber, 4);
@@ -340,6 +371,7 @@ test("Bank service: saves newly verified bank details", async () => {
 
     assert.equal(insertedDetails.caseId, 13);
     assert.equal(insertedDetails.accountHolderName, "Test User");
+    assert.equal(insertedDetails.bankName, "HDFC Bank");
     assert.equal(insertedDetails.providerReference, "IDTO-TXN-123");
     assert.ok(Buffer.isBuffer(insertedDetails.encryptedAccountNumber));
     assert.equal(insertedDetails.accountNumberLast4, "9012");
@@ -397,6 +429,7 @@ test("Bank service: updates existing bank account", async () => {
     assert.equal(updatedAccountId, 77);
     assert.equal(updatedCaseId, 13);
     assert.equal(updatedDetails.accountHolderName, "Test User");
+    assert.equal(updatedDetails.bankName, "HDFC Bank");
     assert.equal(updatedDetails.providerReference, "IDTO-TXN-123");
     assert.equal(updatedDetails.accountNumberLast4, "9012");
     assert.ok(Buffer.isBuffer(updatedDetails.encryptedAccountNumber));

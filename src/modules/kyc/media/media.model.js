@@ -105,6 +105,18 @@ async function findMediaByIdAndCaseId(connection, assetId, caseId) {
 
   return rows[0] || null;
 }
+async function hasAllRequiredMedia(connection, caseId) {
+  const [rows] = await connection.execute(
+    `SELECT COUNT(DISTINCT asset_type) AS uploaded_count
+       FROM media_assets
+      WHERE case_id = ?
+        AND asset_type IN ('shop_image', 'selfie', 'consent_video')
+        AND status IN ('uploaded', 'verified')`,
+    [caseId],
+  );
+
+  return Number(rows[0]?.uploaded_count || 0) === 3;
+}
 
 async function completeStep5(connection, caseId) {
   const [result] = await connection.execute(
@@ -147,6 +159,7 @@ export {
   insertMediaAsset,
   findMediaByCaseId,
   findMediaByIdAndCaseId,
+  hasAllRequiredMedia,
   completeStep5,
   updateCompletedStepsCount,
 };

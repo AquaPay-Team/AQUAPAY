@@ -48,8 +48,7 @@ function validateCallbackQuery(query) {
     code.length < 1 ||
     code.length > 512 ||
     /[\u0000-\u001f\u007f]/.test(code) ||
-    typeof codeVerifier !== "string" ||
-    !/^[A-Za-z0-9._~-]{43,128}$/.test(codeVerifier) ||
+    typeof codeVerifier !== "string" || !/^[A-Za-z0-9._~-]{43,128}$/.test(codeVerifier) ||
     typeof state !== "string" ||
     !/^[A-Za-z0-9_-]{43}$/.test(state) ||
     (Object.hasOwn(query, "clientId") && typeof query.clientId !== "string")

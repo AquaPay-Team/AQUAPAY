@@ -31,6 +31,18 @@ async function findCasesByUserIdForUpdate(connection, userId) {
   return rows;
 }
 
+async function findKycStepForUpdate(connection, caseId, stepNumber) {
+  const [rows] = await connection.execute(
+    `SELECT id, status
+       FROM kyc_steps
+      WHERE case_id = ? AND step_number = ?
+      LIMIT 1
+      FOR UPDATE`,
+    [caseId, stepNumber],
+  );
+  return rows[0] || null;
+}
+
 async function findBankAccountByCaseIdForUpdate(connection, caseId) {
   const [rows] = await connection.execute(
     `SELECT id, account_holder_name, bank_name, ifsc_code,
@@ -175,6 +187,7 @@ export {
   getConnection,
   findActiveUserForUpdate,
   findCasesByUserIdForUpdate,
+  findKycStepForUpdate,
   findBankAccountByCaseIdForUpdate,
   findBankAccountByCaseId,
   insertBankAccount,
@@ -187,6 +200,7 @@ export default {
   getConnection,
   findActiveUserForUpdate,
   findCasesByUserIdForUpdate,
+  findKycStepForUpdate,
   findBankAccountByCaseIdForUpdate,
   findBankAccountByCaseId,
   insertBankAccount,

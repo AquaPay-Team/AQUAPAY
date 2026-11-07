@@ -274,8 +274,24 @@ async function saveBankDetails(userId, bankDetails) {
   try {
     await connection.beginTransaction();
 
-    // Re-check the user's KYC case after IDTO verification.
+        // Re-check the user's KYC case after IDTO verification.
     const { kycCase } = await findBankDetailsContext(connection, userId);
+
+    // Require PAN verification (Step 3) before bank verification (Step 4).
+    const panStep = await bankDetailsModel.findKycStepForUpdate(
+      connection,
+      kycCase.id,
+      3,
+    );
+
+    if (!panStep || panStep.status !== "completed") {
+      throw new ApiError(
+        httpStatus.CONFLICT,
+        "Complete PAN verification before submitting bank details.",
+        [],
+        "PAN_PREREQUISITE_NOT_COMPLETED",
+      );
+    }
 
     const existingAccount =
       await bankDetailsModel.findBankAccountByCaseIdForUpdate(

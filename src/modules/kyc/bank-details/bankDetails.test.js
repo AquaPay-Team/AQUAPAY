@@ -4,7 +4,6 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 
 import { validateBankDetails } from "./bankDetails.validator.js";
-
 import {
   encryptAccountNumber,
   decryptAccountNumber,
@@ -13,12 +12,11 @@ import {
 import bankDetailsService from "./bankDetails.service.js";
 import bankDetailsModel from "./bankDetails.model.js";
 import * as bankDetailsModelFunctions from "./bankDetails.model.js";
-
 import ApiError from "../../../utils/ApiError.js";
 
-// ============================================================
-// TEST ENCRYPTION CONFIGURATION
-// ============================================================
+// ------------------------------------------------------------
+// Encryption configuration
+// ------------------------------------------------------------
 
 const originalEncryptionKey = process.env.BANK_ACCOUNT_ENCRYPTION_KEY;
 
@@ -34,9 +32,9 @@ after(() => {
   }
 });
 
-// ============================================================
-// VALIDATION HELPERS
-// ============================================================
+// ------------------------------------------------------------
+// Validation tests
+// ------------------------------------------------------------
 
 function runValidator(body) {
   const req = { body };
@@ -48,28 +46,20 @@ function runValidator(body) {
   return req.validatedBody;
 }
 
-// ============================================================
-// VALIDATION TESTS
-// ============================================================
-
-test("Bank validation: accepts valid bank details", () => {
+test("Bank validation: accepts valid details", () => {
   const result = runValidator({
-    accountHolderName: "Test User",
-    bankName: "Test Bank",
     ifscCode: "HDFC0001234",
     accountNumber: "123456789012",
   });
 
-  assert.equal(result.accountHolderName, "Test User");
-  assert.equal(result.bankName, "Test Bank");
-  assert.equal(result.ifscCode, "HDFC0001234");
-  assert.equal(result.accountNumber, "123456789012");
+  assert.deepEqual(result, {
+    ifscCode: "HDFC0001234",
+    accountNumber: "123456789012",
+  });
 });
 
 test("Bank validation: normalizes IFSC code", () => {
   const result = runValidator({
-    accountHolderName: "Test User",
-    bankName: "Test Bank",
     ifscCode: "hdfc0001234",
     accountNumber: "123456789012",
   });
@@ -77,11 +67,9 @@ test("Bank validation: normalizes IFSC code", () => {
   assert.equal(result.ifscCode, "HDFC0001234");
 });
 
-test("Bank validation: rejects invalid IFSC code", () => {
+test("Bank validation: rejects invalid IFSC", () => {
   assert.throws(() =>
     runValidator({
-      accountHolderName: "Test User",
-      bankName: "Test Bank",
       ifscCode: "INVALID123",
       accountNumber: "123456789012",
     }),
@@ -91,8 +79,6 @@ test("Bank validation: rejects invalid IFSC code", () => {
 test("Bank validation: rejects account number shorter than 9 digits", () => {
   assert.throws(() =>
     runValidator({
-      accountHolderName: "Test User",
-      bankName: "Test Bank",
       ifscCode: "HDFC0001234",
       accountNumber: "12345678",
     }),
@@ -102,78 +88,71 @@ test("Bank validation: rejects account number shorter than 9 digits", () => {
 test("Bank validation: rejects account number longer than 18 digits", () => {
   assert.throws(() =>
     runValidator({
-      accountHolderName: "Test User",
-      bankName: "Test Bank",
       ifscCode: "HDFC0001234",
       accountNumber: "1234567890123456789",
     }),
   );
 });
 
-test("Bank validation: rejects alphabetic account numbers", () => {
+test("Bank validation: rejects non-numeric account number", () => {
   assert.throws(() =>
     runValidator({
-      accountHolderName: "Test User",
-      bankName: "Test Bank",
       ifscCode: "HDFC0001234",
       accountNumber: "12345ABC9012",
     }),
   );
 });
 
-test("Bank validation: rejects unexpected request fields", () => {
+test("Bank validation: rejects unexpected fields", () => {
   assert.throws(() =>
     runValidator({
-      accountHolderName: "Test User",
       bankName: "Test Bank",
       ifscCode: "HDFC0001234",
       accountNumber: "123456789012",
-      verificationStatus: "verified",
+      accountHolderName: "Test User",
     }),
   );
 });
 
-// ============================================================
-// ENCRYPTION TESTS
-// ============================================================
+test("Bank validation: rejects missing request body", () => {
+  assert.throws(() => runValidator(undefined));
+});
+
+// ------------------------------------------------------------
+// Encryption tests
+// ------------------------------------------------------------
 
 test("Bank encryption: encrypts and decrypts account number", () => {
   const accountNumber = "123456789012";
-
   const encrypted = encryptAccountNumber(accountNumber);
 
   assert.ok(Buffer.isBuffer(encrypted));
   assert.notEqual(encrypted.toString(), accountNumber);
-
-  const decrypted = decryptAccountNumber(encrypted);
-
-  assert.equal(decrypted, accountNumber);
+  assert.equal(decryptAccountNumber(encrypted), accountNumber);
 });
 
-test("Bank encryption: generates different ciphertext for repeated encryption", () => {
+test("Bank encryption: repeated encryption produces different ciphertext", () => {
   const accountNumber = "123456789012";
-
   const first = encryptAccountNumber(accountNumber);
   const second = encryptAccountNumber(accountNumber);
 
   assert.notDeepEqual(first, second);
-
   assert.equal(decryptAccountNumber(first), accountNumber);
   assert.equal(decryptAccountNumber(second), accountNumber);
 });
 
-test("Bank encryption: detects modified encrypted data", () => {
+test("Bank encryption: detects tampered encrypted data", () => {
   const encrypted = encryptAccountNumber("123456789012");
-
   const tampered = Buffer.from(encrypted);
+
   tampered[tampered.length - 1] ^= 1;
 
   assert.throws(() => decryptAccountNumber(tampered));
 });
 
-// ============================================================
-// SERVICE TEST HELPERS
-// ============================================================
+// ------------------------------------------------------------
+// Test helpers
+// ------------------------------------------------------------
 
 const originalModelMethods = {};
 
@@ -237,21 +216,117 @@ function mockValidContext() {
     async findCasesByUserIdForUpdate() {
       return [{ id: 13, user_id: 52, status: "pending" }];
     },
+
+    async findKycStepForUpdate(connection, caseId, stepNumber) {
+      assert.equal(caseId, 13);
+      assert.equal(stepNumber, 3);
+
+      return {
+        id: 103,
+        status: "completed",
+      };
+    },
   };
 }
 
 const sampleBankDetails = {
-  accountHolderName: "Test User",
-  bankName: "Test Bank",
   ifscCode: "HDFC0001234",
   accountNumber: "123456789012",
 };
 
-// ============================================================
-// SERVICE TESTS
-// ============================================================
+// ------------------------------------------------------------
+// IFSC and IDTO API mocks
+// ------------------------------------------------------------
 
-test("Bank service: saves new bank details", async () => {
+function mockSuccessfulIdtoVerification() {
+  const originalFetch = globalThis.fetch;
+  const originalClientId = process.env.IDTO_CLIENT_ID;
+  const originalApiKey = process.env.IDTO_API_KEY;
+  const originalBaseUrl = process.env.IDTO_BASE_URL;
+
+  process.env.IDTO_CLIENT_ID = "test-client";
+  process.env.IDTO_API_KEY = "test-api-key";
+  process.env.IDTO_BASE_URL = "https://idto.example";
+
+  globalThis.fetch = async (url, options = {}) => {
+    const requestUrl = String(url);
+
+    // Mock IFSC API: fetch bank name using IFSC code.
+    if (requestUrl.includes("/api/v1/ifsc/")) {
+      assert.match(requestUrl, /HDFC0001234$/);
+
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return {
+            ifsc: "HDFC0001234",
+            bank: "HDFC Bank",
+          };
+        },
+      };
+    }
+
+    // Mock IDTO API: verify bank account.
+    if (requestUrl.endsWith("/v2/verify/bank_verification")) {
+      assert.equal(options.method, "POST");
+
+      assert.deepEqual(JSON.parse(options.body), {
+        account_number: sampleBankDetails.accountNumber,
+        ifsc_code: sampleBankDetails.ifscCode,
+      });
+
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return {
+            status: "success",
+            tranx_id: "IDTO-TXN-123",
+            data: {
+              account_holder_name: "Test User",
+            },
+          };
+        },
+      };
+    }
+
+    throw new Error(`Unexpected API request in test: ${requestUrl}`);
+  };
+
+  return () => {
+    if (originalFetch === undefined) {
+      delete globalThis.fetch;
+    } else {
+      globalThis.fetch = originalFetch;
+    }
+
+    if (originalClientId === undefined) {
+      delete process.env.IDTO_CLIENT_ID;
+    } else {
+      process.env.IDTO_CLIENT_ID = originalClientId;
+    }
+
+    if (originalApiKey === undefined) {
+      delete process.env.IDTO_API_KEY;
+    } else {
+      process.env.IDTO_API_KEY = originalApiKey;
+    }
+
+    if (originalBaseUrl === undefined) {
+      delete process.env.IDTO_BASE_URL;
+    } else {
+      process.env.IDTO_BASE_URL = originalBaseUrl;
+    }
+  };
+}
+
+// ------------------------------------------------------------
+// Service tests
+// ------------------------------------------------------------
+
+test("Bank service: saves newly verified bank details", async () => {
+  const restoreIdto = mockSuccessfulIdtoVerification();
   const connection = createMockConnection();
   let insertedDetails;
 
@@ -287,11 +362,17 @@ test("Bank service: saves new bank details", async () => {
     );
 
     assert.equal(result.id, 101);
+    assert.equal(result.accountHolderName, "Test User");
+    assert.equal(result.bankName, "HDFC Bank");
     assert.equal(result.accountNumberLast4, "9012");
-    assert.equal(result.verificationStatus, "pending");
+    assert.equal(result.verificationStatus, "verified");
     assert.equal(result.stepNumber, 4);
+    assert.equal(result.steps_completed, 1);
 
     assert.equal(insertedDetails.caseId, 13);
+    assert.equal(insertedDetails.accountHolderName, "Test User");
+    assert.equal(insertedDetails.bankName, "HDFC Bank");
+    assert.equal(insertedDetails.providerReference, "IDTO-TXN-123");
     assert.ok(Buffer.isBuffer(insertedDetails.encryptedAccountNumber));
     assert.equal(insertedDetails.accountNumberLast4, "9012");
 
@@ -300,13 +381,16 @@ test("Bank service: saves new bank details", async () => {
     assert.equal(connection.calls.rollback, 0);
     assert.equal(connection.calls.release, 1);
   } finally {
+    restoreIdto();
     restoreBankDetailsModel();
   }
 });
 
-test("Bank service: updates existing bank details", async () => {
+test("Bank service: updates existing bank account", async () => {
+  const restoreIdto = mockSuccessfulIdtoVerification();
   const connection = createMockConnection();
   let updatedAccountId;
+  let updatedCaseId;
   let updatedDetails;
 
   mockBankDetailsModel({
@@ -320,8 +404,9 @@ test("Bank service: updates existing bank details", async () => {
       return { id: 77 };
     },
 
-    async updateBankAccount(conn, accountId, details) {
+    async updateBankAccount(conn, accountId, caseId, details) {
       updatedAccountId = accountId;
+      updatedCaseId = caseId;
       updatedDetails = details;
     },
 
@@ -330,7 +415,7 @@ test("Bank service: updates existing bank details", async () => {
     },
 
     async updateCompletedStepsCount() {
-      return 1;
+      return 2;
     },
   });
 
@@ -342,12 +427,18 @@ test("Bank service: updates existing bank details", async () => {
 
     assert.equal(result.id, 77);
     assert.equal(updatedAccountId, 77);
-    assert.ok(Buffer.isBuffer(updatedDetails.encryptedAccountNumber));
+    assert.equal(updatedCaseId, 13);
+    assert.equal(updatedDetails.accountHolderName, "Test User");
+    assert.equal(updatedDetails.bankName, "HDFC Bank");
+    assert.equal(updatedDetails.providerReference, "IDTO-TXN-123");
     assert.equal(updatedDetails.accountNumberLast4, "9012");
+    assert.ok(Buffer.isBuffer(updatedDetails.encryptedAccountNumber));
 
+    assert.equal(result.verificationStatus, "verified");
     assert.equal(connection.calls.commit, 1);
     assert.equal(connection.calls.release, 1);
   } finally {
+    restoreIdto();
     restoreBankDetailsModel();
   }
 });
@@ -368,9 +459,8 @@ test("Bank service: retrieves bank details without full account number", async (
         bank_name: "Test Bank",
         ifsc_code: "HDFC0001234",
         account_number_last4: "9012",
-        verification_status: "pending",
-        verified_at: null,
-        account_number_encrypted: Buffer.from("secret"),
+        verification_status: "verified",
+        verified_at: new Date("2026-01-01T00:00:00Z"),
       };
     },
   });
@@ -379,9 +469,10 @@ test("Bank service: retrieves bank details without full account number", async (
     const result = await bankDetailsService.getBankDetails(52);
 
     assert.equal(result.accountHolderName, "Test User");
+    assert.equal(result.bankName, "Test Bank");
+    assert.equal(result.ifscCode, "HDFC0001234");
     assert.equal(result.accountNumberLast4, "9012");
-    assert.equal(result.verificationStatus, "pending");
-
+    assert.equal(result.verificationStatus, "verified");
     assert.equal("accountNumber" in result, false);
     assert.equal("account_number_encrypted" in result, false);
 
@@ -392,7 +483,7 @@ test("Bank service: retrieves bank details without full account number", async (
   }
 });
 
-test("Bank service: rejects inactive users and rolls back transaction", async () => {
+test("Bank service: rejects inactive users and rolls back", async () => {
   const connection = createMockConnection();
 
   mockBankDetailsModel({
@@ -406,10 +497,14 @@ test("Bank service: rejects inactive users and rolls back transaction", async ()
   });
 
   try {
-    await assert.rejects(bankDetailsService.getBankDetails(52), (error) => {
-      assert.ok(error instanceof ApiError);
-      return true;
-    });
+    await assert.rejects(
+      bankDetailsService.getBankDetails(52),
+      (error) => {
+        assert.ok(error instanceof ApiError);
+        assert.equal(error.code, "UNAUTHORIZED");
+        return true;
+      },
+    );
 
     assert.equal(connection.calls.commit, 0);
     assert.equal(connection.calls.rollback, 1);
@@ -420,6 +515,7 @@ test("Bank service: rejects inactive users and rolls back transaction", async ()
 });
 
 test("Bank service: rolls back when database save fails", async () => {
+  const restoreIdto = mockSuccessfulIdtoVerification();
   const connection = createMockConnection();
 
   mockBankDetailsModel({
@@ -451,13 +547,14 @@ test("Bank service: rolls back when database save fails", async () => {
     assert.equal(connection.calls.rollback, 1);
     assert.equal(connection.calls.release, 1);
   } finally {
+    restoreIdto();
     restoreBankDetailsModel();
   }
 });
 
-// ============================================================
-// DATABASE MODEL TESTS
-// ============================================================
+// ------------------------------------------------------------
+// Model tests
+// ------------------------------------------------------------
 
 test("Bank model: locks bank account row using FOR UPDATE", async () => {
   let capturedSql;
@@ -467,7 +564,6 @@ test("Bank model: locks bank account row using FOR UPDATE", async () => {
     async execute(sql, params) {
       capturedSql = sql;
       capturedParams = params;
-
       return [[{ id: 77 }]];
     },
   };
@@ -483,21 +579,17 @@ test("Bank model: locks bank account row using FOR UPDATE", async () => {
   assert.deepEqual(capturedParams, [13]);
 });
 
-test("Bank model: retrieves bank account without selecting encrypted account number", async () => {
+test("Bank model: retrieves bank account without encrypted number", async () => {
   let capturedSql;
 
   const connection = {
     async execute(sql) {
       capturedSql = sql;
 
-      return [
-        [
-          {
-            account_holder_name: "Test User",
-            account_number_last4: "9012",
-          },
-        ],
-      ];
+      return [[{
+        account_holder_name: "Test User",
+        account_number_last4: "9012",
+      }]];
     },
   };
 
@@ -508,24 +600,17 @@ test("Bank model: retrieves bank account without selecting encrypted account num
 
   assert.equal(result.account_number_last4, "9012");
   assert.doesNotMatch(capturedSql, /account_number_encrypted/i);
-
-  assert.deepEqual(result, {
-    account_holder_name: "Test User",
-    account_number_last4: "9012",
-  });
 });
 
-test("Bank model: inserts encrypted account number using parameterized SQL", async () => {
+test("Bank model: inserts verified account with provider reference", async () => {
   let capturedSql;
   let capturedParams;
-
   const encryptedAccountNumber = Buffer.from("encrypted-data");
 
   const connection = {
     async execute(sql, params) {
       capturedSql = sql;
       capturedParams = params;
-
       return [{ insertId: 101 }];
     },
   };
@@ -539,13 +624,15 @@ test("Bank model: inserts encrypted account number using parameterized SQL", asy
       ifscCode: "HDFC0001234",
       encryptedAccountNumber,
       accountNumberLast4: "9012",
+      providerReference: "IDTO-TXN-123",
     },
   );
 
   assert.equal(result, 101);
   assert.match(capturedSql, /INSERT INTO bank_accounts/i);
-  assert.match(capturedSql, /account_number_encrypted/i);
   assert.match(capturedSql, /verification_status/i);
+  assert.match(capturedSql, /provider_reference/i);
+  assert.match(capturedSql, /CURRENT_TIMESTAMP/i);
 
   assert.deepEqual(capturedParams, [
     13,
@@ -554,22 +641,19 @@ test("Bank model: inserts encrypted account number using parameterized SQL", asy
     "HDFC0001234",
     encryptedAccountNumber,
     "9012",
+    "IDTO-TXN-123",
   ]);
-
-  assert.ok(Buffer.isBuffer(capturedParams[4]));
 });
 
-test("Bank model: updates bank details and resets verification status", async () => {
+test("Bank model: updates verified account with provider reference", async () => {
   let capturedSql;
   let capturedParams;
-
   const encryptedAccountNumber = Buffer.from("encrypted-data");
 
   const connection = {
     async execute(sql, params) {
       capturedSql = sql;
       capturedParams = params;
-
       return [{ affectedRows: 1 }];
     },
   };
@@ -577,20 +661,22 @@ test("Bank model: updates bank details and resets verification status", async ()
   const result = await bankDetailsModelFunctions.updateBankAccount(
     connection,
     77,
+    13,
     {
       accountHolderName: "Updated User",
       bankName: "Updated Bank",
       ifscCode: "HDFC0001234",
       encryptedAccountNumber,
       accountNumberLast4: "9012",
+      providerReference: "IDTO-TXN-456",
     },
   );
 
   assert.equal(result, true);
   assert.match(capturedSql, /UPDATE bank_accounts/i);
-  assert.match(capturedSql, /verification_status\s*=\s*'pending'/i);
-  assert.match(capturedSql, /provider_reference\s*=\s*NULL/i);
-  assert.match(capturedSql, /verified_at\s*=\s*NULL/i);
+  assert.match(capturedSql, /verification_status\s*=\s*'verified'/i);
+  assert.match(capturedSql, /provider_reference\s*=\s*\?/i);
+  assert.match(capturedSql, /verified_at\s*=\s*CURRENT_TIMESTAMP/i);
 
   assert.deepEqual(capturedParams, [
     "Updated User",
@@ -598,11 +684,38 @@ test("Bank model: updates bank details and resets verification status", async ()
     "HDFC0001234",
     encryptedAccountNumber,
     "9012",
+    "IDTO-TXN-456",
     77,
+    13,
   ]);
 });
 
-test("Bank model: uses parameterized query when finding active user", async () => {
+test("Bank model: rejects update when no row is affected", async () => {
+  const connection = {
+    async execute() {
+      return [{ affectedRows: 0 }];
+    },
+  };
+
+  await assert.rejects(
+    bankDetailsModelFunctions.updateBankAccount(
+      connection,
+      77,
+      13,
+      {
+        accountHolderName: "Updated User",
+        bankName: "Updated Bank",
+        ifscCode: "HDFC0001234",
+        encryptedAccountNumber: Buffer.from("encrypted-data"),
+        accountNumberLast4: "9012",
+        providerReference: "IDTO-TXN-456",
+      },
+    ),
+    /did not affect exactly one row/,
+  );
+});
+
+test("Bank model: finds active user with parameterized query", async () => {
   let capturedSql;
   let capturedParams;
 
@@ -610,7 +723,6 @@ test("Bank model: uses parameterized query when finding active user", async () =
     async execute(sql, params) {
       capturedSql = sql;
       capturedParams = params;
-
       return [[{ id: 52, status: "active" }]];
     },
   };
@@ -626,7 +738,7 @@ test("Bank model: uses parameterized query when finding active user", async () =
   assert.deepEqual(capturedParams, [52]);
 });
 
-test("Bank model: retrieves KYC cases using parameterized query and row locking", async () => {
+test("Bank model: retrieves KYC cases with row locking", async () => {
   let capturedSql;
   let capturedParams;
 
@@ -634,7 +746,6 @@ test("Bank model: retrieves KYC cases using parameterized query and row locking"
     async execute(sql, params) {
       capturedSql = sql;
       capturedParams = params;
-
       return [[{ id: 13, user_id: 52, status: "pending" }]];
     },
   };

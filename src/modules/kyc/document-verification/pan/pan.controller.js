@@ -4,16 +4,19 @@ import ApiError from "../../../../utils/ApiError.js";
 import httpStatus from "../../../../utils/httpStatus.js";
 import panService from "./pan.service.js";
 
-const initiateVerification = asyncHandler(async (req, res) => {
+const verifyPan = asyncHandler(async (req, res) => {
   const userId = req.user?.id;
-  if (!userId) {
+  if (userId === undefined || userId === null || userId === "") {
     throw new ApiError(httpStatus.UNAUTHORIZED, "Authentication required", [], "UNAUTHORIZED");
   }
-  const data = await panService.initiateVerification(userId, req.validatedInitiation);
+  const data = await panService.verifyPan(userId, req.validatedPanRequest);
+  const message = data.status === "development_unverified"
+    ? "Development mock PAN flow completed; this result is unverified"
+    : "PAN verification completed";
   return res.status(httpStatus.OK).json(
-    new ApiResponse(httpStatus.OK, data, "PAN authorization started"),
+    new ApiResponse(httpStatus.OK, data, message),
   );
 });
 
-export { initiateVerification };
-export default { initiateVerification };
+export { verifyPan };
+export default { verifyPan };

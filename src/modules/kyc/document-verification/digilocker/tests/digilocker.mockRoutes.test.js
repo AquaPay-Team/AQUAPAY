@@ -24,23 +24,23 @@ test("mock authorization route exists only in the explicit local mock app and re
     const address = server.address();
     const state = "s".repeat(43);
     const response = await fetch(
-      `http://127.0.0.1:${address.port}/api/kyc/digilocker/mock-authorize?state=${state}&document=PANCR`,
+      `http://127.0.0.1:${address.port}/api/kyc/digilocker/mock-authorize?state=${state}&document=ADHAR`,
       { redirect: "manual" },
     );
     assert.equal(response.status, 303);
     const location = new URL(response.headers.get("location"), `http://127.0.0.1:${address.port}`);
     assert.equal(location.pathname, "/api/kyc/digilocker/callback");
     assert.deepEqual([...location.searchParams.keys()].sort(), ["clientId", "code", "codeVerifier", "state"]);
-    assert.equal(location.searchParams.get("code"), "aquapay-mock-pancr-v1");
+    assert.equal(location.searchParams.get("code"), "aquapay-mock-adhar-v1");
     assert.equal(location.searchParams.get("codeVerifier"), "m".repeat(43));
     assert.equal(location.searchParams.get("clientId"), "aquapay-local-mock-client");
     assert.equal(location.searchParams.get("state"), state);
 
-    const protectedPanInitiation = await fetch(
-      `http://127.0.0.1:${address.port}/api/kyc/digilocker/pan/initiate`,
-      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ consent: true }) },
+    const protectedPanVerification = await fetch(
+      `http://127.0.0.1:${address.port}/api/kyc/pan/verify`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ panNumber: "ABCDE1234F", consent: true }) },
     );
-    assert.equal(protectedPanInitiation.status, 401);
+    assert.equal(protectedPanVerification.status, 401);
 
     const protectedAadhaarInitiation = await fetch(
       `http://127.0.0.1:${address.port}/api/kyc/digilocker/aadhaar/initiate`,

@@ -30,12 +30,15 @@ function replaceModelMethods(overrides) {
   const originals = Object.fromEntries(
     Object.keys(overrides).map((name) => [name, statusModel[name]]),
   );
+
   Object.assign(statusModel, overrides);
+
   return () => Object.assign(statusModel, originals);
 }
 
-test("KYC status returns the existing user projection and step progress", async () => {
+test("KYC status returns a simplified user projection and step progress", async () => {
   const calls = [];
+
   const restore = replaceModelMethods({
     findCasesByUserId: async (userId) => {
       calls.push(["case", userId]);
@@ -45,40 +48,36 @@ test("KYC status returns the existing user projection and step progress", async 
       calls.push(["steps", caseId]);
       return stepRows;
     },
-    findDevelopmentUnverifiedVerificationsByCaseId: async (caseId) => {
-      calls.push(["development-unverified", caseId]);
-      return [];
-    },
   });
 
   try {
     const result = await statusService.getKycStatus("52");
 
-    assert.deepEqual(calls, [["case", "52"], ["steps", 13], ["development-unverified", 13]]);
+    assert.deepEqual(calls, [
+      ["case", "52"],
+      ["steps", 13],
+    ]);
+
     assert.deepEqual(result, {
       hasCase: true,
-      kyc: {
-        status: "pending",
-        steps_completed: 1,
-        business_type: "Retail Store",
-      },
+      status: "pending",
       currentStep: 2,
       completedSteps: [1],
-      developmentUnverifiedSteps: [],
       currentStepDetails: {
         stepNumber: 2,
         status: "in_progress",
         completedAt: null,
       },
     });
-    assert.equal("current_step" in result.kyc, false);
-    assert.equal("currentStep" in result.kyc, false);
+
+    assert.equal("kyc" in result, false);
+    assert.equal("businessType" in result, false);
   } finally {
     restore();
   }
 });
 
-test("KYC status returns a null projection when the user has no case", async () => {
+test("KYC status returns a simplified response when the user has no case", async () => {
   const restore = replaceModelMethods({
     findCasesByUserId: async () => [],
     findStepsByCaseId: async () => {
@@ -89,10 +88,9 @@ test("KYC status returns a null projection when the user has no case", async () 
   try {
     assert.deepEqual(await statusService.getKycStatus("52"), {
       hasCase: false,
-      kyc: null,
+      status: null,
       currentStep: null,
       completedSteps: [],
-      developmentUnverifiedSteps: [],
       currentStepDetails: null,
     });
   } finally {
@@ -102,14 +100,19 @@ test("KYC status returns a null projection when the user has no case", async () 
 
 test("KYC status rejects duplicate cases instead of selecting an arbitrary case", async () => {
   const restore = replaceModelMethods({
-    findCasesByUserId: async () => [caseRow, { ...caseRow, id: 14 }],
+    findCasesByUserId: async () => [
+      caseRow,
+      { ...caseRow, id: 14 },
+    ],
     findStepsByCaseId: async () => [],
   });
 
   try {
     await assert.rejects(
       statusService.getKycStatus("52"),
-      (error) => error.statusCode === 409 && error.code === "KYC_CASE_AMBIGUOUS",
+      (error) =>
+        error.statusCode === 409 &&
+        error.code === "KYC_CASE_AMBIGUOUS",
     );
   } finally {
     restore();
@@ -126,9 +129,10 @@ test("KYC status hides database errors behind a generic service-unavailable erro
   try {
     await assert.rejects(
       statusService.getKycStatus("52"),
-      (error) => error.statusCode === 503
-        && error.code === "SERVICE_UNAVAILABLE"
-        && !error.message.includes("internal SQL detail"),
+      (error) =>
+        error.statusCode === 503 &&
+        error.code === "SERVICE_UNAVAILABLE" &&
+        !error.message.includes("internal SQL detail"),
     );
   } finally {
     restore();
@@ -138,14 +142,15 @@ test("KYC status hides database errors behind a generic service-unavailable erro
 test("KYC status controller reads identity from authenticated request context", async () => {
   const originalGetStatus = statusService.getKycStatus;
   let requestedUserId;
+
   statusService.getKycStatus = async (userId) => {
     requestedUserId = userId;
+
     return {
       hasCase: false,
-      kyc: null,
+      status: null,
       currentStep: null,
       completedSteps: [],
-      developmentUnverifiedSteps: [],
       currentStepDetails: null,
     };
   };
@@ -163,22 +168,26 @@ test("KYC status controller reads identity from authenticated request context", 
         return this;
       },
     };
+
     statusController.getKycStatus(
       { user: { id: "52" }, params: { userId: "99" } },
       res,
-      (error) => { throw error; },
+      (error) => {
+        throw error;
+      },
     );
+
     await new Promise((resolve) => setImmediate(resolve));
 
     assert.equal(requestedUserId, "52");
     assert.equal(res.statusCode, 200);
     assert.equal(res.body.success, true);
+
     assert.deepEqual(res.body.data, {
       hasCase: false,
-      kyc: null,
+      status: null,
       currentStep: null,
       completedSteps: [],
-      developmentUnverifiedSteps: [],
       currentStepDetails: null,
     });
   } finally {
@@ -189,6 +198,7 @@ test("KYC status controller reads identity from authenticated request context", 
 test("KYC status model uses parameterized queries and approved schema columns", async () => {
   const originalExecute = pool.execute;
   const calls = [];
+
   pool.execute = async (sql, params) => {
     calls.push({ sql, params });
     return [[]];
@@ -197,55 +207,37 @@ test("KYC status model uses parameterized queries and approved schema columns", 
   try {
     await statusModel.findCasesByUserId("52");
     await statusModel.findStepsByCaseId(13);
-    await statusModel.findDevelopmentUnverifiedVerificationsByCaseId(13);
+
+    assert.equal(calls.length, 2);
 
     assert.equal(calls[0].params[0], "52");
     assert.match(calls[0].sql, /steps_completed/);
     assert.match(calls[0].sql, /business_type/);
     assert.doesNotMatch(calls[0].sql, /current_step|draft/i);
+
     assert.equal(calls[1].params[0], 13);
     assert.match(calls[1].sql, /completed_at/);
     assert.match(calls[1].sql, /ORDER BY step_number ASC/);
-    assert.equal(calls[2].params[0], 13);
-    assert.match(calls[2].sql, /provider = \?/);
-    assert.match(calls[2].sql, /verification_type/);
   } finally {
     pool.execute = originalExecute;
   }
 });
 
-test("KYC status explicitly identifies development-unverified Aadhaar and PAN steps", async () => {
-  const restore = replaceModelMethods({
-    findCasesByUserId: async () => [{ ...caseRow, steps_completed: 3 }],
-    findStepsByCaseId: async () => [
-      { step_number: 1, status: "completed", completed_at: new Date() },
-      { step_number: 2, status: "completed", completed_at: new Date() },
-      { step_number: 3, status: "completed", completed_at: new Date() },
-    ],
-    findDevelopmentUnverifiedVerificationsByCaseId: async () => [
-      { verification_type: "aadhaar" },
-      { verification_type: "pan" },
-    ],
-  });
-
-  try {
-    const result = await statusService.getKycStatus("52");
-    assert.deepEqual(result.completedSteps, [1, 2, 3]);
-    assert.deepEqual(result.developmentUnverifiedSteps, [2, 3]);
-  } finally {
-    restore();
-  }
-});
-
 test("mounted KYC status route rejects unauthenticated requests", async () => {
   const server = app.listen(0);
+
   try {
     await new Promise((resolve, reject) => {
       server.once("listening", resolve);
       server.once("error", reject);
     });
+
     const address = server.address();
-    const response = await fetch(`http://127.0.0.1:${address.port}/api/kyc/status`);
+
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/api/kyc/status`,
+    );
+
     const body = await response.json();
 
     assert.equal(response.status, 401);

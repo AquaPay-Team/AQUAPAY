@@ -27,9 +27,6 @@ function validateCreateUser(req, res, next) {
       ? String(body.pincode).trim()
       : "";
   const password = body.password;
-  const rawBusinessType =
-    body.businessType !== undefined ? body.businessType : body.business_type;
-  const businessType = normalizeString(rawBusinessType);
   const roleInput =
     body.roleId !== undefined
       ? body.roleId
@@ -133,19 +130,6 @@ function validateCreateUser(req, res, next) {
     }
   }
 
-  // Business type validation (optional, max 100 chars)
-  if (
-    rawBusinessType !== undefined &&
-    rawBusinessType !== null &&
-    rawBusinessType !== ""
-  ) {
-    if (typeof rawBusinessType !== "string") {
-      errors.push("Business type must be a string");
-    } else if (rawBusinessType.trim().length > 100) {
-      errors.push("Business type cannot exceed 100 characters");
-    }
-  }
-
   // Role validation
   if (
     roleInput === undefined ||
@@ -196,7 +180,6 @@ function validateCreateUser(req, res, next) {
     pincode: pincode || null,
     password,
     roleId: parsedRoleId,
-    businessType: businessType || null,
   };
 
   next();

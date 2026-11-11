@@ -209,17 +209,14 @@ async function findUserSafeById(userId, connection) {
 }
 
 
-async function initKycCaseForUser(
-  { userId, businessType, actorId },
-  connection,
-) {
+async function initKycCaseForUser({ userId, actorId }, connection) {
   const db = getDb(connection);
 
-  // Create the KYC case.
+  // Create the KYC case without a business type.
   const [caseResult] = await db.execute(
-    `INSERT INTO kyc_cases (user_id, business_type, status, steps_completed)
-    VALUES (?, ?, 'pending', 0)`,
-    [userId, businessType || null],
+    `INSERT INTO kyc_cases (user_id, status, steps_completed)
+     VALUES (?, 'pending', 0)`,
+    [userId],
   );
 
   const caseId = caseResult.insertId;
@@ -241,13 +238,12 @@ async function initKycCaseForUser(
   await db.execute(
     `INSERT INTO kyc_status_history
      (case_id, old_status, new_status, actor_user_id)
-    VALUES (?, NULL, 'pending', ?)`,
+     VALUES (?, NULL, 'pending', ?)`,
     [caseId, actorId || null],
   );
 
   return caseId;
 }
-
 
 const userModel = {
   findUserForAuth,

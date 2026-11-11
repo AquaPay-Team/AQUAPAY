@@ -32,7 +32,6 @@ const createUser = asyncHandler(async (req, res) => {
     pincode,
     password,
     roleId,
-    businessType,
   } = req.validatedBody || req.body;
 
   const result = await userService.createUser({
@@ -47,7 +46,6 @@ const createUser = asyncHandler(async (req, res) => {
     pincode,
     password,
     roleId,
-    businessType,
   });
 
   return res

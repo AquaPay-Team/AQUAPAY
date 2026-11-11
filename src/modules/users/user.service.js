@@ -19,7 +19,6 @@ async function createUser({
   pincode,
   password,
   roleId,
-  businessType,
 }) {
   if (!actorId) {
     throw new ApiError(
@@ -140,7 +139,6 @@ async function createUser({
       await userModel.initKycCaseForUser(
         {
           userId: newUserId,
-          businessType: businessType || null,
           actorId: actor.id,
         },
         connection,

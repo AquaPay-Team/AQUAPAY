@@ -2,14 +2,22 @@ import { DigiLockerProviderError } from "../digilocker/digilocker.errors.js";
 
 const REQUEST_TIMEOUT_MS = 15000;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
+const SAFE_PROVIDER_ERROR_CODES = new Set([
+  "IDTO_001",
+  "IDTO_004",
+  "IDTO_005",
+  "IDTO_006",
+  "IDTO_007",
+  "IDTO_008",
+  "IDTO_009",
+  "IDTO_202",
+]);
 const ALLOWED_PATHS = new Set([
   "/verify/digilocker/initiate_session",
   "/verify/digilocker/get_reference",
   "/verify/digilocker/user_details",
   "/verify/digilocker/fetch_aadhaar",
-  // Kept for the existing PAN module only; Aadhaar never calls these operations.
-  "/verify/digilocker/issued_docs",
-  "/verify/digilocker/get_issued_docs_xml",
+  "/v2/verify/pan_detailed",
 ]);
 
 function getConfig(env) {
@@ -84,6 +92,13 @@ function responseMetadata(response, rawBody, expectedFields) {
     const present = record && Object.hasOwn(parsed, key);
     expected[key] = { present, type: present ? valueType(parsed[key]) : "missing" };
   }
+  const providerErrorCandidate = record
+    ? (parsed.error_code ?? parsed.code)
+    : undefined;
+  const providerErrorCode = typeof providerErrorCandidate === "string" &&
+    SAFE_PROVIDER_ERROR_CODES.has(providerErrorCandidate)
+    ? providerErrorCandidate
+    : null;
   return {
     httpStatus: response.status,
     contentType,
@@ -92,6 +107,7 @@ function responseMetadata(response, rawBody, expectedFields) {
     topLevelPropertyNames: names,
     topLevelValueTypes: valueTypes,
     expectedFields: expected,
+    providerErrorCode,
   };
 }
 

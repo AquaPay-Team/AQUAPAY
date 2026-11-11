@@ -1,5 +1,4 @@
-import crypto from "node:crypto";
-// import mediaModel from "./media.model.js";
+﻿import crypto from "node:crypto";
 import * as mediaModel from "./media.model.js";
 import getCloudinary from "../../../config/cloudinary.js";
 import ApiError from "../../../utils/ApiError.js";
@@ -314,6 +313,7 @@ async function uploadMedia(userId, assetType, file) {
       fileSizeBytes: file.size,
     });
 
+    // Step 5 is complete only when all three required media types exist.
     const allRequiredMediaUploaded = await mediaModel.hasAllRequiredMedia(
       connection,
       caseId,
@@ -338,7 +338,8 @@ async function uploadMedia(userId, assetType, file) {
       mimeType: file.detectedMimeType,
       fileSizeBytes: file.size,
       status: "uploaded",
-      steps_completed: stepsCompleted,
+      allUploadsComplete: allRequiredMediaUploaded,
+      ...(stepsCompleted !== null ? { steps_completed: stepsCompleted } : {}),
     };
   } catch (error) {
     rollback = true;

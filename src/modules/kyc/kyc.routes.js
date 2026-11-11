@@ -9,6 +9,8 @@ import panRoutes from "./document-verification/pan/pan.routes.js";
 
 import bankDetailsRoutes from "./bank-details/bankDetails.routes.js";
 import mediaRoutes from "./media/media.routes.js";
+import agreementRoutes from "./agreement/agreement.routes.js";
+import submissionRoutes from "./submission/submission.routes.js";
 
 const router = Router();
 
@@ -21,6 +23,8 @@ router.use(panRoutes);
 
 router.use(bankDetailsRoutes);
 router.use(mediaRoutes);
+router.use(agreementRoutes);
+router.use(submissionRoutes);
 
 export { router };
 export default router;

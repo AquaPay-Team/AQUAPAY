@@ -118,6 +118,19 @@ async function hasAllRequiredMedia(connection, caseId) {
   return Number(rows[0]?.uploaded_count || 0) === 3;
 }
 
+// Count how many distinct asset types have been successfully uploaded for this case.
+// Used to decide whether to mark Step 5 as complete (all 3 types required).
+async function countUploadedAssetTypes(connection, caseId) {
+  const [rows] = await connection.execute(
+    `SELECT COUNT(DISTINCT asset_type) AS type_count
+       FROM media_assets
+      WHERE case_id = ?
+        AND status IN ('uploaded', 'verified')`,
+    [caseId],
+  );
+  return Number(rows[0]?.type_count || 0);
+}
+
 async function completeStep5(connection, caseId) {
   const [result] = await connection.execute(
     `UPDATE kyc_steps
@@ -153,12 +166,10 @@ async function updateCompletedStepsCount(connection, caseId) {
 }
 
 export {
-  getConnection,
-  findCasesByUserIdForUpdate,
-  findStepByCaseIdAndNumber,
   insertMediaAsset,
   findMediaByCaseId,
   findMediaByIdAndCaseId,
+  countUploadedAssetTypes,
   hasAllRequiredMedia,
   completeStep5,
   updateCompletedStepsCount,

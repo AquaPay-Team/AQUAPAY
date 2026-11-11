@@ -30,6 +30,14 @@ app.use(
         return callback(null, true);
       }
 
+      // In development, allow any localhost or 127.0.0.1 port (e.g. 5173, 5174, 5175, etc.)
+      if (
+        process.env.NODE_ENV === "development" &&
+        /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
+      ) {
+        return callback(null, true);
+      }
+
       return callback(null, false);
     },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],

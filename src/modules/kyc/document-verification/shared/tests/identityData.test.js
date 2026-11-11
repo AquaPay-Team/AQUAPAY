@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { test } from "node:test";
-import { assertIdentityEncryptionConfiguration, createIdentityDataCrypto } from "./identityData.crypto.js";
-import { createIdentityDataModel } from "./identityData.model.js";
+import { assertIdentityEncryptionConfiguration, createIdentityDataCrypto } from "../identityData.crypto.js";
+import { createIdentityDataModel } from "../identityData.model.js";
 
 const KEY_V1 = randomBytes(32).toString("base64");
 const KEY_V2 = randomBytes(32).toString("base64");
@@ -59,6 +59,33 @@ test("identity encryption rejects missing configuration and invalid identity fie
   assert.throws(() => crypto.encryptIdentityPayload("aadhaar", {
     ...AADHAAR_PAYLOAD,
     address: [],
+  }, CONTEXT), { code: "INVALID_IDENTITY_DATA" });
+});
+
+test("Aadhaar encryption accepts documented POA without optional country", () => {
+  const crypto = createIdentityDataCrypto({ env: TEST_ENV });
+  const payload = {
+    ...AADHAAR_PAYLOAD,
+    address: [{ line1: "Example Street", vtc: "Example Town", state: "Example State" }],
+  };
+  const encrypted = crypto.encryptIdentityPayload("aadhaar", payload, CONTEXT);
+  assert.deepEqual(crypto.decryptIdentityPayload("aadhaar", encrypted, CONTEXT), payload);
+});
+
+test("Limited KYC masked Aadhaar identifier is encrypted distinctly and round-trips without a full number", () => {
+  const crypto = createIdentityDataCrypto({ env: TEST_ENV });
+  const payload = {
+    aadhaarMaskedIdentifier: "XXXXXX9012",
+    address: [{ line1: "Example Street", vtc: "Example Town", state: "Example State" }],
+    dateOfBirth: "1990-01-01",
+  };
+  const encrypted = crypto.encryptIdentityPayload("aadhaar", payload, CONTEXT);
+
+  assert.equal(encrypted.ciphertext.toString("utf8").includes("XXXXXX9012"), false);
+  assert.deepEqual(crypto.decryptIdentityPayload("aadhaar", encrypted, CONTEXT), payload);
+  assert.throws(() => crypto.encryptIdentityPayload("aadhaar", {
+    ...payload,
+    aadhaarNumber: "999999999999",
   }, CONTEXT), { code: "INVALID_IDENTITY_DATA" });
 });
 

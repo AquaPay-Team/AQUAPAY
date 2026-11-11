@@ -114,7 +114,6 @@ test("user.validator: validates user creation input and sets validatedBody", () 
     pincode: "400001",
     password: "Password@123",
     roleId: "2",
-    businessType: "Grocery Store",
   };
 
   const { req, error } = runValidator(validBody);
@@ -124,7 +123,7 @@ test("user.validator: validates user creation input and sets validatedBody", () 
   assert.equal(req.validatedBody.mobile, "+919876543210");
   assert.equal(req.validatedBody.shopname, "John Mart");
   assert.equal(req.validatedBody.roleId, 2); // Correctly parsed numeric string to Number
-  assert.equal(req.validatedBody.businessType, "Grocery Store");
+  assert.equal("businessType" in req.validatedBody, false);
 });
 
 test("user.validator: normalizes all Indian mobile formats to +91XXXXXXXXXX", () => {
@@ -156,7 +155,6 @@ test("user.validator: rejects invalid input", () => {
     mobile: "123",
     password: "short",
     roleId: -1,
-    businessType: "a".repeat(101), // Exceeds 100 chars
   };
 
   const { error } = runValidator(invalidBody);
@@ -343,10 +341,11 @@ test("user.service: createUser initializes KYC case and returns user with KYC st
     userModel.checkDuplicateUser = async () => null;
     userModel.insertUser = async () => 99;
 
-    userModel.initKycCaseForUser = async ({ userId, businessType, actorId }) => {
+    userModel.initKycCaseForUser = async ({ userId, actorId }) => {
       assert.equal(userId, 99);
-      assert.equal(businessType, "Private Limited Company");
       assert.equal(actorId, 5);
+      assert.equal("businessType" in { userId, actorId }, false);
+
       kycCaseInitialized = true;
       return { caseId: 1, status: "pending", stepsCompleted: 0 };
     };
@@ -360,7 +359,7 @@ test("user.service: createUser initializes KYC case and returns user with KYC st
       kyc: {
         status: "pending",
         steps_completed: 0,
-        business_type: "Private Limited Company",
+        business_type: null,
       },
     });
 
@@ -371,7 +370,6 @@ test("user.service: createUser initializes KYC case and returns user with KYC st
       mobile: "9876543210",
       password: "Password@123",
       roleId: 8,
-      businessType: "Private Limited Company",
     });
 
     assert.equal(kycCaseInitialized, true);
@@ -380,7 +378,7 @@ test("user.service: createUser initializes KYC case and returns user with KYC st
     assert.deepEqual(result.kyc, {
       status: "pending",
       steps_completed: 0,
-      business_type: "Private Limited Company",
+      business_type: null,
     });
   } finally {
     pool.getConnection = originalGetConnection;

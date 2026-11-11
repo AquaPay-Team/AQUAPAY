@@ -12,5 +12,11 @@ router.post(
   aadhaarController.initiateVerification,
 );
 
+router.get(
+  "/digilocker/aadhaar/status/",
+  requireAuth,
+  aadhaarController.getVerificationStatus,
+);
+
 export { router };
 export default router;

@@ -2,8 +2,6 @@ import ApiError from "../../../utils/ApiError.js";
 import httpStatus from "../../../utils/httpStatus.js";
 
 const ALLOWED_FIELDS = new Set([
-  "accountHolderName",
-  "bankName",
   "ifscCode",
   "accountNumber",
 ]);
@@ -29,29 +27,15 @@ function validateBankDetails(req, res, next) {
     }
   }
 
-  const accountHolderName =
-    typeof body.accountHolderName === "string"
-      ? body.accountHolderName.trim()
+  const ifscCode =
+    typeof body.ifscCode === "string"
+      ? body.ifscCode.trim().toUpperCase()
       : "";
 
-  const bankName =
-    typeof body.bankName === "string" ? body.bankName.trim() : "";
-
-  const ifscCode =
-    typeof body.ifscCode === "string" ? body.ifscCode.trim().toUpperCase() : "";
-
   const accountNumber =
-    typeof body.accountNumber === "string" ? body.accountNumber.trim() : "";
-
-  if (!accountHolderName) {
-    errors.push("Account holder name is required");
-  } else if (accountHolderName.length > 150) {
-    errors.push("Account holder name must not exceed 150 characters");
-  }
-
-  if (bankName.length > 150) {
-    errors.push("Bank name must not exceed 150 characters");
-  }
+    typeof body.accountNumber === "string"
+      ? body.accountNumber.trim()
+      : "";
 
   if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifscCode)) {
     errors.push("A valid 11-character IFSC code is required");
@@ -73,8 +57,6 @@ function validateBankDetails(req, res, next) {
   }
 
   req.validatedBody = {
-    accountHolderName,
-    bankName: bankName || null,
     ifscCode,
     accountNumber,
   };

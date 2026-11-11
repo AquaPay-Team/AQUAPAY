@@ -19,6 +19,8 @@ function getActorId(req) {
   return Number(actorId);
 }
 
+
+
 const getUsers = asyncHandler(async (req, res) => {
   const actorId = getActorId(req);
   const { kyc_status, kycStatus, search } = req.query || {};
@@ -28,14 +30,22 @@ const getUsers = asyncHandler(async (req, res) => {
     search,
   });
 
+  let message = "Users fetched successfully";
+
+  if (result.length === 0) {
+    const isAdmin = req.user?.role_id === 1 || req.user?.role_slug === "AD";
+
+    message = isAdmin
+      ? "No users found"
+      : "You haven't created any users yet";
+  }
+
   return res.status(httpStatus.OK).json(
-    new ApiResponse(
-      httpStatus.OK,
-      result,
-      "Users fetched successfully",
-    )
+    new ApiResponse(httpStatus.OK, result, message),
   );
 });
+
+
 
 const getUserById = asyncHandler(async (req, res) => {
   const actorId = getActorId(req);

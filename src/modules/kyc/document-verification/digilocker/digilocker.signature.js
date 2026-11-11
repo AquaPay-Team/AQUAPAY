@@ -1,12 +1,17 @@
 import fs from "node:fs";
 import { X509Certificate } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { DOMParser } from "@xmldom/xmldom";
 import { SignedXml } from "xml-crypto";
 import { getDigiLockerSignaturePolicy } from "./digilocker.signatureConfig.js";
+import {
+  DigiLockerDocumentError,
+  descendantsByName,
+  getAttribute,
+  normalizeXmlInput,
+  parseXml,
+} from "./digilocker.xml.js";
 
 const XMLDSIG_NAMESPACE = "http://www.w3.org/2000/09/xmldsig#";
-const MAX_DOCUMENT_XML_BYTES = 512 * 1024;
 const DEFAULT_MOCK_CERTIFICATE_PATH = fileURLToPath(
   new URL("./fixtures/mock-signing-cert.crt", import.meta.url),
 );
@@ -21,64 +26,6 @@ const ALLOWED_CANONICALIZATION_METHODS = new Set([
 const ENVELOPED_SIGNATURE =
   "http://www.w3.org/2000/09/xmldsig#enveloped-signature";
 const SHA256_DIGEST = "http://www.w3.org/2001/04/xmlenc#sha256";
-
-class DigiLockerDocumentError extends Error {
-  constructor(code) {
-    super("DigiLocker document could not be validated");
-    this.name = "DigiLockerDocumentError";
-    this.code = code;
-  }
-}
-
-function parseXml(xml, invalidDocumentCode = "INVALID_DOCUMENT") {
-  if (
-    typeof xml !== "string" ||
-    Buffer.byteLength(xml, "utf8") > MAX_DOCUMENT_XML_BYTES ||
-    /<!\s*(?:DOCTYPE|ENTITY)\b/i.test(xml)
-  ) {
-    throw new DigiLockerDocumentError(invalidDocumentCode);
-  }
-
-  const parseErrors = [];
-  let document;
-  try {
-    document = new DOMParser({
-      onError(level) {
-        if (level === "error" || level === "fatalError")
-          parseErrors.push(level);
-      },
-    }).parseFromString(xml, "application/xml");
-  } catch {
-    throw new DigiLockerDocumentError(invalidDocumentCode);
-  }
-
-  if (parseErrors.length || !document?.documentElement) {
-    throw new DigiLockerDocumentError(invalidDocumentCode);
-  }
-  return document;
-}
-
-function descendantsByName(node, localName, namespaceUri) {
-  const matches = [];
-  const visit = (current) => {
-    for (let child = current?.firstChild; child; child = child.nextSibling) {
-      if (child.nodeType !== 1) continue;
-      if (
-        child.localName === localName &&
-        (namespaceUri === undefined || child.namespaceURI === namespaceUri)
-      ) {
-        matches.push(child);
-      }
-      visit(child);
-    }
-  };
-  visit(node);
-  return matches;
-}
-
-function getAttribute(element, name) {
-  return element?.getAttribute(name)?.trim() || "";
-}
 
 function safeNamespaceInfo(node) {
   const namespace = node?.namespaceURI || "";
@@ -152,10 +99,11 @@ function getTrustedCertificate(environmentKey, env = process.env) {
 }
 
 function extractCertificateXml(
-  xml,
+  input,
   invalidDocumentCode = "INVALID_DOCUMENT",
   onValidationDiagnostic,
 ) {
+  const xml = normalizeXmlInput(input, invalidDocumentCode);
   let document;
   try {
     document = parseXml(xml, invalidDocumentCode);
@@ -473,6 +421,7 @@ export {
   descendantsByName,
   extractCertificateXml,
   getAttribute,
+  normalizeXmlInput,
   parseXml,
   verifyDigiLockerXmlSignature,
 };

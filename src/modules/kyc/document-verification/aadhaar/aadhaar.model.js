@@ -1,4 +1,4 @@
-import identityDataModel from "../identity-data/identityData.model.js";
+import identityDataModel from "../shared/identityData.model.js";
 
 function createAadhaarModel({ identityModel = identityDataModel } = {}) {
   async function persistVerifiedIdentity(connection, {
@@ -8,13 +8,18 @@ function createAadhaarModel({ identityModel = identityDataModel } = {}) {
     verificationType,
     verifiedName,
     aadhaarNumber,
+    aadhaarMaskedIdentifier,
     address,
     dateOfBirth,
   }) {
+    const hasFullAadhaar = typeof aadhaarNumber === "string" && /^\d{12}$/.test(aadhaarNumber);
+    const hasMaskedAadhaar = typeof aadhaarMaskedIdentifier === "string" && /^[xX*]{4,8}\d{4}$/.test(aadhaarMaskedIdentifier);
+    const invalidFullAadhaar = aadhaarNumber !== undefined && aadhaarNumber !== null && !hasFullAadhaar;
+    const invalidMaskedAadhaar = aadhaarMaskedIdentifier !== undefined && aadhaarMaskedIdentifier !== null && !hasMaskedAadhaar;
     if (
       !connection || verificationType !== "aadhaar" ||
       typeof verifiedName !== "string" || verifiedName.length < 1 || verifiedName.length > 100 ||
-      typeof aadhaarNumber !== "string" || !/^\d{12}$/.test(aadhaarNumber) ||
+      hasFullAadhaar === hasMaskedAadhaar || invalidFullAadhaar || invalidMaskedAadhaar ||
       !Array.isArray(address) || address.length === 0 ||
       typeof dateOfBirth !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)
     ) {
@@ -28,7 +33,11 @@ function createAadhaarModel({ identityModel = identityDataModel } = {}) {
       caseId,
       verificationId,
       identityType: "aadhaar",
-      payload: { aadhaarNumber, address, dateOfBirth },
+      payload: {
+        ...(hasFullAadhaar ? { aadhaarNumber } : { aadhaarMaskedIdentifier: aadhaarMaskedIdentifier.toUpperCase() }),
+        address,
+        dateOfBirth,
+      },
     });
     await connection.execute(
       `UPDATE users

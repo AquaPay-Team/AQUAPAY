@@ -1,5 +1,4 @@
 ﻿import crypto from "node:crypto";
-// import mediaModel from "./media.model.js";
 import * as mediaModel from "./media.model.js";
 import getCloudinary from "../../../config/cloudinary.js";
 import ApiError from "../../../utils/ApiError.js";
@@ -314,22 +313,20 @@ async function uploadMedia(userId, assetType, file) {
       fileSizeBytes: file.size,
     });
 
-    // Count distinct asset types uploaded so far (including the one just inserted).
-    // Step 5 is only marked complete when all three required types are present.
-    const REQUIRED_ASSET_TYPE_COUNT = Object.keys(MEDIA_RULES).length; // 3
-    const uploadedTypeCount = await mediaModel.countUploadedAssetTypes(
+    // Step 5 is complete only when all three required media types exist.
+    const allRequiredMediaUploaded = await mediaModel.hasAllRequiredMedia(
       connection,
       caseId,
     );
 
-    let stepsCompleted = null;
-    if (uploadedTypeCount >= REQUIRED_ASSET_TYPE_COUNT) {
+    if (allRequiredMediaUploaded) {
       await mediaModel.completeStep5(connection, caseId);
-      stepsCompleted = await mediaModel.updateCompletedStepsCount(
-        connection,
-        caseId,
-      );
     }
+
+    const stepsCompleted = await mediaModel.updateCompletedStepsCount(
+      connection,
+      caseId,
+    );
 
     await connection.commit();
     databaseSaved = true;
@@ -341,7 +338,7 @@ async function uploadMedia(userId, assetType, file) {
       mimeType: file.detectedMimeType,
       fileSizeBytes: file.size,
       status: "uploaded",
-      allUploadsComplete: uploadedTypeCount >= REQUIRED_ASSET_TYPE_COUNT,
+      allUploadsComplete: allRequiredMediaUploaded,
       ...(stepsCompleted !== null ? { steps_completed: stepsCompleted } : {}),
     };
   } catch (error) {

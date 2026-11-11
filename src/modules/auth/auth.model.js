@@ -9,16 +9,45 @@ const RESET_OTP_MAX_ATTEMPTS = 5;
 
 async function findUserByIdentifier(identifier, type) {
   const column = type === "email" ? "email" : "mobile";
+
   const [rows] = await pool.execute(
-    `SELECT ${SAFE_USER_FIELDS}, u.password_hash
+    `SELECT
+       ${SAFE_USER_FIELDS},
+       u.password_hash,
+       k.id AS kyc_case_id,
+       k.status AS kyc_status,
+       k.steps_completed AS kyc_steps_completed,
+       k.business_type AS kyc_business_type
      FROM users u
      JOIN roles r ON r.id = u.role_id
      LEFT JOIN companies c ON c.id = u.company_id
+     LEFT JOIN kyc_cases k ON k.user_id = u.id
      WHERE u.${column} = ?
      LIMIT 1`,
     [identifier],
   );
-  return rows[0] || null;
+
+  const row = rows[0];
+  if (!row) return null;
+
+  const {
+    kyc_case_id,
+    kyc_status,
+    kyc_steps_completed,
+    kyc_business_type,
+    ...user
+  } = row;
+
+  return {
+    ...user,
+    kyc: kyc_case_id
+      ? {
+          status: kyc_status,
+          steps_completed: kyc_steps_completed,
+          business_type: kyc_business_type,
+        }
+      : null,
+  };
 }
 
 

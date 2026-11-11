@@ -105,6 +105,18 @@ async function findMediaByIdAndCaseId(connection, assetId, caseId) {
 
   return rows[0] || null;
 }
+async function hasAllRequiredMedia(connection, caseId) {
+  const [rows] = await connection.execute(
+    `SELECT COUNT(DISTINCT asset_type) AS uploaded_count
+       FROM media_assets
+      WHERE case_id = ?
+        AND asset_type IN ('shop_image', 'selfie', 'consent_video')
+        AND status IN ('uploaded', 'verified')`,
+    [caseId],
+  );
+
+  return Number(rows[0]?.uploaded_count || 0) === 3;
+}
 
 // Count how many distinct asset types have been successfully uploaded for this case.
 // Used to decide whether to mark Step 5 as complete (all 3 types required).
@@ -154,13 +166,11 @@ async function updateCompletedStepsCount(connection, caseId) {
 }
 
 export {
-  getConnection,
-  findCasesByUserIdForUpdate,
-  findStepByCaseIdAndNumber,
   insertMediaAsset,
   findMediaByCaseId,
   findMediaByIdAndCaseId,
   countUploadedAssetTypes,
+  hasAllRequiredMedia,
   completeStep5,
   updateCompletedStepsCount,
 };

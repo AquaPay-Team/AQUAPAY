@@ -166,6 +166,7 @@ async function updateCompletedStepsCount(connection, caseId) {
 }
 
 export {
+  getConnection,
   insertMediaAsset,
   findMediaByCaseId,
   findMediaByIdAndCaseId,
@@ -173,4 +174,6 @@ export {
   hasAllRequiredMedia,
   completeStep5,
   updateCompletedStepsCount,
+  findCasesByUserIdForUpdate,
+  findStepByCaseIdAndNumber,
 };

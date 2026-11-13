@@ -65,7 +65,8 @@ async function findStepByCaseIdAndNumber(db, caseId, stepNumber) {
     `SELECT id, case_id, step_number, status, completed_at
        FROM kyc_steps
       WHERE case_id = ? AND step_number = ?
-      LIMIT 1`,
+      LIMIT 1
+      FOR UPDATE`,
     [caseId, stepNumber],
   );
 

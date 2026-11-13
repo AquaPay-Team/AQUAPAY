@@ -227,12 +227,31 @@ test("agreement.service: acceptAgreement transactionally completes step 6", asyn
     },
   ];
 
-  agreementModel.findStepByCaseIdAndNumber = async () => ({
-    id: 106,
-    case_id: 42,
-    step_number: 6,
-    status: "pending",
-  });
+ agreementModel.findStepByCaseIdAndNumber = async (
+  connection,
+  caseId,
+  stepNumber,
+) => {
+  if (stepNumber === 5) {
+    return {
+      id: 105,
+      case_id: 42,
+      step_number: 5,
+      status: "completed",
+    };
+  }
+
+  if (stepNumber === 6) {
+    return {
+      id: 106,
+      case_id: 42,
+      step_number: 6,
+      status: "pending",
+    };
+  }
+
+  return null;
+};
 
   agreementModel.insertAgreementAcceptance = async () => {
     acceptanceInserted = true;

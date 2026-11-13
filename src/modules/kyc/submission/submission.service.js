@@ -222,7 +222,7 @@ async function submitKycApplication(userId, { notes } = {}) {
       const names = incompleteDetails.map((d) => d.name).join(", ");
 
       throw new ApiError(
-        httpStatus.BAD_REQUEST,
+        httpStatus.CONFLICT,
         `Cannot submit KYC. Please complete previous steps first: ${names}`,
         incompleteDetails,
         "INCOMPLETE_KYC_STEPS",

@@ -118,8 +118,12 @@ function validateUpload(assetType, file) {
 
 // Check ownership and upload eligibility.
 // Called inside a database transaction.
+
 async function findEligibleCase(connection, userId) {
-  const cases = await mediaModel.findCasesByUserIdForUpdate(connection, userId);
+  const cases = await mediaModel.findCasesByUserIdForUpdate(
+    connection,
+    userId,
+  );
 
   if (cases.length === 0) {
     throw new ApiError(
@@ -150,6 +154,23 @@ async function findEligibleCase(connection, userId) {
     );
   }
 
+  // Step 5 requires Step 4 (Bank Details) to be completed.
+  const bankDetailsStep = await mediaModel.findStepByCaseIdAndNumber(
+    connection,
+    kycCase.id,
+    4,
+  );
+
+  if (!bankDetailsStep || bankDetailsStep.status !== "completed") {
+    throw new ApiError(
+      httpStatus.CONFLICT,
+      "Complete bank details verification before uploading media.",
+      [],
+      "KYC_PREREQUISITE_NOT_COMPLETED",
+    );
+  }
+
+  // Check whether Step 5 is initialized.
   const step = await mediaModel.findStepByCaseIdAndNumber(
     connection,
     kycCase.id,
@@ -176,6 +197,7 @@ async function findEligibleCase(connection, userId) {
 
   return kycCase.id;
 }
+
 
 // Verify that the user can upload to an existing KYC case.
 async function verifyUploadEligibility(userId) {
@@ -320,8 +342,20 @@ async function uploadMedia(userId, assetType, file) {
     );
 
     if (allRequiredMediaUploaded) {
-      await mediaModel.completeStep5(connection, caseId);
-    }
+  const step5Completed = await mediaModel.completeStep5(
+    connection,
+    caseId,
+  );
+
+  if (!step5Completed) {
+    throw new ApiError(
+      httpStatus.CONFLICT,
+      "Unable to complete media upload step.",
+      [],
+      "KYC_STEP_COMPLETION_FAILED",
+    );
+  }
+}
 
     const stepsCompleted = await mediaModel.updateCompletedStepsCount(
       connection,

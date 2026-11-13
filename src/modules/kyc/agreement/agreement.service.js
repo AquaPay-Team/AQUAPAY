@@ -180,7 +180,11 @@ async function getAgreementDetails(userId) {
   };
 }
 
-async function acceptAgreement(userId, { agreementCode, agreementVersion, accepted } = {}) {
+
+async function acceptAgreement(
+  userId,
+  { agreementCode, agreementVersion, accepted } = {},
+) {
   if (!userId) {
     throw new ApiError(
       httpStatus.UNAUTHORIZED,
@@ -208,7 +212,11 @@ async function acceptAgreement(userId, { agreementCode, agreementVersion, accept
   try {
     await connection.beginTransaction();
 
-    const user = await agreementModel.findActiveUserForUpdate(connection, userId);
+    const user = await agreementModel.findActiveUserForUpdate(
+      connection,
+      userId,
+    );
+
     if (!user || user.status !== "active") {
       throw new ApiError(
         httpStatus.UNAUTHORIZED,
@@ -218,7 +226,11 @@ async function acceptAgreement(userId, { agreementCode, agreementVersion, accept
       );
     }
 
-    const cases = await agreementModel.findCasesByUserIdForUpdate(connection, userId);
+    const cases = await agreementModel.findCasesByUserIdForUpdate(
+      connection,
+      userId,
+    );
+
     if (!cases || cases.length === 0) {
       throw new ApiError(
         httpStatus.NOT_FOUND,
@@ -248,6 +260,23 @@ async function acceptAgreement(userId, { agreementCode, agreementVersion, accept
       );
     }
 
+    // Step 6 requires Step 5 (Media Upload) to be completed.
+    const step5 = await agreementModel.findStepByCaseIdAndNumber(
+      connection,
+      kycCase.id,
+      5,
+    );
+
+    if (!step5 || step5.status !== "completed") {
+      throw new ApiError(
+        httpStatus.CONFLICT,
+        "Complete all required media uploads before accepting the agreement.",
+        [],
+        "KYC_PREREQUISITE_NOT_COMPLETED",
+      );
+    }
+
+    // Check whether Step 6 is initialized.
     const step6 = await agreementModel.findStepByCaseIdAndNumber(
       connection,
       kycCase.id,
@@ -263,6 +292,15 @@ async function acceptAgreement(userId, { agreementCode, agreementVersion, accept
       );
     }
 
+    if (step6.status === "completed") {
+      throw new ApiError(
+        httpStatus.CONFLICT,
+        "Agreement step is already completed.",
+        [],
+        "KYC_STEP_ALREADY_COMPLETED",
+      );
+    }
+
     const acceptedAt = new Date();
 
     await agreementModel.insertAgreementAcceptance(connection, {
@@ -272,7 +310,19 @@ async function acceptAgreement(userId, { agreementCode, agreementVersion, accept
       acceptedAt,
     });
 
-    await agreementModel.completeStep6(connection, kycCase.id);
+    const step6Completed = await agreementModel.completeStep6(
+      connection,
+      kycCase.id,
+    );
+
+    if (!step6Completed) {
+      throw new ApiError(
+        httpStatus.CONFLICT,
+        "Unable to complete agreement acceptance step.",
+        [],
+        "KYC_STEP_COMPLETION_FAILED",
+      );
+    }
 
     const stepsCompleted = await agreementModel.updateCompletedStepsCount(
       connection,

@@ -5,21 +5,26 @@ function notFound(req, res, next) {
   });
 }
 
+
 function errorHandler(err, req, res, next) {
   if (res.headersSent) {
     return next(err);
   }
 
-  const status = Number.isInteger(err.statusCode) ? err.statusCode : err.status;
+  const status = Number.isInteger(err.statusCode)
+    ? err.statusCode
+    : err.status;
 
   const isClientError =
     Number.isInteger(status) && status >= 400 && status < 500;
-  // Preserve explicit 503 errors from any module (for example, DigiLocker).
-  // Previously only SERVICE_UNAVAILABLE was recognized, so other typed 503s
-  // were incorrectly turned into generic 500 responses.
+
   const isServiceUnavailable = status === 503;
 
-  const statusCode = isClientError ? status : isServiceUnavailable ? 503 : 500;
+  const statusCode = isClientError
+    ? status
+    : isServiceUnavailable
+      ? 503
+      : 500;
 
   const message =
     err.type === "entity.parse.failed"
@@ -31,7 +36,11 @@ function errorHandler(err, req, res, next) {
           : "Internal server error";
 
   if (!isClientError) {
-    console.error("Request failed with server error");
+    console.error("[AquaPay Error]", {
+      method: req.method,
+      path: req.originalUrl,
+      statusCode,
+    });
   }
 
   const response = {
@@ -39,16 +48,24 @@ function errorHandler(err, req, res, next) {
     message,
   };
 
-  if ((isClientError || isServiceUnavailable) && typeof err.code === "string") {
+  if (
+    (isClientError || isServiceUnavailable) &&
+    typeof err.code === "string"
+  ) {
     response.code = err.code;
   }
 
-  if (isClientError && Array.isArray(err.errors) && err.errors.length > 0) {
+  if (
+    isClientError &&
+    Array.isArray(err.errors) &&
+    err.errors.length > 0
+  ) {
     response.errors = err.errors;
   }
 
   res.status(statusCode).json(response);
 }
+
 
 export { notFound, errorHandler };
 

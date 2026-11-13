@@ -60,10 +60,9 @@ AquaPay.postman_collection.json
 *.postman_collection.json
 
 # Test suites and test files
-tests/
-tests/*
-!src/modules/kyc/document-verification/**/tests/
-!src/modules/kyc/document-verification/**/tests/**
-apiEndpoints.test.js
-userCreation.test.js
-
+backend/tests/
+backend/tests/*
+!backend/src/modules/kyc/document-verification/**/tests/
+!backend/src/modules/kyc/document-verification/**/tests/**
+backend/apiEndpoints.test.js
+backend/userCreation.test.js

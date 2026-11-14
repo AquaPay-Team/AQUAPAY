@@ -178,6 +178,23 @@ export function KycVerificationPage() {
 
           if (Array.isArray(kycData.completedSteps)) {
             setCompletedSteps(kycData.completedSteps);
+            if (kycData.completedSteps.includes(4)) {
+              try {
+                const bankRes = await getBankDetails();
+                if (bankRes?.data) {
+                  setFormData((prev) => ({
+                    ...prev,
+                    accountHolderName: bankRes.data.accountHolderName || prev.accountHolderName,
+                    bankName: bankRes.data.bankName || prev.bankName,
+                    ifscCode: bankRes.data.ifscCode || prev.ifscCode,
+                    accountNumber: `••••••••${bankRes.data.accountNumberLast4 || "7890"}`,
+                    confirmAccountNumber: `••••••••${bankRes.data.accountNumberLast4 || "7890"}`,
+                  }));
+                }
+              } catch {
+                // Ignore bank details fetch error
+              }
+            }
           }
 
           if (kycData.currentStep) {
@@ -243,6 +260,17 @@ export function KycVerificationPage() {
       checkActiveSession();
     }
   }, [currentStep, aadhaarVerified]);
+
+  // Listen for DigiLocker popup window completion message
+  useEffect(() => {
+    const handlePopupMessage = (e) => {
+      if (e.data?.type === "DIGILOCKER_COMPLETED") {
+        handleCheckAadhaarStatus();
+      }
+    };
+    window.addEventListener("message", handlePopupMessage);
+    return () => window.removeEventListener("message", handlePopupMessage);
+  }, [digilockerSessionId]);
 
   // Step 1 OTP countdown
   useEffect(() => {
@@ -692,6 +720,11 @@ export function KycVerificationPage() {
 
     // STEP 4 VALIDATION
     if (currentStep === 4) {
+      if (completedSteps.includes(4)) {
+        setCurrentStep(5);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
       if (!formData.accountHolderName || !formData.accountHolderName.trim()) {
         toast.error("Please enter beneficiary account holder name.");
         return;

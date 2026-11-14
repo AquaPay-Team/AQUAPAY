@@ -12,8 +12,13 @@ function createRedisClient() {
     throw new Error("REDIS_URL must use redis:// or rediss://");
   }
 
+  const respVersion = process.env.REDIS_RESP_VERSION
+    ? Number(process.env.REDIS_RESP_VERSION)
+    : 2;
+
   const redisClient = createClient({
     url: redisUrl,
+    RESP: respVersion,
     disableOfflineQueue: true,
     socket: {
       connectTimeout: 2000,

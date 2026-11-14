@@ -101,7 +101,7 @@ async function verifyOracleMySql() {
     /mariadb/i.test(version) ||
     !/^\d+\.\d+\.\d+/.test(version)
   ) {
-    throw new Error("Database server is not a supported MySQL server");
+    throw new Error("Database server is not Oracle MySQL or a supported MySQL server");
   }
 
   return metadata;

@@ -126,7 +126,7 @@ export function Step2AadhaarAuth({
     return (
       <div className="space-y-6 max-w-2xl mx-auto">
         <div className="text-center space-y-1.5 mb-4">
-          <div className="w-12 h-12 bg-blue-50 border border-blue-200 rounded-2xl mx-auto flex items-center justify-center">
+          <div className="w-12 h-12 bg-gray-50 border border-blue-200 rounded-2xl mx-auto flex items-center justify-center">
             <RefreshCw className="w-6 h-6 text-blue-600 animate-spin" />
           </div>
           <h3 className="text-base font-semibold text-slate-900">
@@ -137,11 +137,11 @@ export function Step2AadhaarAuth({
           </p>
         </div>
 
-        <div className="p-6 bg-blue-50/60 border border-blue-200 rounded-2xl space-y-5 shadow-xs">
+        <div className="p-6 bg-gray-50/70 border border-blue-100 rounded-2xl space-y-5 shadow-xs">
           {/* Step Guidance */}
           <div className="space-y-3">
             <div className="flex items-start gap-3">
-              <div className="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
+              <div className="w-7 h-7 rounded-full bg-gray-400 text-white flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
                 1
               </div>
               <div>
@@ -149,14 +149,14 @@ export function Step2AadhaarAuth({
                   Enter OTP on the Government Portal Window
                 </p>
                 <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">
-                  Switch to the opened <strong>Meri Pehchaan / DigiLocker</strong> window. Enter the OTP
-                  received on your mobile and click <strong>"Sign In"</strong>.
+                  Switch to the opened Meri Pehchaan / DigiLocker window. Enter the OTP
+                  received on your mobile and click "Sign In".
                 </p>
               </div>
             </div>
 
             <div className="flex items-start gap-3">
-              <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 border border-blue-200 flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
+              <div className="w-7 h-7 rounded-full bg-gray-100 text-white-700 border border-black-200 flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
                 2
               </div>
               <div>
@@ -165,7 +165,7 @@ export function Step2AadhaarAuth({
                 </p>
                 <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">
                   As soon as you complete authentication in that window, AquaPay will automatically
-                  detect it. You can also click <strong>"Check Verification Status"</strong> below.
+                  detect it. You can also click "Check Verification Status" below.
                 </p>
               </div>
             </div>
@@ -177,7 +177,7 @@ export function Step2AadhaarAuth({
               type="button"
               onClick={onCheckStatus}
               disabled={isCheckingStatus}
-              className="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white text-xs font-semibold px-5 py-3 rounded-xl shadow-xs transition disabled:opacity-50 cursor-pointer"
+              className="flex-1 flex items-center justify-center gap-2 bg-gray-400 hover:bg-gray-500 active:scale-[0.99] text-white text-xs font-semibold px-5 py-3 rounded-xl shadow-xs transition disabled:opacity-50 cursor-pointer"
             >
               {isCheckingStatus ? (
                 <>
@@ -210,17 +210,9 @@ export function Step2AadhaarAuth({
               onClick={onResetSession}
               className="text-xs text-slate-500 hover:text-slate-800 transition cursor-pointer underline underline-offset-2"
             >
-              Entered wrong Aadhaar? Click to re-enter Aadhaar number
+              Click to re-enter Aadhaar number
             </button>
           </div>
-        </div>
-
-        <div className="flex items-center gap-2 text-xs text-slate-500 bg-white border border-slate-200 p-3.5 rounded-xl">
-          <Lock className="w-4 h-4 text-slate-400 shrink-0" />
-          <span>
-            Security Notice: By UIDAI mandate, your Aadhaar OTP is securely entered only on the official
-            government portal. AquaPay never accesses your OTP.
-          </span>
         </div>
       </div>
     );

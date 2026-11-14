@@ -561,9 +561,14 @@ export function KycVerificationPage() {
       // Real backend PAN verification against Income Tax Department (IDTO)
       const res = await verifyPanDetails({ panNumber: cleanPan, consent: true });
       const verifiedName = res?.data?.verifiedName || res?.data?.full_name;
+      const maskedId = res?.data?.maskedIdentifier;
       setPanVerified(true);
+      setFormData((prev) => ({
+        ...prev,
+        ...(verifiedName ? { panName: verifiedName } : {}),
+        panMasked: maskedId || `••••••${cleanPan.slice(-4)}`,
+      }));
       if (verifiedName) {
-        setFormData((prev) => ({ ...prev, panName: verifiedName }));
         toast.success(`PAN verified with Income Tax Dept: ${verifiedName}`);
       } else {
         toast.success("PAN verified successfully against tax database.");

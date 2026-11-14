@@ -174,6 +174,7 @@ function createPanService({
         status: provider.mode === "mock" ? "development_unverified" : "verified",
         ...(provider.mode === "mock" ? { developmentOnly: true } : {}),
         maskedIdentifier: verified.maskedIdentifier,
+        verifiedName: verified.verifiedName,
         stepNumber: 3,
         steps_completed: completion.steps_completed,
       };

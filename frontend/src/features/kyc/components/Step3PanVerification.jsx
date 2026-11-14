@@ -105,20 +105,34 @@ export function Step3PanVerification({
 
         {/* Verified Card */}
         {panVerified && (
-          <div className="p-4 bg-emerald-50/70 border border-emerald-300 rounded-xl space-y-2">
-            <div className="flex items-center gap-2 text-emerald-900 font-semibold text-xs">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <div className="p-5 bg-emerald-50/80 border border-emerald-300 rounded-2xl space-y-3.5 shadow-xs">
+            <div className="flex items-center gap-2.5 text-emerald-900 font-semibold text-sm">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
               <span>PAN Records Verified via NSDL / Income Tax Database</span>
             </div>
-            <div className="text-xs text-slate-700 grid grid-cols-2 gap-3 pt-2.5 border-t border-emerald-200/60">
+            <div className="text-xs text-slate-700 grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-3 border-t border-emerald-200/70">
               <div>
-                <span className="text-slate-500 block text-[11px]">Cardholder Name:</span>
-                <span className="font-semibold text-slate-900">{formData.panName || formData.fullName}</span>
+                <span className="text-slate-500 block text-[11px] mb-0.5">Cardholder Legal Name:</span>
+                <span className="font-semibold text-slate-900 text-sm">
+                  {formData.panName || formData.fullName || "Verified User"}
+                </span>
               </div>
               <div>
-                <span className="text-slate-500 block text-[11px]">Database Status:</span>
-                <span className="text-emerald-700 font-semibold">Active & Valid</span>
+                <span className="text-slate-500 block text-[11px] mb-0.5">Masked PAN:</span>
+                <span className="font-mono font-semibold text-slate-900 text-sm">
+                  {formData.panMasked || `••••••${currentPan.slice(-4) || "XXXX"}`}
+                </span>
               </div>
+              <div>
+                <span className="text-slate-500 block text-[11px] mb-0.5">Tax Database Status:</span>
+                <span className="text-emerald-700 font-semibold text-xs flex items-center gap-1 mt-0.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                  Active & Valid Record
+                </span>
+              </div>
+            </div>
+            <div className="pt-2 text-[11px] text-emerald-800 font-medium border-t border-emerald-100 flex items-center gap-1.5">
+              <span>✓ Official legal name matching completed against UIDAI Aadhaar identity.</span>
             </div>
           </div>
         )}

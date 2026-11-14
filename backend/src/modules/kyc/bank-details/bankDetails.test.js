@@ -219,10 +219,10 @@ function mockValidContext() {
 
     async findKycStepForUpdate(connection, caseId, stepNumber) {
       assert.equal(caseId, 13);
-      assert.equal(stepNumber, 3);
+      assert.ok([2, 3].includes(stepNumber));
 
       return {
-        id: 103,
+        id: 100 + stepNumber,
         status: "completed",
       };
     },
@@ -376,10 +376,10 @@ test("Bank service: saves newly verified bank details", async () => {
     assert.ok(Buffer.isBuffer(insertedDetails.encryptedAccountNumber));
     assert.equal(insertedDetails.accountNumberLast4, "9012");
 
-    assert.equal(connection.calls.begin, 1);
-    assert.equal(connection.calls.commit, 1);
+    assert.equal(connection.calls.begin, 2);
+    assert.equal(connection.calls.commit, 2);
     assert.equal(connection.calls.rollback, 0);
-    assert.equal(connection.calls.release, 1);
+    assert.equal(connection.calls.release, 2);
   } finally {
     restoreIdto();
     restoreBankDetailsModel();
@@ -435,8 +435,10 @@ test("Bank service: updates existing bank account", async () => {
     assert.ok(Buffer.isBuffer(updatedDetails.encryptedAccountNumber));
 
     assert.equal(result.verificationStatus, "verified");
-    assert.equal(connection.calls.commit, 1);
-    assert.equal(connection.calls.release, 1);
+    assert.equal(connection.calls.begin, 2);
+    assert.equal(connection.calls.commit, 2);
+    assert.equal(connection.calls.rollback, 0);
+    assert.equal(connection.calls.release, 2);
   } finally {
     restoreIdto();
     restoreBankDetailsModel();
@@ -506,6 +508,7 @@ test("Bank service: rejects inactive users and rolls back", async () => {
       },
     );
 
+    assert.equal(connection.calls.begin, 1);
     assert.equal(connection.calls.commit, 0);
     assert.equal(connection.calls.rollback, 1);
     assert.equal(connection.calls.release, 1);
@@ -543,9 +546,10 @@ test("Bank service: rolls back when database save fails", async () => {
       },
     );
 
-    assert.equal(connection.calls.commit, 0);
+    assert.equal(connection.calls.begin, 2);
+    assert.equal(connection.calls.commit, 1);
     assert.equal(connection.calls.rollback, 1);
-    assert.equal(connection.calls.release, 1);
+    assert.equal(connection.calls.release, 2);
   } finally {
     restoreIdto();
     restoreBankDetailsModel();

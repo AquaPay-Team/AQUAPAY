@@ -66,6 +66,7 @@ async function getBankNameByIfsc(ifscCode) {
 
 async function verifyBankAccountWithIdto(bankDetails) {
   const bankName = await getBankNameByIfsc(bankDetails.ifscCode);
+
   const clientId = process.env.IDTO_CLIENT_ID;
   const apiKey = process.env.IDTO_API_KEY;
   const baseUrl = process.env.IDTO_BASE_URL;
@@ -77,7 +78,8 @@ async function verifyBankAccountWithIdto(bankDetails) {
   let response;
 
   try {
-    const endpoint = `${baseUrl.replace(/\/+$/, "")}/v2/verify/bank_verification`;
+    const endpoint =
+      `${baseUrl.replace(/\/+$/, "")}/v2/verify/bank_verification`;
 
     response = await fetch(endpoint, {
       method: "POST",
@@ -141,16 +143,12 @@ async function verifyBankAccountWithIdto(bankDetails) {
     throw serviceUnavailable();
   }
 
-  console.log("[IDTO bank verification successful]", {
-  providerReference: result.tranx_id,
-  accountHolderName: result.data.account_holder_name,
-});
-
-return {
-  accountHolderName: result.data.account_holder_name,
-  bankName,
-  providerReference: result.tranx_id,
-};
+  // Do not log account-holder name or provider reference.
+  return {
+    accountHolderName: result.data.account_holder_name,
+    bankName,
+    providerReference: result.tranx_id,
+  };
 }
 
 function serviceUnavailable() {
@@ -258,8 +256,78 @@ async function findBankDetailsContext(connection, userId) {
   return { user, kycCase };
 }
 
+// Check both Aadhaar and PAN prerequisites.
+async function assertBankDetailsPrerequisites(connection, caseId) {
+  const aadhaarStep = await bankDetailsModel.findKycStepForUpdate(
+    connection,
+    caseId,
+    2,
+  );
+
+  if (!aadhaarStep || aadhaarStep.status !== "completed") {
+    throw new ApiError(
+      httpStatus.CONFLICT,
+      "Complete Aadhaar verification before submitting bank details.",
+      [],
+      "AADHAAR_PREREQUISITE_NOT_COMPLETED",
+    );
+  }
+
+  const panStep = await bankDetailsModel.findKycStepForUpdate(
+    connection,
+    caseId,
+    3,
+  );
+
+  if (!panStep || panStep.status !== "completed") {
+    throw new ApiError(
+      httpStatus.CONFLICT,
+      "Complete PAN verification before submitting bank details.",
+      [],
+      "PAN_PREREQUISITE_NOT_COMPLETED",
+    );
+  }
+}
+
+// Preliminary check before calling external providers.
+async function checkBankDetailsPrerequisites(userId) {
+  let connection;
+
+  try {
+    connection = await bankDetailsModel.getConnection();
+
+    await connection.beginTransaction();
+
+    const { kycCase } = await findBankDetailsContext(
+      connection,
+      userId,
+    );
+
+    await assertBankDetailsPrerequisites(connection, kycCase.id);
+
+    await connection.commit();
+  } catch (error) {
+    await releaseConnection(connection, true);
+    connection = null;
+
+    if (error instanceof ApiError) {
+      throw error;
+    }
+
+    logKycFailure("Bank Details prerequisite check", error);
+    throw serviceUnavailable();
+  } finally {
+    if (connection) {
+      await releaseConnection(connection);
+    }
+  }
+}
+
 async function saveBankDetails(userId, bankDetails) {
-  // Verify the account with IDTO before opening a database transaction.
+  // First check prerequisites before making external API calls.
+  await checkBankDetailsPrerequisites(userId);
+
+  // Call IDTO only after Aadhaar and PAN prerequisites pass.
   const verification = await verifyBankAccountWithIdto(bankDetails);
 
   let connection;
@@ -274,24 +342,11 @@ async function saveBankDetails(userId, bankDetails) {
   try {
     await connection.beginTransaction();
 
-        // Re-check the user's KYC case after IDTO verification.
+    // Recheck the user's KYC case after IDTO verification.
     const { kycCase } = await findBankDetailsContext(connection, userId);
 
-    // Require PAN verification (Step 3) before bank verification (Step 4).
-    const panStep = await bankDetailsModel.findKycStepForUpdate(
-      connection,
-      kycCase.id,
-      3,
-    );
-
-    if (!panStep || panStep.status !== "completed") {
-      throw new ApiError(
-        httpStatus.CONFLICT,
-        "Complete PAN verification before submitting bank details.",
-        [],
-        "PAN_PREREQUISITE_NOT_COMPLETED",
-      );
-    }
+    // Recheck Aadhaar and PAN before saving.
+    await assertBankDetailsPrerequisites(connection, kycCase.id);
 
     const existingAccount =
       await bankDetailsModel.findBankAccountByCaseIdForUpdate(
@@ -371,7 +426,6 @@ async function saveBankDetails(userId, bankDetails) {
       throw error;
     }
 
-    // Detailed diagnostic logging for unexpected save/database errors.
     logKycFailure("Bank Details save", error);
     throw serviceUnavailable();
   } finally {

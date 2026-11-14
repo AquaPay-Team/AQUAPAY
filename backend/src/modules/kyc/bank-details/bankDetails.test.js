@@ -13,6 +13,8 @@ import bankDetailsService from "./bankDetails.service.js";
 import bankDetailsModel from "./bankDetails.model.js";
 import * as bankDetailsModelFunctions from "./bankDetails.model.js";
 import authModel from "../../auth/auth.model.js";
+import { getAuthConfig } from "../../../config/auth.js";
+import { hashRateLimitBucket } from "../../../middlewares/authRateLimit.middleware.js";
 import ApiError from "../../../utils/ApiError.js";
 
 // ------------------------------------------------------------
@@ -158,12 +160,23 @@ test("Bank encryption: detects tampered encrypted data", () => {
 const originalModelMethods = {};
 const originalIncrementRateLimitCounter = authModel.incrementRateLimitCounter;
 
-function mockBankAttemptCounter(count = 1) {
+function mockBankAttemptCounter(count = 1, caseId = 13) {
   authModel.incrementRateLimitCounter = async (hash, windowStart, expiresAt, connection) => {
     assert.match(hash, /^[a-f0-9]{64}$/);
+    assert.equal(
+      hash,
+      hashRateLimitBucket(
+        getAuthConfig().rateLimitHmacSecret,
+        "bankVerification",
+        "case",
+        String(caseId),
+      ),
+    );
     assert.equal(typeof windowStart, "string");
     assert.equal(typeof expiresAt, "string");
     assert.ok(connection);
+    assert.equal(connection.calls.begin, 1);
+    assert.equal(connection.calls.commit, 0);
     return count;
   };
 }
@@ -235,10 +248,10 @@ function mockValidContext() {
 
     async findKycStepForUpdate(connection, caseId, stepNumber) {
       assert.equal(caseId, 13);
-      assert.equal(stepNumber, 3);
+      assert.ok([2, 3].includes(stepNumber));
 
       return {
-        id: 103,
+        id: 100 + stepNumber,
         status: "completed",
       };
     },
@@ -351,38 +364,39 @@ test("Bank service: saves newly verified bank details", async () => {
   const restoreIdto = mockSuccessfulIdtoVerification();
   const connection = createMockConnection();
   let insertedDetails;
+  const originalConsoleInfo = console.info;
+  const capturedInfoLogs = [];
 
-  mockBankDetailsModel({
-    ...mockValidContext(),
-
-    async getConnection() {
-      return connection;
-    },
-
-    async findBankAccountByCaseIdForUpdate() {
-      return null;
-    },
-
-    async insertBankAccount(conn, caseId, details) {
-      insertedDetails = { caseId, ...details };
-      return 101;
-    },
-
-    async completeStep4() {
-      return true;
-    },
-
-    async updateCompletedStepsCount() {
-      return 1;
-    },
-  });
-const originalConsoleInfo = console.info;
-const capturedInfoLogs = [];
-
-console.info = (line) => {
-  capturedInfoLogs.push(JSON.parse(line));
-};
   try {
+    console.info = (line) => {
+      capturedInfoLogs.push(JSON.parse(line));
+    };
+
+    mockBankDetailsModel({
+      ...mockValidContext(),
+
+      async getConnection() {
+        return connection;
+      },
+
+      async findBankAccountByCaseIdForUpdate() {
+        return null;
+      },
+
+      async insertBankAccount(conn, caseId, details) {
+        insertedDetails = { caseId, ...details };
+        return 101;
+      },
+
+      async completeStep4() {
+        return true;
+      },
+
+      async updateCompletedStepsCount() {
+        return 1;
+      },
+    });
+
     const result = await bankDetailsService.saveBankDetails(
       52,
       sampleBankDetails,
@@ -411,11 +425,12 @@ console.info = (line) => {
     const successLog = JSON.stringify(capturedInfoLogs);
     assert.doesNotMatch(successLog, /Test User/);
     assert.doesNotMatch(successLog, /IDTO-TXN-123/);
+    assert.doesNotMatch(successLog, /HDFC Bank|HDFC0001234|123456789012|9012/);
   } finally {
+    console.info = originalConsoleInfo;
     restoreIdto();
     restoreBankDetailsModel();
     restoreBankAttemptCounter();
-    console.info = originalConsoleInfo;
   }
 });
 
@@ -469,7 +484,9 @@ test("Bank service: updates existing bank account", async () => {
     assert.ok(Buffer.isBuffer(updatedDetails.encryptedAccountNumber));
 
     assert.equal(result.verificationStatus, "verified");
+    assert.equal(connection.calls.begin, 2);
     assert.equal(connection.calls.commit, 2);
+    assert.equal(connection.calls.rollback, 0);
     assert.equal(connection.calls.release, 2);
   } finally {
     restoreIdto();
@@ -479,16 +496,24 @@ test("Bank service: updates existing bank account", async () => {
 });
 
 test("Bank service: retrieves bank details without full account number", async () => {
+  const connection = createMockConnection();
+
   mockBankDetailsModel({
-    async findActiveUser() {
+    async getConnection() {
+      return connection;
+    },
+
+    async findActiveUserForUpdate() {
       return { id: 52, status: "active" };
     },
 
-    async findCurrentCaseByUserId() {
-      return { id: 13, user_id: 52, status: "submitted" };
+    async findCasesByUserIdForUpdate() {
+      return [{ id: 13, user_id: 52, status: "submitted" }];
     },
 
-    async findBankAccountByCaseId() {
+    async findBankAccountByCaseId(conn, caseId) {
+      assert.equal(conn, connection);
+      assert.equal(caseId, 13);
       return {
         account_holder_name: "Test User",
         bank_name: "Test Bank",
@@ -510,16 +535,95 @@ test("Bank service: retrieves bank details without full account number", async (
     assert.equal(result.verificationStatus, "verified");
     assert.equal("accountNumber" in result, false);
     assert.equal("account_number_encrypted" in result, false);
+    assert.equal(connection.calls.begin, 1);
+    assert.equal(connection.calls.commit, 1);
+    assert.equal(connection.calls.rollback, 0);
+    assert.equal(connection.calls.release, 1);
 
   } finally {
     restoreBankDetailsModel();
   }
 });
 
-test("Bank service: rejects inactive users and rolls back", async () => {
+test("Bank service: current-case fallback uses the active transaction connection", async () => {
+  const connection = createMockConnection();
+  let fallbackSql;
+  let fallbackParams;
+
+  connection.execute = async (sql, params) => {
+    fallbackSql = sql;
+    fallbackParams = params;
+    assert.equal(connection.calls.begin, 1);
+    assert.equal(connection.calls.commit, 0);
+    return [[{
+      id: 14,
+      user_id: 52,
+      status: "rejected",
+      steps_completed: 4,
+    }]];
+  };
+
   mockBankDetailsModel({
-    async findActiveUser() {
-      return null;
+    async getConnection() {
+      return connection;
+    },
+
+    async findActiveUserForUpdate(conn, userId) {
+      assert.equal(conn, connection);
+      assert.equal(userId, 52);
+      return { id: 52, status: "active" };
+    },
+
+    async findCasesByUserIdForUpdate(conn, userId) {
+      assert.equal(conn, connection);
+      assert.equal(userId, 52);
+      return [];
+    },
+
+    async findBankAccountByCaseId(conn, caseId) {
+      assert.equal(conn, connection);
+      assert.equal(caseId, 14);
+      return {
+        account_holder_name: "Test User",
+        bank_name: "Test Bank",
+        ifsc_code: "HDFC0001234",
+        account_number_last4: "9012",
+        verification_status: "verified",
+        verified_at: new Date("2026-01-01T00:00:00Z"),
+      };
+    },
+  });
+
+  try {
+    const result = await bankDetailsService.getBankDetails(52);
+
+    assert.equal(result.bankName, "Test Bank");
+    assert.match(fallbackSql, /FROM kyc_cases/i);
+    assert.match(fallbackSql, /WHERE user_id = \?/i);
+    assert.match(
+      fallbackSql,
+      /ORDER BY CASE WHEN status IN \('draft', 'pending', 'submitted', 'under_review'\) THEN 0 ELSE 1 END,\s*id DESC/i,
+    );
+    assert.deepEqual(fallbackParams, [52]);
+    assert.equal(connection.calls.begin, 1);
+    assert.equal(connection.calls.commit, 1);
+    assert.equal(connection.calls.rollback, 0);
+    assert.equal(connection.calls.release, 1);
+  } finally {
+    restoreBankDetailsModel();
+  }
+});
+
+test("Bank service: rejects inactive users and rolls back", async () => {
+  const connection = createMockConnection();
+
+  mockBankDetailsModel({
+    async getConnection() {
+      return connection;
+    },
+
+    async findActiveUserForUpdate() {
+      return { id: 52, status: "inactive" };
     },
   });
 
@@ -533,6 +637,10 @@ test("Bank service: rejects inactive users and rolls back", async () => {
       },
     );
 
+    assert.equal(connection.calls.begin, 1);
+    assert.equal(connection.calls.commit, 0);
+    assert.equal(connection.calls.rollback, 1);
+    assert.equal(connection.calls.release, 1);
   } finally {
     restoreBankDetailsModel();
   }
@@ -581,7 +689,6 @@ test("Bank service: rolls back when database save fails without logging sensitiv
     assert.equal(connection.calls.commit, 1);
     assert.equal(connection.calls.rollback, 1);
     assert.equal(connection.calls.release, 2);
-
     // M8: Database and SQL error details must not appear in logs.
     const errorLogs = JSON.stringify(capturedErrorLogs);
 
@@ -667,9 +774,10 @@ test("Bank service: does not log sensitive IDTO provider messages", async () => 
   }
 });
 
-test("Bank service: rejects ineligible PAN cases before any paid provider request", async () => {
+test("Bank service: rejects incomplete Aadhaar before any paid provider request", async () => {
   const connection = createMockConnection();
   let providerCalls = 0;
+  const stepNumbers = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => {
     providerCalls += 1;
@@ -679,8 +787,56 @@ test("Bank service: rejects ineligible PAN cases before any paid provider reques
     async getConnection() { return connection; },
     async findActiveUserForUpdate() { return { id: 52, status: "active" }; },
     async findCasesByUserIdForUpdate() { return [{ id: 13, user_id: 52, status: "pending" }]; },
-    async findKycStepForUpdate() { return { id: 103, status: "failed" }; },
-    async findVerifiedPanForUpdate() { return [{ id: 105 }]; },
+    async findKycStepForUpdate(_connection, caseId, stepNumber) {
+      assert.equal(caseId, 13);
+      stepNumbers.push(stepNumber);
+      return { id: 102, status: "failed" };
+    },
+    async findVerifiedPanForUpdate() {
+      assert.fail("PAN evidence must not be checked before Aadhaar completes");
+    },
+  });
+
+  try {
+    await assert.rejects(
+      bankDetailsService.saveBankDetails(52, sampleBankDetails),
+      (error) => error.code === "AADHAAR_PREREQUISITE_NOT_COMPLETED",
+    );
+    assert.deepEqual(stepNumbers, [2]);
+    assert.equal(providerCalls, 0);
+    assert.equal(connection.calls.commit, 0);
+    assert.equal(connection.calls.rollback, 1);
+    assert.equal(connection.calls.release, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+    restoreBankDetailsModel();
+  }
+});
+
+test("Bank service: rejects ineligible PAN cases before any paid provider request", async () => {
+  const connection = createMockConnection();
+  let providerCalls = 0;
+  const stepNumbers = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    providerCalls += 1;
+    throw new Error("provider must not be called");
+  };
+  mockBankDetailsModel({
+    async getConnection() { return connection; },
+    async findActiveUserForUpdate() { return { id: 52, status: "active" }; },
+    async findCasesByUserIdForUpdate() { return [{ id: 13, user_id: 52, status: "pending" }]; },
+    async findKycStepForUpdate(_connection, caseId, stepNumber) {
+      assert.equal(caseId, 13);
+      stepNumbers.push(stepNumber);
+      return {
+        id: stepNumber === 2 ? 102 : 103,
+        status: stepNumber === 2 ? "completed" : "failed",
+      };
+    },
+    async findVerifiedPanForUpdate() {
+      assert.fail("PAN evidence must not be checked for an incomplete PAN step");
+    },
   });
 
   try {
@@ -688,12 +844,142 @@ test("Bank service: rejects ineligible PAN cases before any paid provider reques
       bankDetailsService.saveBankDetails(52, sampleBankDetails),
       (error) => error.code === "PAN_PREREQUISITE_NOT_COMPLETED",
     );
+    assert.deepEqual(stepNumbers, [2, 3]);
     assert.equal(providerCalls, 0);
     assert.equal(connection.calls.commit, 0);
     assert.equal(connection.calls.rollback, 1);
+    assert.equal(connection.calls.release, 1);
   } finally {
     globalThis.fetch = originalFetch;
     restoreBankDetailsModel();
+  }
+});
+
+test("Bank service: requires exactly one verified PAN evidence record", async () => {
+  let providerCalls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    providerCalls += 1;
+    throw new Error("provider must not be called");
+  };
+
+  try {
+    for (const evidenceRecords of [[], [{ id: 105 }, { id: 106 }]]) {
+      const connection = createMockConnection();
+      mockBankDetailsModel({
+        ...mockValidContext(),
+        async getConnection() { return connection; },
+        async findVerifiedPanForUpdate() { return evidenceRecords; },
+      });
+
+      await assert.rejects(
+        bankDetailsService.saveBankDetails(52, sampleBankDetails),
+        (error) => error.code === "PAN_PREREQUISITE_NOT_COMPLETED",
+      );
+      assert.equal(providerCalls, 0);
+      assert.equal(connection.calls.commit, 0);
+      assert.equal(connection.calls.rollback, 1);
+      assert.equal(connection.calls.release, 1);
+      restoreBankDetailsModel();
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+    restoreBankDetailsModel();
+  }
+});
+
+test("Bank service: rejects a KYC case change after provider verification", async () => {
+  mockBankAttemptCounter();
+  const restoreIdto = mockSuccessfulIdtoVerification();
+  const successfulFetch = globalThis.fetch;
+  let providerCalls = 0;
+  globalThis.fetch = async (...args) => {
+    if (String(args[0]).endsWith("/v2/verify/bank_verification")) {
+      providerCalls += 1;
+    }
+    return successfulFetch(...args);
+  };
+  const connection = createMockConnection();
+  let contextLookupCount = 0;
+  let accountLookupCount = 0;
+
+  mockBankDetailsModel({
+    async getConnection() { return connection; },
+    async findActiveUserForUpdate() { return { id: 52, status: "active" }; },
+    async findCasesByUserIdForUpdate() {
+      contextLookupCount += 1;
+      const caseId = contextLookupCount === 1 ? 13 : 14;
+      return [{ id: caseId, user_id: 52, status: "pending" }];
+    },
+    async findKycStepForUpdate(_connection, caseId, stepNumber) {
+      assert.equal(caseId, 13);
+      assert.ok([2, 3].includes(stepNumber));
+      return { id: 100 + stepNumber, status: "completed" };
+    },
+    async findVerifiedPanForUpdate(_connection, caseId) {
+      assert.equal(caseId, 13);
+      return [{ id: 105 }];
+    },
+    async findBankAccountByCaseIdForUpdate() {
+      accountLookupCount += 1;
+      return null;
+    },
+  });
+
+  try {
+    await assert.rejects(
+      bankDetailsService.saveBankDetails(52, sampleBankDetails),
+      (error) => error.code === "KYC_CASE_CHANGED",
+    );
+    assert.equal(providerCalls, 1);
+    assert.equal(contextLookupCount, 2);
+    assert.equal(accountLookupCount, 0);
+    assert.equal(connection.calls.begin, 2);
+    assert.equal(connection.calls.commit, 1);
+    assert.equal(connection.calls.rollback, 1);
+    assert.equal(connection.calls.release, 2);
+  } finally {
+    restoreIdto();
+    restoreBankDetailsModel();
+    restoreBankAttemptCounter();
+  }
+});
+
+test("Bank service: revalidates verified PAN evidence after provider verification", async () => {
+  mockBankAttemptCounter();
+  const restoreIdto = mockSuccessfulIdtoVerification();
+  const connection = createMockConnection();
+  let evidenceChecks = 0;
+  let accountLookupCount = 0;
+
+  mockBankDetailsModel({
+    ...mockValidContext(),
+    async getConnection() { return connection; },
+    async findVerifiedPanForUpdate() {
+      evidenceChecks += 1;
+      return evidenceChecks === 1 ? [{ id: 105 }] : [];
+    },
+    async findBankAccountByCaseIdForUpdate() {
+      accountLookupCount += 1;
+      return null;
+    },
+  });
+
+  try {
+    await assert.rejects(
+      bankDetailsService.saveBankDetails(52, sampleBankDetails),
+      (error) => error.code === "PAN_PREREQUISITE_NOT_COMPLETED",
+    );
+    assert.equal(evidenceChecks, 2);
+    assert.equal(accountLookupCount, 0);
+    assert.equal(connection.calls.begin, 2);
+    assert.equal(connection.calls.commit, 1);
+    assert.equal(connection.calls.rollback, 1);
+    assert.equal(connection.calls.release, 2);
+  } finally {
+    restoreIdto();
+    restoreBankDetailsModel();
+    restoreBankAttemptCounter();
   }
 });
 
@@ -705,7 +991,6 @@ test("Bank service: per-case attempt cap blocks provider access and commits the 
     providerCalls += 1;
     throw new Error("provider must not be called");
   };
-  const { getAuthConfig } = await import("../../../config/auth.js");
   const limit = getAuthConfig().rateLimits.bankVerification.case;
   mockBankAttemptCounter(limit + 1);
   mockBankDetailsModel({
@@ -933,6 +1218,11 @@ test("Bank model: retrieves KYC cases with row locking", async () => {
 
   assert.equal(result.length, 1);
   assert.match(capturedSql, /WHERE user_id = \?/i);
+  assert.match(
+    capturedSql,
+    /status IN \('draft', 'pending', 'submitted', 'under_review'\)/i,
+  );
+  assert.match(capturedSql, /ORDER BY id DESC/i);
   assert.match(capturedSql, /LIMIT 2/i);
   assert.match(capturedSql, /FOR UPDATE/i);
   assert.deepEqual(capturedParams, [52]);

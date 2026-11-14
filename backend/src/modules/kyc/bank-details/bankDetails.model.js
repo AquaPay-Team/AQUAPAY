@@ -43,8 +43,8 @@ async function findCasesByUserIdForUpdate(connection, userId) {
   return rows;
 }
 
-async function findCurrentCaseByUserId(userId) {
-  const [rows] = await pool.execute(
+async function findCurrentCaseByUserId(connection, userId) {
+  const [rows] = await connection.execute(
     `SELECT id, user_id, status, steps_completed
        FROM kyc_cases
       WHERE user_id = ?

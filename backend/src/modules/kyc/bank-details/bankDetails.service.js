@@ -70,6 +70,7 @@ async function getBankNameByIfsc(ifscCode) {
 
 async function verifyBankAccountWithIdto(bankDetails) {
   const bankName = await getBankNameByIfsc(bankDetails.ifscCode);
+
   const clientId = process.env.IDTO_CLIENT_ID;
   const apiKey = process.env.IDTO_API_KEY;
   const baseUrl = process.env.IDTO_BASE_URL;
@@ -81,7 +82,8 @@ async function verifyBankAccountWithIdto(bankDetails) {
   let response;
 
   try {
-    const endpoint = `${baseUrl.replace(/\/+$/, "")}/v2/verify/bank_verification`;
+    const endpoint =
+      `${baseUrl.replace(/\/+$/, "")}/v2/verify/bank_verification`;
 
     response = await fetch(endpoint, {
       method: "POST",
@@ -119,7 +121,7 @@ async function verifyBankAccountWithIdto(bankDetails) {
     );
   }
 
-   if (!response.ok || result?.status !== "success") {
+  if (!response.ok || result?.status !== "success") {
     logger.error("bank.idto_verification_failed", {
       httpStatus: response.status,
     });
@@ -137,11 +139,12 @@ async function verifyBankAccountWithIdto(bankDetails) {
 
   logger.info("bank.verification_succeeded");
 
-return {
-  accountHolderName: result.data.account_holder_name,
-  bankName,
-  providerReference: result.tranx_id,
-};
+  // Do not log account-holder name or provider reference.
+  return {
+    accountHolderName: result.data.account_holder_name,
+    bankName,
+    providerReference: result.tranx_id,
+  };
 }
 
 function serviceUnavailable() {
@@ -245,12 +248,63 @@ async function findBankDetailsContext(connection, userId) {
   return { user, kycCase };
 }
 
+// Check both Aadhaar and PAN prerequisites.
+async function assertBankDetailsPrerequisites(connection, caseId) {
+  const aadhaarStep = await bankDetailsModel.findKycStepForUpdate(
+    connection,
+    caseId,
+    2,
+  );
+
+  if (!aadhaarStep || aadhaarStep.status !== "completed") {
+    throw new ApiError(
+      httpStatus.CONFLICT,
+      "Complete Aadhaar verification before submitting bank details.",
+      [],
+      "AADHAAR_PREREQUISITE_NOT_COMPLETED",
+    );
+  }
+
+  const panStep = await bankDetailsModel.findKycStepForUpdate(
+    connection,
+    caseId,
+    3,
+  );
+
+  if (!panStep || panStep.status !== "completed") {
+    throw new ApiError(
+      httpStatus.CONFLICT,
+      "Complete PAN verification before submitting bank details.",
+      [],
+      "PAN_PREREQUISITE_NOT_COMPLETED",
+    );
+  }
+}
+
+async function assertVerifiedPanEvidence(connection, caseId) {
+  const verifiedPanRecords =
+    await bankDetailsModel.findVerifiedPanForUpdate(connection, caseId);
+
+  if (!Array.isArray(verifiedPanRecords) || verifiedPanRecords.length !== 1) {
+    throw new ApiError(
+      httpStatus.CONFLICT,
+      "Complete PAN verification before submitting bank details.",
+      [],
+      "PAN_PREREQUISITE_NOT_COMPLETED",
+    );
+  }
+}
+
 async function claimBankVerificationAttempt(userId) {
   let connection;
+
   try {
     connection = await bankDetailsModel.getConnection();
   } catch (error) {
-    logKycFailure("Bank verification eligibility database connection", error);
+    logKycFailure(
+      "Bank verification eligibility database connection",
+      error,
+    );
     throw serviceUnavailable();
   }
 
@@ -258,36 +312,34 @@ async function claimBankVerificationAttempt(userId) {
   let attempts;
   let limit;
   let caseId;
+
   try {
     await connection.beginTransaction();
-    const { kycCase } = await findBankDetailsContext(connection, userId);
+
+    const { kycCase } = await findBankDetailsContext(
+      connection,
+      userId,
+    );
+
     caseId = Number(kycCase.id);
-    const panStep = await bankDetailsModel.findKycStepForUpdate(
-      connection,
-      kycCase.id,
-      3,
-    );
-    const verifiedPanRecords = await bankDetailsModel.findVerifiedPanForUpdate(
-      connection,
-      kycCase.id,
-    );
 
-    if (panStep?.status !== "completed" || verifiedPanRecords.length !== 1) {
-      throw new ApiError(
-        httpStatus.CONFLICT,
-        "Complete PAN verification before submitting bank details.",
-        [],
-        "PAN_PREREQUISITE_NOT_COMPLETED",
-      );
-    }
+    // Validate Aadhaar and PAN prerequisites.
+    await assertBankDetailsPrerequisites(connection, kycCase.id);
 
+    // Require exactly one verified PAN evidence record.
+    await assertVerifiedPanEvidence(connection, kycCase.id);
+
+    // Apply the per-KYC-case bank verification attempt limit.
     const config = getAuthConfig();
     const policy = config.rateLimits.bankVerification;
     const now = Date.now();
     const windowMs = policy.windowSeconds * 1000;
     const windowStartMs = Math.floor(now / windowMs) * windowMs;
     const windowStart = sqlDate(new Date(windowStartMs));
-    const expiresAt = sqlDate(new Date(windowStartMs + 2 * windowMs));
+    const expiresAt = sqlDate(
+      new Date(windowStartMs + 2 * windowMs),
+    );
+
     const bucketHash = hashRateLimitBucket(
       config.rateLimitHmacSecret,
       "bankVerification",
@@ -301,11 +353,17 @@ async function claimBankVerificationAttempt(userId) {
       expiresAt,
       connection,
     );
+
     limit = policy.case ?? policy.user;
+
     await connection.commit();
   } catch (error) {
     rollback = true;
-    if (error instanceof ApiError) throw error;
+
+    if (error instanceof ApiError) {
+      throw error;
+    }
+
     logKycFailure("Bank verification eligibility check", error);
     throw serviceUnavailable();
   } finally {
@@ -325,9 +383,10 @@ async function claimBankVerificationAttempt(userId) {
 }
 
 async function saveBankDetails(userId, bankDetails) {
-  // Complete eligibility checks and consume the per-case attempt budget before
-  // making any paid provider request.
+  // Validate eligibility and consume the per-case attempt budget
+  // before making any paid provider request.
   const eligibleCaseId = await claimBankVerificationAttempt(userId);
+
   const verification = await verifyBankAccountWithIdto(bankDetails);
 
   let connection;
@@ -341,8 +400,6 @@ async function saveBankDetails(userId, bankDetails) {
 
   try {
     await connection.beginTransaction();
-
-    // Re-check ownership, status, and prerequisites after the provider call.
     const { kycCase } = await findBankDetailsContext(connection, userId);
     if (Number(kycCase.id) !== Number(eligibleCaseId)) {
       throw new ApiError(
@@ -353,34 +410,10 @@ async function saveBankDetails(userId, bankDetails) {
       );
     }
 
-    // Require PAN verification (Step 3) before bank verification (Step 4).
-    const panStep = await bankDetailsModel.findKycStepForUpdate(
-      connection,
-      kycCase.id,
-      3,
-    );
+    // Recheck Aadhaar and PAN before saving.
+    await assertBankDetailsPrerequisites(connection, kycCase.id);
 
-    if (!panStep || panStep.status !== "completed") {
-      throw new ApiError(
-        httpStatus.CONFLICT,
-        "Complete PAN verification before submitting bank details.",
-        [],
-        "PAN_PREREQUISITE_NOT_COMPLETED",
-      );
-    }
-
-    const verifiedPanRecords = await bankDetailsModel.findVerifiedPanForUpdate(
-      connection,
-      kycCase.id,
-    );
-    if (verifiedPanRecords.length !== 1) {
-      throw new ApiError(
-        httpStatus.CONFLICT,
-        "Complete PAN verification before submitting bank details.",
-        [],
-        "PAN_PREREQUISITE_NOT_COMPLETED",
-      );
-    }
+    await assertVerifiedPanEvidence(connection, kycCase.id);
 
     const existingAccount =
       await bankDetailsModel.findBankAccountByCaseIdForUpdate(
@@ -460,7 +493,6 @@ async function saveBankDetails(userId, bankDetails) {
       throw error;
     }
 
-    // Detailed diagnostic logging for unexpected save/database errors.
     logKycFailure("Bank Details save", error);
     throw serviceUnavailable();
   } finally {
@@ -471,17 +503,48 @@ async function saveBankDetails(userId, bankDetails) {
 }
 
 async function getBankDetails(userId) {
+  let connection;
+
   try {
-    const user = await bankDetailsModel.findActiveUser(userId);
-    if (!user) {
-      throw new ApiError(httpStatus.UNAUTHORIZED, "Invalid or inactive user", [], "UNAUTHORIZED");
+    connection = await bankDetailsModel.getConnection();
+  } catch (error) {
+    logKycFailure("Bank Details database connection", error);
+    throw serviceUnavailable();
+  }
+
+  try {
+    await connection.beginTransaction();
+
+    const user = await bankDetailsModel.findActiveUserForUpdate(
+      connection,
+      userId,
+    );
+    if (!user || user.status !== "active") {
+      throw new ApiError(
+        httpStatus.UNAUTHORIZED,
+        "Invalid or inactive user",
+        [],
+        "UNAUTHORIZED",
+      );
     }
-    const kycCase = await bankDetailsModel.findCurrentCaseByUserId(userId);
+
+    const cases = await bankDetailsModel.findCasesByUserIdForUpdate(
+      connection,
+      userId,
+    );
+    const kycCase = cases[0] ||
+      await bankDetailsModel.findCurrentCaseByUserId(connection, userId);
     if (!kycCase) {
-      throw new ApiError(httpStatus.NOT_FOUND, "KYC case was not initialized for this user", [], "KYC_CASE_NOT_FOUND");
+      throw new ApiError(
+        httpStatus.NOT_FOUND,
+        "KYC case was not initialized for this user",
+        [],
+        "KYC_CASE_NOT_FOUND",
+      );
     }
+
     const account = await bankDetailsModel.findBankAccountByCaseId(
-      null,
+      connection,
       kycCase.id,
     );
 
@@ -494,6 +557,8 @@ async function getBankDetails(userId) {
       );
     }
 
+    await connection.commit();
+
     return {
       accountHolderName: account.account_holder_name,
       bankName: account.bank_name,
@@ -503,12 +568,19 @@ async function getBankDetails(userId) {
       verifiedAt: account.verified_at,
     };
   } catch (error) {
+    await releaseConnection(connection, true);
+    connection = null;
+
     if (error instanceof ApiError) {
       throw error;
     }
 
     logKycFailure("Bank Details retrieval", error);
     throw serviceUnavailable();
+  } finally {
+    if (connection) {
+      await releaseConnection(connection);
+    }
   }
 }
 

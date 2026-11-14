@@ -1,7 +1,9 @@
+import logger from "../utils/logger.js";
+
 function notFound(req, res, next) {
   res.status(404).json({
     success: false,
-    message: `Route not found: ${req.method} ${req.originalUrl}`,
+    message: `Route not found: ${req.method} ${req.path}`,
   });
 }
 
@@ -36,10 +38,11 @@ function errorHandler(err, req, res, next) {
           : "Internal server error";
 
   if (!isClientError) {
-    console.error("[AquaPay Error]", {
+    logger.error("http.request_failed", {
       method: req.method,
-      path: req.originalUrl,
+      path: req.path,
       statusCode,
+      errorCode: typeof err.code === "string" && /^[A-Z0-9_]{1,80}$/.test(err.code) ? err.code : undefined,
     });
   }
 

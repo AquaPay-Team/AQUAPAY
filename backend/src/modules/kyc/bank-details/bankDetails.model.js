@@ -17,18 +17,43 @@ async function findActiveUserForUpdate(connection, userId) {
   return rows[0] || null;
 }
 
+async function findActiveUser(userId) {
+  const [rows] = await pool.execute(
+    `SELECT id, status
+       FROM users
+      WHERE id = ? AND status = 'active'
+      LIMIT 1`,
+    [userId],
+  );
+  return rows[0] || null;
+}
+
 async function findCasesByUserIdForUpdate(connection, userId) {
   const [rows] = await connection.execute(
     `SELECT id, user_id, status, steps_completed
        FROM kyc_cases
       WHERE user_id = ?
-      ORDER BY id ASC
+        AND status IN ('draft', 'pending', 'submitted', 'under_review')
+      ORDER BY id DESC
       LIMIT 2
       FOR UPDATE`,
     [userId],
   );
 
   return rows;
+}
+
+async function findCurrentCaseByUserId(userId) {
+  const [rows] = await pool.execute(
+    `SELECT id, user_id, status, steps_completed
+       FROM kyc_cases
+      WHERE user_id = ?
+      ORDER BY CASE WHEN status IN ('draft', 'pending', 'submitted', 'under_review') THEN 0 ELSE 1 END,
+               id DESC
+      LIMIT 1`,
+    [userId],
+  );
+  return rows[0] || null;
 }
 
 async function findKycStepForUpdate(connection, caseId, stepNumber) {
@@ -41,6 +66,21 @@ async function findKycStepForUpdate(connection, caseId, stepNumber) {
     [caseId, stepNumber],
   );
   return rows[0] || null;
+}
+
+async function findVerifiedPanForUpdate(connection, caseId) {
+  const [rows] = await connection.execute(
+    `SELECT id
+       FROM kyc_verifications
+      WHERE case_id = ?
+        AND verification_type = 'pan'
+        AND status = 'verified'
+      ORDER BY id ASC
+      LIMIT 2
+      FOR UPDATE`,
+    [caseId],
+  );
+  return rows;
 }
 
 async function findBankAccountByCaseIdForUpdate(connection, caseId) {
@@ -59,7 +99,8 @@ async function findBankAccountByCaseIdForUpdate(connection, caseId) {
 }
 
 async function findBankAccountByCaseId(connection, caseId) {
-  const [rows] = await connection.execute(
+  const db = connection && typeof connection.execute === "function" ? connection : pool;
+  const [rows] = await db.execute(
     `SELECT account_holder_name, bank_name, ifsc_code,
             account_number_last4, verification_status,
             verified_at, created_at, updated_at
@@ -186,8 +227,11 @@ async function updateCompletedStepsCount(connection, caseId) {
 export {
   getConnection,
   findActiveUserForUpdate,
+  findActiveUser,
   findCasesByUserIdForUpdate,
+  findCurrentCaseByUserId,
   findKycStepForUpdate,
+  findVerifiedPanForUpdate,
   findBankAccountByCaseIdForUpdate,
   findBankAccountByCaseId,
   insertBankAccount,
@@ -199,8 +243,11 @@ export {
 export default {
   getConnection,
   findActiveUserForUpdate,
+  findActiveUser,
   findCasesByUserIdForUpdate,
+  findCurrentCaseByUserId,
   findKycStepForUpdate,
+  findVerifiedPanForUpdate,
   findBankAccountByCaseIdForUpdate,
   findBankAccountByCaseId,
   insertBankAccount,

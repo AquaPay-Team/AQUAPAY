@@ -1,5 +1,6 @@
 import ApiError from "../../../../utils/ApiError.js";
 import httpStatus from "../../../../utils/httpStatus.js";
+import logger from "../../../../utils/logger.js";
 
 const CALLBACK_FIELDS = new Set([
   "code",
@@ -131,7 +132,7 @@ function validateCallbackRequest(req, res, next) {
     if (error?.code === "INVALID_CALLBACK" && process.env.NODE_ENV === "development") {
       try {
         const diagnostic = callbackDiagnostic(req.query);
-        console.warn("[AquaPay DigiLocker] callback validation rejected", diagnostic);
+        logger.warn("digilocker.callback_validation_rejected", diagnostic);
       } catch {
         // Preserve the original INVALID_CALLBACK response if diagnostics cannot be emitted.
       }

@@ -4,6 +4,7 @@ import kycOtpStore from "./kycOtpStore.js";
 import ApiError from "../../../utils/ApiError.js";
 import httpStatus from "../../../utils/httpStatus.js";
 import { isValidPincode } from "../../../utils/validationHelper.js";
+import logger from "../../../utils/logger.js";
 
 const BASIC_DETAILS_STEP = 1;
 const OTP_TTL_SECONDS = 300;
@@ -30,7 +31,7 @@ function logKycFailure(operation, error) {
     details.errorType = typeof error?.name === "string" ? error.name : "UnknownError";
   }
 
-  console.error(`[AquaPay KYC] ${operation} failed`, details);
+  logger.error("kyc.basic_details_operation_failed", { operation, ...details });
 }
 const logDevelopmentFailure = logKycFailure;
 
@@ -240,7 +241,10 @@ async function requestStep1Otp(userId, ipAddress) {
     await connection.beginTransaction();
     const { user, kycCase } = await findStep1Context(connection, userId);
     const details = getSavedBasicDetails(user, kycCase);
-    if (process.env.NODE_ENV !== "development") {
+    if (
+      process.env.NODE_ENV !== "development" ||
+      process.env.AUTH_ALLOW_DEVELOPMENT_SECRETS !== "true"
+    ) {
       throw serviceUnavailable();
     }
     const secret = getKycOtpSecret();
@@ -295,14 +299,12 @@ async function requestStep1Otp(userId, ipAddress) {
     if (connection) await releaseConnection(connection);
   }
 
-  if (process.env.NODE_ENV === "development") {
-    try {
-      console.info(`[AquaPay KYC DEVELOPMENT OTP] ${otp}`);
-    } catch {
-      // The committed challenge remains usable if terminal output is unavailable.
-    }
-  }
-  return { message: "OTP requested successfully" };
+  return {
+    message: "OTP requested successfully",
+    ...(process.env.NODE_ENV === "development" && process.env.AUTH_ALLOW_DEVELOPMENT_SECRETS === "true"
+      ? { developmentOtp: otp }
+      : {}),
+  };
 }
 
 async function verifyStep1Otp(userId, otp, ipAddress) {
@@ -395,7 +397,7 @@ async function verifyStep1Otp(userId, otp, ipAddress) {
     await kycOtpStore.consumeClaim(claim);
   } catch {
     // MySQL is authoritative; completed Step 1 blocks retries if Redis finalization fails.
-    console.error("KYC OTP finalization failed after KYC progress was committed");
+    logger.error("kyc.basic_details_otp_finalization_failed_after_commit");
   }
   return result;
 }

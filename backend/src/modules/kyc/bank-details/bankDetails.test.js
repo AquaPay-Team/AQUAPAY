@@ -12,6 +12,7 @@ import {
 import bankDetailsService from "./bankDetails.service.js";
 import bankDetailsModel from "./bankDetails.model.js";
 import * as bankDetailsModelFunctions from "./bankDetails.model.js";
+import authModel from "../../auth/auth.model.js";
 import ApiError from "../../../utils/ApiError.js";
 
 // ------------------------------------------------------------
@@ -155,6 +156,21 @@ test("Bank encryption: detects tampered encrypted data", () => {
 // ------------------------------------------------------------
 
 const originalModelMethods = {};
+const originalIncrementRateLimitCounter = authModel.incrementRateLimitCounter;
+
+function mockBankAttemptCounter(count = 1) {
+  authModel.incrementRateLimitCounter = async (hash, windowStart, expiresAt, connection) => {
+    assert.match(hash, /^[a-f0-9]{64}$/);
+    assert.equal(typeof windowStart, "string");
+    assert.equal(typeof expiresAt, "string");
+    assert.ok(connection);
+    return count;
+  };
+}
+
+function restoreBankAttemptCounter() {
+  authModel.incrementRateLimitCounter = originalIncrementRateLimitCounter;
+}
 
 function mockBankDetailsModel(overrides) {
   for (const [method, implementation] of Object.entries(overrides)) {
@@ -225,6 +241,11 @@ function mockValidContext() {
         id: 103,
         status: "completed",
       };
+    },
+
+    async findVerifiedPanForUpdate(connection, caseId) {
+      assert.equal(caseId, 13);
+      return [{ id: 105 }];
     },
   };
 }
@@ -326,6 +347,7 @@ function mockSuccessfulIdtoVerification() {
 // ------------------------------------------------------------
 
 test("Bank service: saves newly verified bank details", async () => {
+  mockBankAttemptCounter();
   const restoreIdto = mockSuccessfulIdtoVerification();
   const connection = createMockConnection();
   let insertedDetails;
@@ -354,7 +376,12 @@ test("Bank service: saves newly verified bank details", async () => {
       return 1;
     },
   });
+const originalConsoleInfo = console.info;
+const capturedInfoLogs = [];
 
+console.info = (line) => {
+  capturedInfoLogs.push(JSON.parse(line));
+};
   try {
     const result = await bankDetailsService.saveBankDetails(
       52,
@@ -376,17 +403,24 @@ test("Bank service: saves newly verified bank details", async () => {
     assert.ok(Buffer.isBuffer(insertedDetails.encryptedAccountNumber));
     assert.equal(insertedDetails.accountNumberLast4, "9012");
 
-    assert.equal(connection.calls.begin, 1);
-    assert.equal(connection.calls.commit, 1);
+    assert.equal(connection.calls.begin, 2);
+    assert.equal(connection.calls.commit, 2);
     assert.equal(connection.calls.rollback, 0);
-    assert.equal(connection.calls.release, 1);
+    assert.equal(connection.calls.release, 2);
+    assert.ok(capturedInfoLogs.some((record) => record.event === "bank.verification_succeeded"));
+    const successLog = JSON.stringify(capturedInfoLogs);
+    assert.doesNotMatch(successLog, /Test User/);
+    assert.doesNotMatch(successLog, /IDTO-TXN-123/);
   } finally {
     restoreIdto();
     restoreBankDetailsModel();
+    restoreBankAttemptCounter();
+    console.info = originalConsoleInfo;
   }
 });
 
 test("Bank service: updates existing bank account", async () => {
+  mockBankAttemptCounter();
   const restoreIdto = mockSuccessfulIdtoVerification();
   const connection = createMockConnection();
   let updatedAccountId;
@@ -435,22 +469,23 @@ test("Bank service: updates existing bank account", async () => {
     assert.ok(Buffer.isBuffer(updatedDetails.encryptedAccountNumber));
 
     assert.equal(result.verificationStatus, "verified");
-    assert.equal(connection.calls.commit, 1);
-    assert.equal(connection.calls.release, 1);
+    assert.equal(connection.calls.commit, 2);
+    assert.equal(connection.calls.release, 2);
   } finally {
     restoreIdto();
     restoreBankDetailsModel();
+    restoreBankAttemptCounter();
   }
 });
 
 test("Bank service: retrieves bank details without full account number", async () => {
-  const connection = createMockConnection();
-
   mockBankDetailsModel({
-    ...mockValidContext(),
+    async findActiveUser() {
+      return { id: 52, status: "active" };
+    },
 
-    async getConnection() {
-      return connection;
+    async findCurrentCaseByUserId() {
+      return { id: 13, user_id: 52, status: "submitted" };
     },
 
     async findBankAccountByCaseId() {
@@ -476,23 +511,15 @@ test("Bank service: retrieves bank details without full account number", async (
     assert.equal("accountNumber" in result, false);
     assert.equal("account_number_encrypted" in result, false);
 
-    assert.equal(connection.calls.commit, 1);
-    assert.equal(connection.calls.release, 1);
   } finally {
     restoreBankDetailsModel();
   }
 });
 
 test("Bank service: rejects inactive users and rolls back", async () => {
-  const connection = createMockConnection();
-
   mockBankDetailsModel({
-    async getConnection() {
-      return connection;
-    },
-
-    async findActiveUserForUpdate() {
-      return { id: 52, status: "inactive" };
+    async findActiveUser() {
+      return null;
     },
   });
 
@@ -506,17 +533,22 @@ test("Bank service: rejects inactive users and rolls back", async () => {
       },
     );
 
-    assert.equal(connection.calls.commit, 0);
-    assert.equal(connection.calls.rollback, 1);
-    assert.equal(connection.calls.release, 1);
   } finally {
     restoreBankDetailsModel();
   }
 });
 
-test("Bank service: rolls back when database save fails", async () => {
+test("Bank service: rolls back when database save fails without logging sensitive errors", async () => {
+  mockBankAttemptCounter();
   const restoreIdto = mockSuccessfulIdtoVerification();
   const connection = createMockConnection();
+
+  const originalConsoleError = console.error;
+  const capturedErrorLogs = [];
+
+  console.error = (line) => {
+    capturedErrorLogs.push(JSON.parse(line));
+  };
 
   mockBankDetailsModel({
     ...mockValidContext(),
@@ -530,7 +562,9 @@ test("Bank service: rolls back when database save fails", async () => {
     },
 
     async insertBankAccount() {
-      throw new Error("Database failure");
+      const error = new Error("SECRET_DATABASE_MESSAGE_123");
+      error.sqlMessage = "SECRET_SQL_MESSAGE_456";
+      throw error;
     },
   });
 
@@ -543,12 +577,154 @@ test("Bank service: rolls back when database save fails", async () => {
       },
     );
 
-    assert.equal(connection.calls.commit, 0);
+    assert.equal(connection.calls.begin, 2);
+    assert.equal(connection.calls.commit, 1);
     assert.equal(connection.calls.rollback, 1);
-    assert.equal(connection.calls.release, 1);
+    assert.equal(connection.calls.release, 2);
+
+    // M8: Database and SQL error details must not appear in logs.
+    const errorLogs = JSON.stringify(capturedErrorLogs);
+
+    assert.ok(capturedErrorLogs.some((record) => record.event === "bank.operation_failed" && record.operation === "Bank Details save"));
+    assert.match(errorLogs, /errorName.*Error/);
+    assert.doesNotMatch(errorLogs, /SECRET_DATABASE_MESSAGE_123/);
+    assert.doesNotMatch(errorLogs, /SECRET_SQL_MESSAGE_456/);
   } finally {
+    console.error = originalConsoleError;
     restoreIdto();
     restoreBankDetailsModel();
+    restoreBankAttemptCounter();
+  }
+});
+
+test("Bank service: does not log sensitive IDTO provider messages", async () => {
+  mockBankAttemptCounter();
+  const restoreIdto = mockSuccessfulIdtoVerification();
+  const connection = createMockConnection();
+  const originalConsoleError = console.error;
+  const capturedErrorLogs = [];
+
+  console.error = (line) => {
+    capturedErrorLogs.push(JSON.parse(line));
+  };
+
+  globalThis.fetch = async (url) => {
+    const requestUrl = String(url);
+
+    if (requestUrl.includes("/api/v1/ifsc/")) {
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return { ifsc: "HDFC0001234", bank: "HDFC Bank" };
+        },
+      };
+    }
+
+    if (requestUrl.endsWith("/v2/verify/bank_verification")) {
+      return {
+        ok: false,
+        status: 502,
+        async json() {
+          return {
+            status: "error",
+            error_code: "IDTO_500",
+            message: "SECRET_PROVIDER_MESSAGE_123",
+          };
+        },
+      };
+    }
+
+    throw new Error(`Unexpected API request: ${requestUrl}`);
+  };
+
+  mockBankDetailsModel({
+    ...mockValidContext(),
+    async getConnection() {
+      return connection;
+    },
+  });
+
+  try {
+    await assert.rejects(
+      bankDetailsService.saveBankDetails(52, sampleBankDetails),
+      (error) => {
+        assert.ok(error instanceof ApiError);
+        return true;
+      },
+    );
+
+    const errorLogs = JSON.stringify(capturedErrorLogs);
+
+    assert.ok(capturedErrorLogs.some((record) => record.event === "bank.idto_verification_failed"));
+    assert.match(errorLogs, /502/);
+    assert.doesNotMatch(errorLogs, /SECRET_PROVIDER_MESSAGE_123/);
+  } finally {
+    console.error = originalConsoleError;
+    restoreIdto();
+    restoreBankDetailsModel();
+    restoreBankAttemptCounter();
+  }
+});
+
+test("Bank service: rejects ineligible PAN cases before any paid provider request", async () => {
+  const connection = createMockConnection();
+  let providerCalls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    providerCalls += 1;
+    throw new Error("provider must not be called");
+  };
+  mockBankDetailsModel({
+    async getConnection() { return connection; },
+    async findActiveUserForUpdate() { return { id: 52, status: "active" }; },
+    async findCasesByUserIdForUpdate() { return [{ id: 13, user_id: 52, status: "pending" }]; },
+    async findKycStepForUpdate() { return { id: 103, status: "failed" }; },
+    async findVerifiedPanForUpdate() { return [{ id: 105 }]; },
+  });
+
+  try {
+    await assert.rejects(
+      bankDetailsService.saveBankDetails(52, sampleBankDetails),
+      (error) => error.code === "PAN_PREREQUISITE_NOT_COMPLETED",
+    );
+    assert.equal(providerCalls, 0);
+    assert.equal(connection.calls.commit, 0);
+    assert.equal(connection.calls.rollback, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+    restoreBankDetailsModel();
+  }
+});
+
+test("Bank service: per-case attempt cap blocks provider access and commits the cap", async () => {
+  const connection = createMockConnection();
+  let providerCalls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    providerCalls += 1;
+    throw new Error("provider must not be called");
+  };
+  const { getAuthConfig } = await import("../../../config/auth.js");
+  const limit = getAuthConfig().rateLimits.bankVerification.case;
+  mockBankAttemptCounter(limit + 1);
+  mockBankDetailsModel({
+    ...mockValidContext(),
+    async getConnection() { return connection; },
+  });
+
+  try {
+    await assert.rejects(
+      bankDetailsService.saveBankDetails(52, sampleBankDetails),
+      (error) => error.code === "RATE_LIMITED" && error.statusCode === 429,
+    );
+    assert.equal(providerCalls, 0);
+    assert.equal(connection.calls.commit, 1);
+    assert.equal(connection.calls.rollback, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    restoreBankDetailsModel();
+    restoreBankAttemptCounter();
   }
 });
 

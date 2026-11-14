@@ -1,21 +1,17 @@
 import ApiError from "../../utils/ApiError.js";
 import { getAuthConfig } from "../../config/auth.js";
+import { isValidEmail, normalizeEmail, normalizeMobile } from "../../utils/validationHelper.js";
 
 function normalizeIdentifier(value) {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   if (!trimmed || trimmed.length > 254) return null;
-  const email = trimmed.toLowerCase();
-  const separator = email.indexOf("@");
-  const localPart = separator >= 0 ? email.slice(0, separator) : "";
-  const domain = separator >= 0 ? email.slice(separator + 1) : "";
-  const validLocal = /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*$/.test(localPart);
-  const validDomain = /^(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$/.test(domain);
-  if (separator === email.lastIndexOf("@") && localPart.length <= 64 && validLocal && validDomain) {
-    return { identifier: email, type: "email" };
+  if (isValidEmail(trimmed)) {
+    return { identifier: normalizeEmail(trimmed), type: "email" };
   }
-  if (/^\+?\d{10,15}$/.test(trimmed)) {
-    return { identifier: trimmed, type: "mobile" };
+  const mobile = normalizeMobile(trimmed);
+  if (/^\+?\d{10,15}$/.test(mobile)) {
+    return { identifier: mobile, type: "mobile" };
   }
   return null;
 }

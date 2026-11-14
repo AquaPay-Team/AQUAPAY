@@ -6,3 +6,6 @@ process.env.DB_PORT = "1";
 process.env.DB_USER = "unit_test_user";
 process.env.DB_PASSWORD = "unit-test-only-password";
 process.env.DB_NAME = "auth_unit_test_database";
+process.env.AUTH_OTP_HMAC_SECRET = "unit-test-password-reset-hmac-secret-32-bytes";
+process.env.AUTH_RATE_LIMIT_HMAC_SECRET = "unit-test-rate-limit-hmac-secret-32-bytes";
+process.env.AUTH_ALLOW_DEVELOPMENT_SECRETS = "false";

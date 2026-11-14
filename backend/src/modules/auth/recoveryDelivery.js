@@ -49,8 +49,10 @@ async function send(type, payload) {
 }
 
 async function sendPasswordReset({ destination, type, token, otp }) {
-  if (process.env.NODE_ENV === "development") {
-    console.info(`[AquaPay DEVELOPMENT OTP] ${otp}`);
+  if (
+    process.env.NODE_ENV === "development" &&
+    process.env.AUTH_ALLOW_DEVELOPMENT_SECRETS === "true"
+  ) {
     return;
   }
   if (!isConfigured(type)) throw new Error("Password recovery delivery is not configured");

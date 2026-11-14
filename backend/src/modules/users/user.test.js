@@ -743,10 +743,20 @@ test("get-user service: passes kycStatus filter to model", async () => {
     };
 
     await getUserService.getUsers(1, { kycStatus: "under_review" });
-    assert.deepEqual(capturedFilter, { kycStatus: "under_review" });
+    assert.deepEqual(capturedFilter, {
+      kycStatus: "under_review",
+      page: 1,
+      pageSize: 25,
+      offset: 0,
+    });
 
-    await getUserService.getUsers(5, { kycStatus: "approved" });
-    assert.deepEqual(capturedFilter, { kycStatus: "approved" });
+    await getUserService.getUsers(5, { kycStatus: "approved", page: "3", pageSize: "100" });
+    assert.deepEqual(capturedFilter, {
+      kycStatus: "approved",
+      page: 3,
+      pageSize: 100,
+      offset: 200,
+    });
   } finally {
     getUserModel.findActorRole = originalFindActorRole;
     getUserModel.findAllUsers = originalFindAllUsers;
@@ -796,5 +806,64 @@ test("get-user service: rejects invalid KYC status without querying users", asyn
     getUserModel.findActorRole = originalFindActorRole;
     getUserModel.findAllUsers = originalFindAllUsers;
     getUserModel.findChildrenByParentId = originalFindChildrenByParentId;
+  }
+});
+
+test("get-user service: rejects invalid pagination before querying users", async () => {
+  const getUserModel = (await import("./get-user/get-user.model.js")).default;
+  const getUserService = (await import("./get-user/get-user.service.js")).default;
+  const originalFindActorRole = getUserModel.findActorRole;
+  const originalFindAllUsers = getUserModel.findAllUsers;
+  let listCalled = false;
+
+  try {
+    getUserModel.findActorRole = async (id) => ({ id, role_id: 1, role_slug: "AD" });
+    getUserModel.findAllUsers = async () => { listCalled = true; return []; };
+
+    for (const options of [
+      { page: "0" },
+      { page: "1.2" },
+      { page: "-1" },
+      { page: "x" },
+      { page: "" },
+      { pageSize: "101" },
+      { pageSize: "0" },
+      { page: "999999999999999999999" },
+    ]) {
+      await assert.rejects(getUserService.getUsers(1, options), (error) => {
+        assert.equal(error.statusCode, 400);
+        assert.equal(error.code, "VALIDATION_ERROR");
+        return true;
+      });
+    }
+
+    assert.equal(listCalled, false);
+  } finally {
+    getUserModel.findActorRole = originalFindActorRole;
+    getUserModel.findAllUsers = originalFindAllUsers;
+  }
+});
+
+test("get-user model: pagination is bounded and LIKE wildcards are escaped", async () => {
+  const pool = (await import("../../config/db.js")).default;
+  const getUserModel = (await import("./get-user/get-user.model.js")).default;
+  const { escapeLikeSearch } = await import("./get-user/get-user.model.js");
+  const originalExecute = pool.execute;
+  let query;
+  let params;
+
+  try {
+    pool.execute = async (sql, values) => {
+      query = sql;
+      params = values;
+      return [[], []];
+    };
+    await getUserModel.findAllUsers({ search: "a!b%_c", pageSize: 25, offset: 25 });
+
+    assert.match(query, /LIMIT \? OFFSET \?/);
+    assert.deepEqual(params.slice(-5), ["%a!!b!%!_c%", "%a!!b!%!_c%", "%a!!b!%!_c%", 25, 25]);
+    assert.equal(escapeLikeSearch("!%_"), "!!!%!_");
+  } finally {
+    pool.execute = originalExecute;
   }
 });

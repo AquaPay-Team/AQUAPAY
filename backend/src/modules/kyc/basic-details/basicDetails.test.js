@@ -77,6 +77,8 @@ function setupOtpContext({
   userOverrides = {},
   completeError,
 } = {}) {
+  const previousDevelopmentSecretsFlag = process.env.AUTH_ALLOW_DEVELOPMENT_SECRETS;
+  process.env.AUTH_ALLOW_DEVELOPMENT_SECRETS = "true";
   const connections = [];
   const state = {
     stepStatus,
@@ -128,7 +130,15 @@ function setupOtpContext({
       steps_completed: state.stepsCompleted,
     }),
   });
-  return { connections, state, restore };
+  return {
+    connections,
+    state,
+    restore() {
+      restore();
+      if (previousDevelopmentSecretsFlag === undefined) delete process.env.AUTH_ALLOW_DEVELOPMENT_SECRETS;
+      else process.env.AUTH_ALLOW_DEVELOPMENT_SECRETS = previousDevelopmentSecretsFlag;
+    },
+  };
 }
 
 function createFakeOtpStore() {
@@ -314,7 +324,7 @@ test("KYC OTP validators accept an empty request body and exactly six numeric di
   }
 });
 
-test("KYC OTP request stores a bound hash and prints only the OTP in development", async () => {
+test("KYC OTP request stores a bound hash and returns OTP only after explicit development opt-in", async () => {
   const previousNodeEnv = process.env.NODE_ENV;
   const originalRandomInt = crypto.randomInt;
   const originalInfo = console.info;
@@ -350,14 +360,14 @@ test("KYC OTP request stores a bound hash and prints only the OTP in development
       ])}`)
       .digest("hex");
 
-    assert.deepEqual(result, { message: "OTP requested successfully" });
+    assert.deepEqual(result, { message: "OTP requested successfully", developmentOtp: "123456" });
     assert.equal(store.state.challenge.otpHash, expectedOtpHash);
     assert.equal(store.state.challenge.detailsFingerprint, fingerprint);
     assert.equal(store.state.challenge.userId, "52");
     assert.equal(store.state.challenge.caseId, 13);
     assert.equal(store.state.challenge.stepNumber, 1);
-    assert.match(terminal[0], /^\[AquaPay KYC DEVELOPMENT OTP\] 123456$/);
-    assert.equal(JSON.stringify(result).includes("123456"), false);
+    assert.deepEqual(terminal, []);
+    assert.equal(JSON.stringify(result).includes("123456"), true);
     assert.equal(JSON.stringify(result).includes(expectedOtpHash), false);
     assert.deepEqual(scenario.connections[0].calls, ["begin", "commit", "release"]);
   } finally {
@@ -470,17 +480,18 @@ test("KYC OTP request enforces cooldown and a new request supersedes the prior O
   console.info = (message) => terminal.push(message);
 
   try {
-    await basicDetailsService.requestStep1Otp("52", "203.0.113.10");
+    const firstResult = await basicDetailsService.requestStep1Otp("52", "203.0.113.10");
     const firstChallengeId = store.state.challenge.challengeId;
     await assert.rejects(
       basicDetailsService.requestStep1Otp("52", "203.0.113.10"),
       (error) => error.statusCode === 429 && error.code === "RATE_LIMITED",
     );
     store.state.cooldownUntil = 0;
-    await basicDetailsService.requestStep1Otp("52", "203.0.113.10");
+    const secondResult = await basicDetailsService.requestStep1Otp("52", "203.0.113.10");
     assert.notEqual(store.state.challenge.challengeId, firstChallengeId);
-    assert.match(terminal[0], /123456$/);
-    assert.match(terminal[1], /654321$/);
+    assert.equal(firstResult.developmentOtp, "123456");
+    assert.equal(secondResult.developmentOtp, "654321");
+    assert.deepEqual(terminal, []);
 
     await assert.rejects(
       basicDetailsService.verifyStep1Otp("52", "123456", "203.0.113.10"),

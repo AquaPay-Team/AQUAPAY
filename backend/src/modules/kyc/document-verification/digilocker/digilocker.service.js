@@ -5,6 +5,7 @@ import digilockerStateStore from "./digilockerStateStore.js";
 import { safeFailureCode, toPublicError } from "./digilocker.errors.js";
 import ApiError from "../../../../utils/ApiError.js";
 import httpStatus from "../../../../utils/httpStatus.js";
+import structuredLogger from "../../../../utils/logger.js";
 
 const MODEL_ERRORS = Object.freeze({
   USER_NOT_ACTIVE: [httpStatus.UNAUTHORIZED, "Invalid or inactive user"],
@@ -268,7 +269,7 @@ function createDigilockerService({
   model = digilockerModel,
   stateStore = digilockerStateStore,
   env = process.env,
-  logger = console,
+  logger = structuredLogger,
 } = {}) {
   const handlers = new Map();
 
@@ -452,7 +453,6 @@ function createDigilockerService({
 }
 
 function logFailure(logger, env, error, context) {
-  if (env.NODE_ENV !== "development") return;
   logger.error("[AquaPay DigiLocker] callback failure", {
     correlationId: context.correlationId,
     stage: context.stage,

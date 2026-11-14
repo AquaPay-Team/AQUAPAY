@@ -16,6 +16,18 @@ import { getAuthConfig, JWT_ISSUER, JWT_AUDIENCE } from "../../config/auth.js";
 import { requireAuth } from "../../middlewares/auth.middleware.js";
 import { errorHandler } from "../../middlewares/error.middleware.js";
 import { createRateLimiter } from "../../middlewares/authRateLimit.middleware.js";
+import adminRoutes from "../admin/admin.routes.js";
+import { verifyAdminSetupKey } from "../admin/adminSetup.middleware.js";
+import userRoutes from "../users/user.routes.js";
+import { validateCreateUser } from "../users/user.validator.js";
+import panRoutes from "../kyc/document-verification/pan/pan.routes.js";
+import { validatePanVerificationRequest } from "../kyc/document-verification/pan/pan.validator.js";
+import bankDetailsRoutes from "../kyc/bank-details/bankDetails.routes.js";
+import { validateBankDetails } from "../kyc/bank-details/bankDetails.validator.js";
+import aadhaarRoutes from "../kyc/document-verification/aadhaar/aadhaar.routes.js";
+import { validateConsentRequest } from "../kyc/document-verification/digilocker/digilocker.validator.js";
+import mediaRoutes from "../kyc/media/media.routes.js";
+import { uploadSingleMedia } from "../kyc/media/mediaUpload.middleware.js";
 import {
   normalizeIdentifier,
   validateLogin,
@@ -39,6 +51,36 @@ function activeUser(overrides = {}) {
     company_name: null,
     ...overrides,
   };
+}
+
+function createRateLimitCounter() {
+  const counters = new Map();
+
+  return async (hash, window) => {
+    const key = `${hash}:${window}`;
+    const count = (counters.get(key) || 0) + 1;
+    counters.set(key, count);
+    return count;
+  };
+}
+
+async function executeRateLimit(limiter, req) {
+  let error;
+  let retryAfter;
+
+  await limiter(
+    req,
+    {
+      set(name, value) {
+        if (name === "Retry-After") retryAfter = value;
+      },
+    },
+    (nextError) => {
+      error = nextError;
+    },
+  );
+
+  return { error, retryAfter };
 }
 
 function validate(middleware, body) {
@@ -69,8 +111,14 @@ test("normalizes valid email/mobile identifiers and rejects malformed values", (
     type: "mobile",
   });
   assert.equal(normalizeIdentifier("bad"), null);
-  assert.equal(normalizeIdentifier("first..last@example.com"), null);
-  assert.equal(normalizeIdentifier("first@example..com"), null);
+  assert.deepEqual(normalizeIdentifier("first..last@example.com"), {
+    identifier: "first..last@example.com",
+    type: "email",
+  });
+  assert.deepEqual(normalizeIdentifier("first@example..com"), {
+    identifier: "first@example..com",
+    type: "email",
+  });
   assert.equal(normalizeIdentifier("5551234567 OR 1=1"), null);
 });
 
@@ -115,6 +163,26 @@ test("auth configuration rejects missing or weak JWT secrets", () => {
   assert.throws(() => getAuthConfig(), /JWT_EXPIRES_IN/);
   process.env.JWT_EXPIRES_IN = previousExpiry;
   assert.equal(getAuthConfig().bcryptSaltRounds, 12);
+});
+
+test("production auth configuration requires distinct purpose-specific HMAC secrets", () => {
+  const previousEnvironment = process.env.NODE_ENV;
+  const previousOtpSecret = process.env.AUTH_OTP_HMAC_SECRET;
+  const previousRateSecret = process.env.AUTH_RATE_LIMIT_HMAC_SECRET;
+  process.env.NODE_ENV = "production";
+  try {
+    delete process.env.AUTH_OTP_HMAC_SECRET;
+    assert.throws(() => getAuthConfig(), /AUTH_OTP_HMAC_SECRET is required in production/);
+    process.env.AUTH_OTP_HMAC_SECRET = "unit-test-password-reset-hmac-secret-32-bytes";
+    process.env.AUTH_RATE_LIMIT_HMAC_SECRET = process.env.JWT_SECRET;
+    assert.throws(() => getAuthConfig(), /must be distinct/);
+  } finally {
+    process.env.NODE_ENV = previousEnvironment;
+    if (previousOtpSecret === undefined) delete process.env.AUTH_OTP_HMAC_SECRET;
+    else process.env.AUTH_OTP_HMAC_SECRET = previousOtpSecret;
+    if (previousRateSecret === undefined) delete process.env.AUTH_RATE_LIMIT_HMAC_SECRET;
+    else process.env.AUTH_RATE_LIMIT_HMAC_SECRET = previousRateSecret;
+  }
 });
 
 test("auth SQL targets original schema columns and parameterizes identifiers", async () => {
@@ -562,7 +630,7 @@ test("configured recovery stores token and OTP hashes and returns a generic resp
     );
     assert.equal(
       stored.otpHash,
-      crypto.createHmac("sha256", getAuthConfig().secret)
+      crypto.createHmac("sha256", getAuthConfig().otpHmacSecret)
         .update(`aquapay:password-reset:otp:${delivered.token}:${delivered.otp}`)
         .digest("hex"),
     );
@@ -579,14 +647,16 @@ test("configured recovery stores token and OTP hashes and returns a generic resp
   }
 });
 
-test("development recovery returns only the reset token and logs only the OTP", async () => {
+test("development recovery returns reset credentials only after explicit opt-in and never logs them", async () => {
   const previousNodeEnv = process.env.NODE_ENV;
+  const previousDevelopmentSecretsFlag = process.env.AUTH_ALLOW_DEVELOPMENT_SECRETS;
   const originalFind = authModel.findUserByIdentifier;
   const originalCreate = authModel.createPasswordReset;
   const originalInfo = console.info;
   const terminal = [];
   let stored;
   process.env.NODE_ENV = "development";
+  process.env.AUTH_ALLOW_DEVELOPMENT_SECRETS = "true";
   authModel.findUserByIdentifier = async () => activeUser();
   authModel.createPasswordReset = async (values) => {
     stored = values;
@@ -602,23 +672,24 @@ test("development recovery returns only the reset token and logs only the OTP", 
 
     assert.match(result.developmentResetToken, /^[A-Za-z0-9_-]{43}$/);
     assert.equal(Object.hasOwn(result, "otp"), false);
-    assert.equal(terminal.length, 1);
-    assert.match(terminal[0], /^\[AquaPay DEVELOPMENT OTP\] \d{6}$/);
-    const otp = terminal[0].slice(-6);
+    assert.equal(terminal.length, 0);
+    const otp = result.developmentOtp;
+    assert.match(otp, /^\d{6}$/);
     assert.equal(
       stored.tokenHash,
       crypto.createHash("sha256").update(result.developmentResetToken).digest("hex"),
     );
     assert.equal(
       stored.otpHash,
-      crypto.createHmac("sha256", getAuthConfig().secret)
+      crypto.createHmac("sha256", getAuthConfig().otpHmacSecret)
         .update(`aquapay:password-reset:otp:${result.developmentResetToken}:${otp}`)
         .digest("hex"),
     );
-    assert.equal(JSON.stringify(result).includes(otp), false);
+    assert.equal(JSON.stringify(result).includes(otp), true);
     assert.equal(terminal.join(" ").includes(result.developmentResetToken), false);
   } finally {
     process.env.NODE_ENV = previousNodeEnv;
+    process.env.AUTH_ALLOW_DEVELOPMENT_SECRETS = previousDevelopmentSecretsFlag;
     authModel.findUserByIdentifier = originalFind;
     authModel.createPasswordReset = originalCreate;
     console.info = originalInfo;
@@ -627,11 +698,13 @@ test("development recovery returns only the reset token and logs only the OTP", 
 
 test("unknown development account gets the generic response shape without OTP output or storage", async () => {
   const previousNodeEnv = process.env.NODE_ENV;
+  const previousDevelopmentSecretsFlag = process.env.AUTH_ALLOW_DEVELOPMENT_SECRETS;
   const originalFind = authModel.findUserByIdentifier;
   const originalCreate = authModel.createPasswordReset;
   const originalInfo = console.info;
   const terminal = [];
   process.env.NODE_ENV = "development";
+  process.env.AUTH_ALLOW_DEVELOPMENT_SECRETS = "true";
   authModel.findUserByIdentifier = async () => null;
   authModel.createPasswordReset = async () => {
     throw new Error("unknown accounts must not create credentials");
@@ -644,10 +717,12 @@ test("unknown development account gets the generic response shape without OTP ou
       type: "email",
     });
     assert.match(result.message, /If the account exists/);
-    assert.match(result.developmentResetToken, /^[A-Za-z0-9_-]{43}$/);
+    assert.equal(result.developmentResetToken, null);
+    assert.equal(result.developmentOtp, null);
     assert.deepEqual(terminal, []);
   } finally {
     process.env.NODE_ENV = previousNodeEnv;
+    process.env.AUTH_ALLOW_DEVELOPMENT_SECRETS = previousDevelopmentSecretsFlag;
     authModel.findUserByIdentifier = originalFind;
     authModel.createPasswordReset = originalCreate;
     console.info = originalInfo;
@@ -740,10 +815,12 @@ test("production recovery delivery requires secure provider URLs and never logs 
 
 test("forgot-password controller exposes the reset token only in development", async () => {
   const previousNodeEnv = process.env.NODE_ENV;
+  const previousDevelopmentSecretsFlag = process.env.AUTH_ALLOW_DEVELOPMENT_SECRETS;
   const originalForgotPassword = authService.forgotPassword;
   authService.forgotPassword = async () => ({
     message: "If the account exists, instructions will be sent.",
     developmentResetToken: "A".repeat(43),
+    developmentOtp: "000001",
   });
   const invokeController = async () => {
     const response = {
@@ -764,15 +841,19 @@ test("forgot-password controller exposes the reset token only in development", a
 
   try {
     process.env.NODE_ENV = "development";
+    process.env.AUTH_ALLOW_DEVELOPMENT_SECRETS = "true";
     const developmentResponse = await invokeController();
     assert.equal(developmentResponse.body.data.resetToken, "A".repeat(43));
+    assert.equal(developmentResponse.body.data.otp, "000001");
 
     process.env.NODE_ENV = "production";
+    process.env.AUTH_ALLOW_DEVELOPMENT_SECRETS = "false";
     const productionResponse = await invokeController();
     assert.equal(productionResponse.body.data, null);
     assert.equal(JSON.stringify(productionResponse.body).includes("A".repeat(43)), false);
   } finally {
     process.env.NODE_ENV = previousNodeEnv;
+    process.env.AUTH_ALLOW_DEVELOPMENT_SECRETS = previousDevelopmentSecretsFlag;
     authService.forgotPassword = originalForgotPassword;
   }
 });
@@ -798,7 +879,9 @@ test("reset validates before hashing and only one concurrent request consumes a 
     passwordHash,
   }) => {
     assert.equal(hash, tokenHash);
-    assert.equal(otpHash.length, 64);
+    assert.equal(Array.isArray(otpHash), true);
+    assert.equal(otpHash.length, 2);
+    assert.ok(otpHash.every((hash) => hash.length === 64));
     if (used) return null;
     used = true;
     assert.equal(await bcrypt.compare("new-password", passwordHash), true);
@@ -1073,6 +1156,246 @@ test("rate limiting blocks excess identifiers and fails closed when storage is u
   } finally {
     console.error = oldError;
   }
+});
+
+test("H10 rate-limit configuration matches the approved six endpoint policies", () => {
+  const envNames = [
+    "KYC_PAN_WINDOW_SECONDS", "KYC_PAN_IP_LIMIT", "KYC_PAN_USER_LIMIT",
+    "KYC_BANK_WINDOW_SECONDS", "KYC_BANK_IP_LIMIT", "KYC_BANK_USER_LIMIT", "KYC_BANK_CASE_LIMIT",
+    "KYC_DIGILOCKER_WINDOW_SECONDS", "KYC_DIGILOCKER_IP_LIMIT", "KYC_DIGILOCKER_USER_LIMIT",
+    "KYC_MEDIA_WINDOW_SECONDS", "KYC_MEDIA_IP_LIMIT", "KYC_MEDIA_USER_LIMIT",
+    "USER_CREATION_WINDOW_SECONDS", "USER_CREATION_IP_LIMIT", "USER_CREATION_USER_LIMIT",
+    "ADMIN_CREATION_WINDOW_SECONDS", "ADMIN_CREATION_IP_LIMIT",
+  ];
+  const previous = new Map(envNames.map((name) => [name, process.env[name]]));
+
+  for (const name of envNames) delete process.env[name];
+
+  try {
+    const { rateLimits } = getAuthConfig();
+    assert.deepEqual(rateLimits.panVerification, { windowSeconds: 3600, ip: 30, user: 5 });
+    assert.deepEqual(rateLimits.bankVerification, { windowSeconds: 3600, ip: 30, user: 5, case: 5 });
+    assert.deepEqual(rateLimits.digilockerInitiation, { windowSeconds: 3600, ip: 30, user: 5 });
+    assert.deepEqual(rateLimits.mediaUpload, { windowSeconds: 3600, ip: 60, user: 10 });
+    assert.deepEqual(rateLimits.userCreation, { windowSeconds: 3600, ip: 30, user: 5 });
+    assert.deepEqual(rateLimits.adminCreation, { windowSeconds: 3600, ip: 5 });
+  } finally {
+    for (const [name, value] of previous) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
+});
+
+test("H10: all six endpoint IP limits allow the boundary request and reject the next", async () => {
+  const scopes = [
+    "panVerification",
+    "bankVerification",
+    "digilockerInitiation",
+    "mediaUpload",
+    "userCreation",
+    "adminCreation",
+  ];
+  const { rateLimits } = getAuthConfig();
+
+  for (const scope of scopes) {
+    const policy = rateLimits[scope];
+    const limiter = createRateLimiter({
+      incrementCounter: createRateLimitCounter(),
+    })(scope);
+
+    for (let attempt = 1; attempt <= policy.ip; attempt += 1) {
+      const result = await executeRateLimit(limiter, {
+        ip: "192.0.2.10",
+        user: policy.user ? { id: `ip-test-user-${attempt}` } : undefined,
+        body: {},
+      });
+      assert.equal(result.error, undefined, `${scope} rejected boundary request ${attempt}`);
+    }
+
+    const blocked = await executeRateLimit(limiter, {
+      ip: "192.0.2.10",
+      user: policy.user ? { id: `ip-test-user-${policy.ip + 1}` } : undefined,
+      body: {},
+    });
+    assert.equal(blocked.error?.code, "RATE_LIMITED", scope);
+    assert.equal(blocked.error?.statusCode, 429, scope);
+    assert.match(blocked.retryAfter, /^[1-9]\d*$/);
+  }
+});
+
+test("H10: authenticated endpoint user limits use separate buckets from IP limits", async () => {
+  const scopes = [
+    "panVerification",
+    "bankVerification",
+    "digilockerInitiation",
+    "mediaUpload",
+    "userCreation",
+  ];
+  const { rateLimits } = getAuthConfig();
+
+  for (const scope of scopes) {
+    const policy = rateLimits[scope];
+    const userLimiter = createRateLimiter({
+      incrementCounter: createRateLimitCounter(),
+    })(scope);
+
+    for (let attempt = 1; attempt <= policy.user; attempt += 1) {
+      const result = await executeRateLimit(userLimiter, {
+        ip: `198.51.100.${attempt}`,
+        user: { id: "user-limit-test" },
+        body: {},
+      });
+      assert.equal(result.error, undefined, `${scope} rejected user boundary ${attempt}`);
+    }
+
+    const blocked = await executeRateLimit(userLimiter, {
+      ip: `198.51.100.${policy.user + 1}`,
+      user: { id: "user-limit-test" },
+      body: {},
+    });
+    assert.equal(blocked.error?.code, "RATE_LIMITED", scope);
+
+    let increments = 0;
+    const noUser = createRateLimiter({
+      incrementCounter: async () => {
+        increments += 1;
+        return 1;
+      },
+    })(scope);
+    const unauthenticated = await executeRateLimit(noUser, {
+      ip: "203.0.113.10",
+      body: {},
+    });
+    assert.equal(unauthenticated.error?.statusCode, 401, scope);
+    assert.equal(increments, 0, `${scope} touched storage without an authenticated user`);
+  }
+});
+
+test("login identifier throttling normalizes mobiles but cannot lock a victim across IPs", async () => {
+  const limiter = createRateLimiter({
+    incrementCounter: createRateLimitCounter(),
+  })("login");
+  const formats = ["9876543210", "09876543210", "919876543210", "+919876543210"];
+
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const result = await executeRateLimit(limiter, {
+      ip: "192.0.2.10",
+      body: { identifier: formats[attempt % formats.length] },
+    });
+    assert.equal(result.error, undefined);
+  }
+
+  const blocked = await executeRateLimit(limiter, {
+    ip: "192.0.2.10",
+    body: { identifier: "+919876543210" },
+  });
+  assert.equal(blocked.error?.code, "RATE_LIMITED");
+  assert.equal(blocked.error?.statusCode, 429);
+
+  const victimFromAnotherNetwork = await executeRateLimit(limiter, {
+    ip: "198.51.100.45",
+    body: { identifier: "+919876543210" },
+  });
+  assert.equal(victimFromAnotherNetwork.error, undefined);
+});
+
+test("H10: every endpoint limiter fails closed when persistent storage is unavailable", async () => {
+  const scopes = [
+    "panVerification",
+    "bankVerification",
+    "digilockerInitiation",
+    "mediaUpload",
+    "userCreation",
+    "adminCreation",
+  ];
+  const originalError = console.error;
+  console.error = () => {};
+
+  try {
+    for (const scope of scopes) {
+      const limiter = createRateLimiter({
+        incrementCounter: async () => {
+          throw new Error("simulated storage failure");
+        },
+      })(scope);
+      const result = await executeRateLimit(limiter, {
+        ip: "192.0.2.20",
+        user: scope === "adminCreation" ? undefined : { id: "42" },
+        body: {},
+      });
+      assert.equal(result.error?.statusCode, 503, scope);
+      assert.equal(result.error?.code, "SERVICE_UNAVAILABLE", scope);
+    }
+  } finally {
+    console.error = originalError;
+  }
+});
+
+test("H10: forwarded IP headers do not change the limiter bucket with proxy trust disabled", async () => {
+  assert.equal(app.get("trust proxy"), false);
+  const limiter = createRateLimiter({
+    incrementCounter: createRateLimitCounter(),
+  })("adminCreation");
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const result = await executeRateLimit(limiter, {
+      ip: "192.0.2.30",
+      socket: { remoteAddress: "192.0.2.30" },
+      headers: { "x-forwarded-for": `198.51.100.${attempt + 1}` },
+      body: {},
+    });
+    assert.equal(result.error, undefined);
+  }
+
+  const blocked = await executeRateLimit(limiter, {
+    ip: "192.0.2.30",
+    socket: { remoteAddress: "192.0.2.30" },
+    headers: { "x-forwarded-for": "203.0.113.99" },
+    body: {},
+  });
+  assert.equal(blocked.error?.code, "RATE_LIMITED");
+});
+
+test("H10: all six route integrations place rate limiting before expensive or sensitive handlers", () => {
+  const routeHandlers = (router, path, method) => {
+    const layer = router.stack.find(
+      (candidate) => candidate.route?.path === path && candidate.route.methods[method],
+    );
+    assert.ok(layer, `Missing ${method.toUpperCase()} ${path} route`);
+    return layer.route.stack.map((routeLayer) => routeLayer.handle);
+  };
+  const assertLimiterBefore = (handlers, laterHandler, routeLabel, expectedIndex) => {
+    const laterIndex = handlers.indexOf(laterHandler);
+    assert.equal(laterIndex, expectedIndex, `${routeLabel} middleware order changed`);
+    const limiter = handlers[laterIndex - 1];
+    assert.equal(typeof limiter, "function", `${routeLabel} limiter missing`);
+    assert.match(String(limiter), /getAuthConfig/, `${routeLabel} is not rate limited`);
+  };
+
+  const admin = routeHandlers(adminRoutes, "/create", "post");
+  assert.equal(admin[0] && String(admin[0]).includes("getAuthConfig"), true);
+  assert.equal(admin[1], verifyAdminSetupKey);
+
+  const media = routeHandlers(mediaRoutes, "/media/upload", "post");
+  assert.equal(media[0], requireAuth);
+  assertLimiterBefore(media, uploadSingleMedia, "media upload", 2);
+
+  const pan = routeHandlers(panRoutes, "/pan/verify", "post");
+  assert.equal(pan[0], requireAuth);
+  assertLimiterBefore(pan, validatePanVerificationRequest, "PAN verification", 2);
+
+  const bank = routeHandlers(bankDetailsRoutes, "/bank-details", "put");
+  assert.equal(bank[0], requireAuth);
+  assertLimiterBefore(bank, validateBankDetails, "bank verification", 2);
+
+  const digilocker = routeHandlers(aadhaarRoutes, "/digilocker/aadhaar/initiate", "post");
+  assert.equal(digilocker[0], requireAuth);
+  assertLimiterBefore(digilocker, validateConsentRequest, "DigiLocker initiation", 2);
+
+  const userCreation = routeHandlers(userRoutes, "/", "post");
+  assert.equal(userCreation[0], requireAuth);
+  assertLimiterBefore(userCreation, validateCreateUser, "user creation", 2);
 });
 
 test("shared error middleware does not return or log raw SQL error details", () => {

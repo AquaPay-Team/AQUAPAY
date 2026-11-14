@@ -21,7 +21,14 @@ async function findUserByIdentifier(identifier, type) {
      FROM users u
      JOIN roles r ON r.id = u.role_id
      LEFT JOIN companies c ON c.id = u.company_id
-     LEFT JOIN kyc_cases k ON k.user_id = u.id
+     LEFT JOIN kyc_cases k ON k.id = (
+       SELECT k2.id
+         FROM kyc_cases k2
+        WHERE k2.user_id = u.id
+        ORDER BY CASE WHEN k2.status IN ('draft', 'pending', 'submitted', 'under_review') THEN 0 ELSE 1 END,
+                 k2.id DESC
+        LIMIT 1
+     )
      WHERE u.${column} = ?
      LIMIT 1`,
     [identifier],
@@ -73,7 +80,14 @@ async function findActiveUserById(userId) {
      FROM users u
      JOIN roles r ON r.id = u.role_id
      LEFT JOIN companies c ON c.id = u.company_id
-     LEFT JOIN kyc_cases k ON k.user_id = u.id
+     LEFT JOIN kyc_cases k ON k.id = (
+       SELECT k2.id
+         FROM kyc_cases k2
+        WHERE k2.user_id = u.id
+        ORDER BY CASE WHEN k2.status IN ('draft', 'pending', 'submitted', 'under_review') THEN 0 ELSE 1 END,
+                 k2.id DESC
+        LIMIT 1
+     )
      WHERE u.id = ? AND u.status = 'active'
      LIMIT 1`,
     [userId],
@@ -139,6 +153,15 @@ async function incrementRateLimitCounter(
   return rows[0]?.request_count || 0;
 }
 
+async function getRateLimitCounter(bucketHash, windowStart, connection = pool) {
+  const [rows] = await connection.execute(
+    `SELECT request_count FROM auth_rate_limits
+     WHERE bucket_hash = ? AND window_start = ? LIMIT 1`,
+    [bucketHash, windowStart],
+  );
+  return Number(rows[0]?.request_count || 0);
+}
+
 async function findResetTokenCandidate(connection, tokenHash) {
   const [rows] = await connection.execute(
     `SELECT user_id
@@ -179,7 +202,7 @@ function secureHashEquals(storedHash, expectedHash) {
   return stored.length === expected.length && crypto.timingSafeEqual(stored, expected);
 }
 
-async function lockActiveResetOtp(connection, userId, resetTokenId, otpHash) {
+async function lockActiveResetOtp(connection, userId, resetTokenId, otpHashes) {
   const [rows] = await connection.execute(
     `SELECT id, token_hash
        FROM auth_password_reset_tokens
@@ -191,7 +214,8 @@ async function lockActiveResetOtp(connection, userId, resetTokenId, otpHash) {
       FOR UPDATE`,
     [userId, resetTokenId],
   );
-  return rows.find((row) => secureHashEquals(row.token_hash, otpHash)) || null;
+  const candidates = Array.isArray(otpHashes) ? otpHashes : [otpHashes];
+  return rows.find((row) => candidates.some((hash) => secureHashEquals(row.token_hash, hash))) || null;
 }
 
 async function getResetOtpAttemptCount(connection, attemptBucketHash) {
@@ -409,6 +433,7 @@ const authModel = {
   findActiveUserById,
   isUserActive,
   incrementRateLimitCounter,
+  getRateLimitCounter,
   createPasswordReset,
   checkPasswordResetCredentials,
   consumePasswordReset,
@@ -420,6 +445,7 @@ export {
   findActiveUserById,
   isUserActive,
   incrementRateLimitCounter,
+  getRateLimitCounter,
   createPasswordReset,
   checkPasswordResetCredentials,
   consumePasswordReset,

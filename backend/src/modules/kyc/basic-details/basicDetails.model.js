@@ -21,7 +21,8 @@ async function findCasesByUserIdForUpdate(connection, userId) {
     `SELECT id, user_id, business_type, status, steps_completed
        FROM kyc_cases
       WHERE user_id = ?
-      ORDER BY id ASC
+        AND status IN ('draft', 'pending', 'submitted', 'under_review')
+      ORDER BY id DESC
       LIMIT 2
       FOR UPDATE`,
     [userId],

@@ -1,7 +1,11 @@
 import bankDetailsModel from "./bankDetails.model.js";
+import authModel from "../../auth/auth.model.js";
+import { getAuthConfig } from "../../../config/auth.js";
+import { hashRateLimitBucket } from "../../../middlewares/authRateLimit.middleware.js";
 import { encryptAccountNumber } from "./bankAccountEncryption.js";
 import ApiError from "../../../utils/ApiError.js";
 import httpStatus from "../../../utils/httpStatus.js";
+import logger from "../../../utils/logger.js";
 
 const BANK_DETAILS_STEP = 4;
 
@@ -115,19 +119,9 @@ async function verifyBankAccountWithIdto(bankDetails) {
     );
   }
 
-  if (!response.ok || result?.status !== "success") {
-    console.error("[AquaPay KYC] IDTO bank verification failed", {
+   if (!response.ok || result?.status !== "success") {
+    logger.error("bank.idto_verification_failed", {
       httpStatus: response.status,
-      providerStatus:
-        typeof result?.status === "string" ? result.status : undefined,
-      providerErrorCode:
-        typeof result?.error_code === "string"
-          ? result.error_code
-          : undefined,
-      providerMessage:
-        typeof result?.message === "string"
-          ? result.message.slice(0, 200)
-          : undefined,
     });
 
     throw serviceUnavailable();
@@ -141,10 +135,7 @@ async function verifyBankAccountWithIdto(bankDetails) {
     throw serviceUnavailable();
   }
 
-  console.log("[IDTO bank verification successful]", {
-  providerReference: result.tranx_id,
-  accountHolderName: result.data.account_holder_name,
-});
+  logger.info("bank.verification_succeeded");
 
 return {
   accountHolderName: result.data.account_holder_name,
@@ -165,10 +156,6 @@ function serviceUnavailable() {
 function logKycFailure(operation, error) {
   const details = {
     errorName: error?.name || "UnknownError",
-    errorMessage:
-      typeof error?.message === "string"
-        ? error.message.slice(0, 300)
-        : undefined,
   };
 
   if (typeof error?.code === "string" && /^[A-Z0-9_]+$/.test(error.code)) {
@@ -179,11 +166,7 @@ function logKycFailure(operation, error) {
     details.errno = error.errno;
   }
 
-  if (typeof error?.sqlMessage === "string") {
-    details.sqlMessage = error.sqlMessage.slice(0, 300);
-  }
-
-  console.error(`[AquaPay KYC] ${operation} failed`, details);
+  logger.error("bank.operation_failed", { operation, ...details });
 }
 
 async function releaseConnection(connection, rollback = false) {
@@ -204,6 +187,10 @@ async function releaseConnection(connection, rollback = false) {
   } else {
     connection.release();
   }
+}
+
+function sqlDate(date) {
+  return date.toISOString().slice(0, 19).replace("T", " ");
 }
 
 async function findBankDetailsContext(connection, userId) {
@@ -258,8 +245,89 @@ async function findBankDetailsContext(connection, userId) {
   return { user, kycCase };
 }
 
+async function claimBankVerificationAttempt(userId) {
+  let connection;
+  try {
+    connection = await bankDetailsModel.getConnection();
+  } catch (error) {
+    logKycFailure("Bank verification eligibility database connection", error);
+    throw serviceUnavailable();
+  }
+
+  let rollback = false;
+  let attempts;
+  let limit;
+  let caseId;
+  try {
+    await connection.beginTransaction();
+    const { kycCase } = await findBankDetailsContext(connection, userId);
+    caseId = Number(kycCase.id);
+    const panStep = await bankDetailsModel.findKycStepForUpdate(
+      connection,
+      kycCase.id,
+      3,
+    );
+    const verifiedPanRecords = await bankDetailsModel.findVerifiedPanForUpdate(
+      connection,
+      kycCase.id,
+    );
+
+    if (panStep?.status !== "completed" || verifiedPanRecords.length !== 1) {
+      throw new ApiError(
+        httpStatus.CONFLICT,
+        "Complete PAN verification before submitting bank details.",
+        [],
+        "PAN_PREREQUISITE_NOT_COMPLETED",
+      );
+    }
+
+    const config = getAuthConfig();
+    const policy = config.rateLimits.bankVerification;
+    const now = Date.now();
+    const windowMs = policy.windowSeconds * 1000;
+    const windowStartMs = Math.floor(now / windowMs) * windowMs;
+    const windowStart = sqlDate(new Date(windowStartMs));
+    const expiresAt = sqlDate(new Date(windowStartMs + 2 * windowMs));
+    const bucketHash = hashRateLimitBucket(
+      config.rateLimitHmacSecret,
+      "bankVerification",
+      "case",
+      String(kycCase.id),
+    );
+
+    attempts = await authModel.incrementRateLimitCounter(
+      bucketHash,
+      windowStart,
+      expiresAt,
+      connection,
+    );
+    limit = policy.case ?? policy.user;
+    await connection.commit();
+  } catch (error) {
+    rollback = true;
+    if (error instanceof ApiError) throw error;
+    logKycFailure("Bank verification eligibility check", error);
+    throw serviceUnavailable();
+  } finally {
+    await releaseConnection(connection, rollback);
+  }
+
+  if (attempts > limit) {
+    throw new ApiError(
+      httpStatus.TOO_MANY_REQUESTS,
+      "Too many bank verification attempts. Try again later.",
+      [],
+      "RATE_LIMITED",
+    );
+  }
+
+  return caseId;
+}
+
 async function saveBankDetails(userId, bankDetails) {
-  // Verify the account with IDTO before opening a database transaction.
+  // Complete eligibility checks and consume the per-case attempt budget before
+  // making any paid provider request.
+  const eligibleCaseId = await claimBankVerificationAttempt(userId);
   const verification = await verifyBankAccountWithIdto(bankDetails);
 
   let connection;
@@ -274,8 +342,16 @@ async function saveBankDetails(userId, bankDetails) {
   try {
     await connection.beginTransaction();
 
-        // Re-check the user's KYC case after IDTO verification.
+    // Re-check ownership, status, and prerequisites after the provider call.
     const { kycCase } = await findBankDetailsContext(connection, userId);
+    if (Number(kycCase.id) !== Number(eligibleCaseId)) {
+      throw new ApiError(
+        httpStatus.CONFLICT,
+        "KYC application changed during bank verification.",
+        [],
+        "KYC_CASE_CHANGED",
+      );
+    }
 
     // Require PAN verification (Step 3) before bank verification (Step 4).
     const panStep = await bankDetailsModel.findKycStepForUpdate(
@@ -285,6 +361,19 @@ async function saveBankDetails(userId, bankDetails) {
     );
 
     if (!panStep || panStep.status !== "completed") {
+      throw new ApiError(
+        httpStatus.CONFLICT,
+        "Complete PAN verification before submitting bank details.",
+        [],
+        "PAN_PREREQUISITE_NOT_COMPLETED",
+      );
+    }
+
+    const verifiedPanRecords = await bankDetailsModel.findVerifiedPanForUpdate(
+      connection,
+      kycCase.id,
+    );
+    if (verifiedPanRecords.length !== 1) {
       throw new ApiError(
         httpStatus.CONFLICT,
         "Complete PAN verification before submitting bank details.",
@@ -382,16 +471,17 @@ async function saveBankDetails(userId, bankDetails) {
 }
 
 async function getBankDetails(userId) {
-  let connection;
-
   try {
-    connection = await bankDetailsModel.getConnection();
-    await connection.beginTransaction();
-
-    const { kycCase } = await findBankDetailsContext(connection, userId);
-
+    const user = await bankDetailsModel.findActiveUser(userId);
+    if (!user) {
+      throw new ApiError(httpStatus.UNAUTHORIZED, "Invalid or inactive user", [], "UNAUTHORIZED");
+    }
+    const kycCase = await bankDetailsModel.findCurrentCaseByUserId(userId);
+    if (!kycCase) {
+      throw new ApiError(httpStatus.NOT_FOUND, "KYC case was not initialized for this user", [], "KYC_CASE_NOT_FOUND");
+    }
     const account = await bankDetailsModel.findBankAccountByCaseId(
-      connection,
+      null,
       kycCase.id,
     );
 
@@ -404,8 +494,6 @@ async function getBankDetails(userId) {
       );
     }
 
-    await connection.commit();
-
     return {
       accountHolderName: account.account_holder_name,
       bankName: account.bank_name,
@@ -415,21 +503,12 @@ async function getBankDetails(userId) {
       verifiedAt: account.verified_at,
     };
   } catch (error) {
-    if (connection) {
-      await releaseConnection(connection, true);
-      connection = null;
-    }
-
     if (error instanceof ApiError) {
       throw error;
     }
 
     logKycFailure("Bank Details retrieval", error);
     throw serviceUnavailable();
-  } finally {
-    if (connection) {
-      await releaseConnection(connection);
-    }
   }
 }
 

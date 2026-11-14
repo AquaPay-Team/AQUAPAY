@@ -19,9 +19,9 @@ const RECOVERY_MESSAGE =
 
 const RESET_OTP_TTL_MINUTES = 5;
 
-function hashResetOtp(token, otp) {
+function hashResetOtp(token, otp, secret = getAuthConfig().otpHmacSecret) {
   return crypto
-    .createHmac("sha256", AUTH_CONFIG.secret)
+    .createHmac("sha256", secret)
     .update(`aquapay:password-reset:otp:${token}:${otp}`)
     .digest("hex");
 }
@@ -121,10 +121,11 @@ async function getCurrentUser(userId) {
 }
 
 async function forgotPassword({ identifier, type }) {
-  const localDevelopment = process.env.NODE_ENV === "development";
+  const config = getAuthConfig();
+  const localDevelopment = config.developmentSecretsEnabled;
 
-  // In development, recoveryDelivery logs the OTP locally.
-  // In other environments, a configured provider is required.
+  // Development may expose generated recovery credentials only after explicit
+  // local opt-in; production requires a configured delivery provider.
   if (!localDevelopment && !recoveryDelivery.isConfigured(type)) {
     return { message: RECOVERY_MESSAGE };
   }
@@ -141,13 +142,12 @@ async function forgotPassword({ identifier, type }) {
       message: RECOVERY_MESSAGE,
       ...(localDevelopment
         ? {
-            developmentResetToken: crypto.randomBytes(32).toString("base64url"),
+            developmentResetToken: null,
+            developmentOtp: null,
           }
         : {}),
     };
   }
-
-  const config = getAuthConfig();
 
   const token = crypto.randomBytes(32).toString("base64url");
 
@@ -182,7 +182,7 @@ async function forgotPassword({ identifier, type }) {
 
   return {
     message: RECOVERY_MESSAGE,
-    ...(localDevelopment ? { developmentResetToken: token } : {}),
+    ...(localDevelopment ? { developmentResetToken: token, developmentOtp: otp } : {}),
   };
 }
 
@@ -208,7 +208,10 @@ async function resetPassword({ token, otp, password }) {
 
   const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
 
-  const otpHash = hashResetOtp(token, otp);
+  const otpHash = [
+    hashResetOtp(token, otp, config.otpHmacSecret),
+    hashResetOtp(token, otp, config.secret),
+  ];
 
   const attemptBucketHash = resetOtpAttemptBucket(tokenHash);
 

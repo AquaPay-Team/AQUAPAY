@@ -1,5 +1,14 @@
 import "dotenv/config";
 import mysql from "mysql2/promise";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// backend/src/config -> backend
+const backendRoot = path.resolve(__dirname, "../..");
 
 function getDatabaseConfig() {
   const required = ["DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME"];
@@ -35,12 +44,32 @@ function getDatabaseConfig() {
     throw new Error("DB_NAME contains unsupported characters");
   }
 
+  // SSL is enabled when DB_SSL_CA points to a CA certificate.
+  // Relative paths are resolved from the backend directory.
+  let ssl;
+
+  const sslCaPath = process.env.DB_SSL_CA?.trim();
+
+  if (sslCaPath) {
+    const resolvedCaPath = path.resolve(backendRoot, sslCaPath);
+
+    if (!fs.existsSync(resolvedCaPath)) {
+      throw new Error(`Database SSL CA certificate not found: ${resolvedCaPath}`);
+    }
+
+    ssl = {
+      ca: fs.readFileSync(resolvedCaPath),
+      rejectUnauthorized: true,
+    };
+  }
+
   return {
     host: process.env.DB_HOST,
     port,
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
+    ...(ssl ? { ssl } : {}),
   };
 }
 
@@ -70,9 +99,9 @@ async function verifyOracleMySql() {
   if (
     /mariadb/i.test(versionComment) ||
     /mariadb/i.test(version) ||
-    !/mysql/i.test(versionComment)
+    !/^\d+\.\d+\.\d+/.test(version)
   ) {
-    throw new Error("Database server is not Oracle MySQL");
+    throw new Error("Database server is not a supported MySQL server");
   }
 
   return metadata;

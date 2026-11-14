@@ -3,20 +3,23 @@ import { fileURLToPath } from "url";
 import fs from "fs";
 import dotenv from "dotenv";
 import mysql from "mysql2/promise";
-import { getDatabaseConfig } from "../src/config/db.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const backendRoot = path.resolve(__dirname, "..");
 
-dotenv.config({ path: path.resolve(__dirname, "../.env") });
+// Load backend/.env explicitly, regardless of the terminal's working directory.
+dotenv.config({ path: path.join(backendRoot, ".env") });
 
 const BASELINE_MIGRATIONS = [
   "001_initial_schema.sql",
   "002_auth_security_tables.sql",
 ];
 
-// Required tables and columns used to validate the existing schema.
-// This is a baseline sanity check, not a complete constraint comparison.
+const EXPECTED_DATABASE = "fintech_kyc";
+
+// Required tables and columns for the existing-database baseline check.
+// This is a sanity check, not a complete schema equivalence check.
 const REQUIRED_COLUMNS = {
   roles: ["id", "name", "slug"],
   companies: ["id", "name", "created_at"],
@@ -50,6 +53,19 @@ const REQUIRED_COLUMNS = {
   ],
 };
 
+function getMigrationFiles() {
+  const migrationsDir = path.join(__dirname, "migrations");
+
+  if (!fs.existsSync(migrationsDir)) {
+    throw new Error(`Migrations directory not found: ${migrationsDir}`);
+  }
+
+  return fs
+    .readdirSync(migrationsDir)
+    .filter((file) => file.endsWith(".sql"))
+    .sort();
+}
+
 async function ensureMigrationTable(connection) {
   await connection.query(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -65,7 +81,89 @@ async function getAppliedMigrations(connection) {
   const [rows] = await connection.query(
     "SELECT migration FROM schema_migrations",
   );
+
   return new Set(rows.map((row) => row.migration));
+}
+
+async function getApplicationTables(connection) {
+  const [rows] = await connection.query(
+    `SELECT TABLE_NAME
+       FROM information_schema.TABLES
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_TYPE = 'BASE TABLE'
+        AND TABLE_NAME <> 'schema_migrations'`,
+  );
+
+  return rows.map((row) => row.TABLE_NAME);
+}
+
+async function validateMigrationState(connection, applied, files) {
+  const applicationTables = await getApplicationTables(connection);
+
+  // Fresh database: no application tables and no migration history.
+  if (applied.size === 0 && applicationTables.length === 0) {
+    console.log(
+      "Fresh database detected. Initial migrations are allowed.",
+    );
+    return;
+  }
+
+  // Never mistake an existing schema without migration history for
+  // a fresh database.
+  if (applied.size === 0 && applicationTables.length > 0) {
+    throw new Error(
+      "Application tables exist but no migrations are recorded. " +
+        "Stop and review the existing schema before proceeding.",
+    );
+  }
+
+  // Every recorded migration must still exist in the repository.
+  const unknownMigrations = [...applied].filter(
+    (migration) => !files.includes(migration),
+  );
+
+  if (unknownMigrations.length > 0) {
+    throw new Error(
+      `Unknown migration records found: ${unknownMigrations.join(", ")}. ` +
+        "Check the repository migration history before proceeding.",
+    );
+  }
+
+  // Required baseline migration files must exist.
+  for (const baseline of BASELINE_MIGRATIONS) {
+    if (!files.includes(baseline)) {
+      throw new Error(`Required baseline migration is missing: ${baseline}`);
+    }
+  }
+
+  // Migration history must follow repository order without gaps.
+  let foundPendingMigration = false;
+
+  for (const file of files) {
+    if (!applied.has(file)) {
+      foundPendingMigration = true;
+      continue;
+    }
+
+    if (foundPendingMigration) {
+      throw new Error(
+        `Invalid migration history: ${file} is recorded even though an ` +
+          "earlier migration is missing. Review the database before proceeding.",
+      );
+    }
+  }
+
+  // Existing migration records must begin with migration 001.
+  if (
+    applied.size > 0 &&
+    !applied.has("001_initial_schema.sql")
+  ) {
+    throw new Error(
+      "Invalid migration history: migration 001 is not recorded.",
+    );
+  }
+
+  console.log("Migration history checks passed.");
 }
 
 async function validateExistingSchema(connection) {
@@ -76,12 +174,15 @@ async function validateExistingSchema(connection) {
         AND TABLE_TYPE = 'BASE TABLE'`,
   );
 
-  const existingTables = new Set(tables.map((row) => row.TABLE_NAME));
+  const existingTables = new Set(
+    tables.map((row) => row.TABLE_NAME),
+  );
+
   const missingTables = Object.keys(REQUIRED_COLUMNS).filter(
     (table) => !existingTables.has(table),
   );
 
-  if (missingTables.length) {
+  if (missingTables.length > 0) {
     throw new Error(
       `Cannot baseline: missing tables: ${missingTables.join(", ")}`,
     );
@@ -96,12 +197,15 @@ async function validateExistingSchema(connection) {
       [table],
     );
 
-    const actualColumns = new Set(columns.map((row) => row.COLUMN_NAME));
+    const actualColumns = new Set(
+      columns.map((row) => row.COLUMN_NAME),
+    );
+
     const missingColumns = requiredColumns.filter(
       (column) => !actualColumns.has(column),
     );
 
-    if (missingColumns.length) {
+    if (missingColumns.length > 0) {
       throw new Error(
         `Cannot baseline ${table}: missing columns: ${missingColumns.join(", ")}`,
       );
@@ -109,33 +213,48 @@ async function validateExistingSchema(connection) {
   }
 
   console.log("Baseline sanity checks passed.");
+
   console.warn(
-    "Note: this checks required tables and columns, not every index, " +
-      "foreign key, or column definition. Compare the live schema with " +
-      "the original SQL before accepting the baseline.",
+    "This check validates required tables and columns only. " +
+      "It does not prove that indexes, foreign keys, column types, " +
+      "defaults, or constraints match the original SQL.",
   );
 }
 
 async function baselineExistingDatabase(connection) {
   const applied = await getAppliedMigrations(connection);
-  const alreadyRecorded = BASELINE_MIGRATIONS.filter((name) =>
-    applied.has(name),
-  );
 
-  if (alreadyRecorded.length) {
+  const alreadyRecorded = BASELINE_MIGRATIONS.filter(
+    (name) => applied.has(name),
+  );
+  if (applied.size > 0) {
+    throw new Error(
+      "Baseline stopped: migration records already exist. " +
+        "Review migration history before attempting a baseline.",
+    );
+  }
+
+  if (alreadyRecorded.length > 0) {
     throw new Error(
       `Baseline stopped: records already exist for ${alreadyRecorded.join(", ")}.`,
     );
   }
 
+  const applicationTables = await getApplicationTables(connection);
+
+  if (applicationTables.length === 0) {
+    throw new Error(
+      "Cannot baseline an empty database. Use the normal migration process.",
+    );
+  }
+
   await validateExistingSchema(connection);
 
-  // Do not baseline until the full schema comparison has been reviewed.
   if (!process.argv.includes("--confirm-schema-reviewed")) {
     throw new Error(
       "Schema sanity checks passed, but full schema review is still required. " +
-        "Compare live columns, indexes, and foreign keys with migrations 001/002. " +
-        "Then rerun with --confirm-schema-reviewed if they match.",
+        "Compare the live columns, indexes, foreign keys, and definitions " +
+        "with migrations 001/002 before using --confirm-schema-reviewed.",
     );
   }
 
@@ -144,13 +263,18 @@ async function baselineExistingDatabase(connection) {
       "INSERT INTO schema_migrations (migration) VALUES (?)",
       [migration],
     );
+
     console.log(`Baselined existing migration: ${migration}`);
   }
 }
 
 async function runSeeds(connection) {
   const seedsDir = path.join(__dirname, "seeds");
-  if (!fs.existsSync(seedsDir)) return;
+
+  if (!fs.existsSync(seedsDir)) {
+    console.log("No seeds directory found. Skipping seeds.");
+    return;
+  }
 
   const files = fs
     .readdirSync(seedsDir)
@@ -160,43 +284,66 @@ async function runSeeds(connection) {
   console.log(`Found ${files.length} seed file(s).`);
 
   for (const file of files) {
-    const sql = fs.readFileSync(path.join(seedsDir, file), "utf8");
+    const seedPath = path.join(seedsDir, file);
+    const sql = fs.readFileSync(seedPath, "utf8");
+
     console.log(`Running seed: ${file}...`);
+
     await connection.query(sql);
+
     console.log(`Seed completed: ${file}`);
   }
 }
 
 async function runMigrations() {
-  const config = getDatabaseConfig();
-  console.log(`Connecting to database ${config.database} on ${config.host}...`);
-
-  const connection = await mysql.createConnection({
-    ...config,
-    multipleStatements: true,
-  });
+  let connection;
 
   try {
+    // Dynamic import ensures backend/.env is loaded before db.js
+    // creates its database pool/configuration.
+    const { getDatabaseConfig } = await import(
+      "../src/config/db.js"
+    );
+
+    const config = getDatabaseConfig();
+
+    // Current SQL migrations explicitly target fintech_kyc.
+    // Prevent accidentally running them against another database.
+    if (config.database !== EXPECTED_DATABASE) {
+      throw new Error(
+        `Migration execution is restricted to ${EXPECTED_DATABASE}. ` +
+          `Configured database: ${config.database}`,
+      );
+    }
+
+    const files = getMigrationFiles();
+
+    for (const baseline of BASELINE_MIGRATIONS) {
+      if (!files.includes(baseline)) {
+        throw new Error(`Required baseline migration is missing: ${baseline}`);
+      }
+    }
+
+    console.log(
+      `Connecting to database ${config.database} on ${config.host}...`,
+    );
+
+    connection = await mysql.createConnection({
+      ...config,
+      multipleStatements: true,
+    });
+
     await ensureMigrationTable(connection);
 
     if (process.argv.includes("--baseline-existing")) {
-      if (config.database !== "fintech_kyc") {
-        throw new Error(
-          "Baseline command is restricted to the expected database fintech_kyc.",
-        );
-      }
-
       await baselineExistingDatabase(connection);
       console.log("Existing database baseline completed.");
       return;
     }
 
     const applied = await getAppliedMigrations(connection);
-    const migrationsDir = path.join(__dirname, "migrations");
-    const files = fs
-      .readdirSync(migrationsDir)
-      .filter((file) => file.endsWith(".sql"))
-      .sort();
+
+    await validateMigrationState(connection, applied, files);
 
     for (const file of files) {
       if (applied.has(file)) {
@@ -204,15 +351,13 @@ async function runMigrations() {
         continue;
       }
 
-      if (BASELINE_MIGRATIONS.includes(file)) {
-        throw new Error(
-          `Migration ${file} is not recorded. Review the existing database ` +
-            "and establish its baseline before running migrations.",
-        );
-      }
+      const migrationPath = path.join(__dirname, "migrations", file);
+      const sql = fs.readFileSync(migrationPath, "utf8");
 
-      const sql = fs.readFileSync(path.join(migrationsDir, file), "utf8");
       console.log(`Running migration: ${file}...`);
+
+      // MySQL DDL can auto-commit. A failure may leave partial changes.
+      // The migration is recorded only after the complete SQL succeeds.
       await connection.query(sql);
 
       await connection.query(
@@ -232,12 +377,17 @@ async function runMigrations() {
     console.error("Migration failed:", error.message);
     process.exitCode = 1;
   } finally {
-    await connection.end();
+    if (connection) {
+      await connection.end();
+    }
   }
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
-  runMigrations();
+if (
+  process.argv[1] &&
+  path.resolve(process.argv[1]) === __filename
+) {
+  await runMigrations();
 }
 
 export { runMigrations, runSeeds };

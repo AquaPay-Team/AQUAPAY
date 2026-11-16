@@ -70,7 +70,7 @@ export default function UserTeam() {
         email: agentData.email.trim().toLowerCase(),
         mobile: agentData.mobile.trim(),
         role: agentData.role,
-        password: agentData.password || "Welcome@123",
+        password: agentData.password,
         shopname: agentData.shopname?.trim() || null,
         city: agentData.city?.trim() || null,
         state: agentData.state?.trim() || null,
@@ -82,7 +82,7 @@ export default function UserTeam() {
       if (res && res.data) {
         setUsers((prev) => [res.data, ...prev]);
         toast.success(`Agent ${res.data.name} onboarded successfully!`);
-        setAddModalOpen(false);
+        return res.data;
       }
     } catch (err) {
       const errMsg =

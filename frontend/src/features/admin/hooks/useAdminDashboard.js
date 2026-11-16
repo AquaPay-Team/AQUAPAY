@@ -73,6 +73,10 @@ export function useAdminDashboard() {
         return 'NSM / ZSH';
       case 'sub-admin':
         return 'Sub Admin';
+      case 'kyc':
+        return 'KYC Compliance';
+      case 'reports':
+        return 'Audit & Reports';
       default:
         return 'Member';
     }
@@ -133,7 +137,7 @@ export function useAdminDashboard() {
           email: agentData.email.trim().toLowerCase(),
           mobile: agentData.mobile.trim(),
           role: agentData.role, // role slug (e.g. 'RT', 'DT', 'MD', 'CNF', 'SH', 'NSM', 'SA')
-          password: agentData.password || 'Welcome@123',
+          password: agentData.password,
           shopname: agentData.shopname?.trim() || null,
           city: agentData.city?.trim() || null,
           state: agentData.state?.trim() || null,
@@ -145,7 +149,7 @@ export function useAdminDashboard() {
         if (res && res.data) {
           setUsers((prev) => [res.data, ...prev]);
           toast.success(`Agent ${res.data.name} onboarded successfully in database!`);
-          setAddAgentModalOpen(false);
+          return res.data;
         }
       } catch (err) {
         console.error('Failed to create agent:', err);

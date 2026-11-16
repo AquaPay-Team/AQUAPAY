@@ -106,7 +106,8 @@ export const LoginPage = () => {
         return;
       }
 
-      // 4. Store credentials for authorized normal user
+      // 4. Store credentials for authorized normal user and purge any stale admin identity
+      localStorage.removeItem("adminUser");
       if (accessToken) {
         localStorage.setItem("accessToken", accessToken);
       }

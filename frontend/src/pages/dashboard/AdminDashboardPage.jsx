@@ -69,7 +69,7 @@ export default function AdminDashboardPage() {
   }, [location.pathname, setActiveTab, setAddAgentModalOpen]);
 
   return (
-    <div className="min-h-screen bg-slate-100 flex font-sans text-slate-800 antialiased">
+    <div className="min-h-screen bg-[#f8fafc] flex font-sans text-slate-800 antialiased selection:bg-blue-600 selection:text-white">
       {/* Admin Sidebar Navigation */}
       <AdminSidebar
         activeTab={activeTab}
@@ -79,12 +79,13 @@ export default function AdminDashboardPage() {
         setMobileSidebarOpen={setMobileSidebarOpen}
         openNavCategory={openNavCategory}
         toggleCategory={toggleCategory}
+        onOpenCreateModal={() => setAddAgentModalOpen(true)}
       />
 
       {/* Main Content Area */}
       <div
         className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${
-          sidebarCollapsed ? 'md:ml-20' : 'md:ml-64'
+          sidebarCollapsed ? 'md:ml-20' : 'md:ml-72'
         }`}
       >
         {/* Top Header */}

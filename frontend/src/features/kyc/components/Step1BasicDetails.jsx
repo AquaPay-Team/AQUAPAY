@@ -15,7 +15,7 @@ export function Step1BasicDetails({ formData, onChange, errors = {} }) {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {/* Full Name */}
+        {/* Full Legal Name */}
         <div>
           <label className="block text-xs font-medium text-slate-700 mb-1.5">
             Full Legal Name <span className="text-rose-500">*</span>
@@ -158,7 +158,7 @@ export function Step1BasicDetails({ formData, onChange, errors = {} }) {
           )}
         </div>
 
-        {/* Shop Address */}
+        {/* Operating Commercial Address */}
         <div>
           <label className="block text-xs font-medium text-slate-700 mb-1.5">
             Operating Commercial Address <span className="text-rose-500">*</span>

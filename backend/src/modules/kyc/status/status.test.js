@@ -48,10 +48,6 @@ test("KYC status returns a simplified user projection and step progress", async 
       calls.push(["steps", caseId]);
       return stepRows;
     },
-    findDevelopmentUnverifiedSteps: async (caseId) => {
-      calls.push(["development", caseId]);
-      return [];
-    },
   });
 
   try {
@@ -60,7 +56,6 @@ test("KYC status returns a simplified user projection and step progress", async 
     assert.deepEqual(calls, [
       ["case", "52"],
       ["steps", 13],
-      ["development", 13],
     ]);
 
     assert.deepEqual(result, {
@@ -73,7 +68,6 @@ test("KYC status returns a simplified user projection and step progress", async 
         status: "in_progress",
         completedAt: null,
       },
-      developmentUnverifiedSteps: [],
     });
 
     assert.equal("kyc" in result, false);
@@ -89,9 +83,6 @@ test("KYC status returns a simplified response when the user has no case", async
     findStepsByCaseId: async () => {
       throw new Error("Step query must not run without a case");
     },
-    findDevelopmentUnverifiedSteps: async () => {
-      throw new Error("Development marker query must not run without a case");
-    },
   });
 
   try {
@@ -101,7 +92,6 @@ test("KYC status returns a simplified response when the user has no case", async
       currentStep: null,
       completedSteps: [],
       currentStepDetails: null,
-      developmentUnverifiedSteps: [],
     });
   } finally {
     restore();
@@ -162,7 +152,6 @@ test("KYC status controller reads identity from authenticated request context", 
       currentStep: null,
       completedSteps: [],
       currentStepDetails: null,
-      developmentUnverifiedSteps: [],
     };
   };
 
@@ -200,7 +189,6 @@ test("KYC status controller reads identity from authenticated request context", 
       currentStep: null,
       completedSteps: [],
       currentStepDetails: null,
-      developmentUnverifiedSteps: [],
     });
   } finally {
     statusService.getKycStatus = originalGetStatus;
@@ -219,24 +207,17 @@ test("KYC status model uses parameterized queries and approved schema columns", 
   try {
     await statusModel.findCasesByUserId("52");
     await statusModel.findStepsByCaseId(13);
-    await statusModel.findDevelopmentUnverifiedSteps(13);
 
-    assert.equal(calls.length, 4);
+    assert.equal(calls.length, 2);
 
     assert.equal(calls[0].params[0], "52");
     assert.match(calls[0].sql, /steps_completed/);
     assert.match(calls[0].sql, /business_type/);
-    assert.match(calls[0].sql, /status IN/);
+    assert.doesNotMatch(calls[0].sql, /current_step|draft/i);
 
-    assert.equal(calls[1].params[0], "52");
-    assert.match(calls[1].sql, /ORDER BY id DESC/);
-
-    assert.equal(calls[2].params[0], 13);
-    assert.match(calls[2].sql, /completed_at/);
-    assert.match(calls[2].sql, /ORDER BY step_number ASC/);
-
-    assert.equal(calls[3].params[0], 13);
-    assert.match(calls[3].sql, /idto_pan_detailed_v2_mock/);
+    assert.equal(calls[1].params[0], 13);
+    assert.match(calls[1].sql, /completed_at/);
+    assert.match(calls[1].sql, /ORDER BY step_number ASC/);
   } finally {
     pool.execute = originalExecute;
   }

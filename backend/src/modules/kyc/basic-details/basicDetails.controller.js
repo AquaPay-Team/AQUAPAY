@@ -32,13 +32,10 @@ const requestStep1Otp = asyncHandler(async (req, res) => {
     );
   }
 
-  const result = await basicDetailsService.requestStep1Otp(userId, req.ip || req.socket?.remoteAddress);
-  const data = process.env.NODE_ENV === "development" && process.env.AUTH_ALLOW_DEVELOPMENT_SECRETS === "true"
-    ? { otp: result.developmentOtp }
-    : null;
+  await basicDetailsService.requestStep1Otp(userId, req.ip || req.socket?.remoteAddress);
   return res
     .status(httpStatus.OK)
-    .json(new ApiResponse(httpStatus.OK, data, "OTP requested successfully"));
+    .json(new ApiResponse(httpStatus.OK, null, "OTP requested successfully"));
 });
 
 const verifyStep1Otp = asyncHandler(async (req, res) => {

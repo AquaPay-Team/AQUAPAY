@@ -40,8 +40,7 @@ async function findCasesByUserIdForUpdate(connection, userId) {
     `SELECT id, user_id, status, steps_completed, business_type
        FROM kyc_cases
       WHERE user_id = ?
-        AND status IN ('draft', 'pending', 'submitted', 'under_review')
-      ORDER BY id DESC
+      ORDER BY id ASC
       FOR UPDATE`,
     [userId],
   );
@@ -54,9 +53,7 @@ async function findCasesByUserId(userId) {
     `SELECT id, user_id, status, steps_completed, business_type
        FROM kyc_cases
       WHERE user_id = ?
-        AND status IN ('draft', 'pending', 'submitted', 'under_review')
-      ORDER BY id DESC
-      LIMIT 2`,
+      ORDER BY id ASC`,
     [userId],
   );
 

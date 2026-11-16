@@ -1,6 +1,5 @@
 import ApiError from "../../../../utils/ApiError.js";
 import httpStatus from "../../../../utils/httpStatus.js";
-import logger from "../../../../utils/logger.js";
 import digilockerModel from "../digilocker/digilocker.model.js";
 import panModel from "./pan.model.js";
 import panProvider from "./pan.provider.js";
@@ -190,7 +189,7 @@ function createPanService({
         const diagnosticCode = /^[A-Z0-9_]{1,80}$/.test(failurePersistenceError?.code || "")
           ? failurePersistenceError.code
           : "DATABASE_ERROR";
-        logger.error("pan.failed_to_persist_safe_attempt_status", { errorCode: diagnosticCode });
+        console.error("[AquaPay PAN] failed to persist sanitized attempt status", { code: diagnosticCode });
       }
       throw failure;
     }

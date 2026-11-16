@@ -28,7 +28,6 @@ async function getKycStatus(userId) {
       currentStep: null,
       completedSteps: [],
       currentStepDetails: null,
-      developmentUnverifiedSteps: [],
     };
   }
 
@@ -43,13 +42,9 @@ async function getKycStatus(userId) {
 
   const kycCase = cases[0];
   let steps;
-  let developmentUnverifiedSteps;
 
   try {
-    [steps, developmentUnverifiedSteps] = await Promise.all([
-      statusModel.findStepsByCaseId(kycCase.id),
-      statusModel.findDevelopmentUnverifiedSteps(kycCase.id),
-    ]);
+    steps = await statusModel.findStepsByCaseId(kycCase.id);
   } catch {
     throw serviceUnavailable();
   }
@@ -75,7 +70,6 @@ async function getKycStatus(userId) {
           completedAt: currentStepRow.completed_at || null,
         }
       : null,
-    developmentUnverifiedSteps,
   };
 }
 

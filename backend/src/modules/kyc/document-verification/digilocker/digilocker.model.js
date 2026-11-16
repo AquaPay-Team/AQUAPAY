@@ -73,8 +73,7 @@ function createDigilockerModel({ dbPool = pool, env = process.env } = {}) {
         `SELECT id, user_id, status, steps_completed
            FROM kyc_cases
           WHERE user_id = ?
-            AND status IN ('draft', 'pending', 'submitted', 'under_review')
-          ORDER BY id DESC
+          ORDER BY id ASC
           LIMIT 2
           FOR UPDATE`,
         [userId],
@@ -507,8 +506,7 @@ async function getVerifiedAadhaarName(userId) {
     `SELECT id
        FROM kyc_cases
       WHERE user_id = ?
-        AND status IN ('draft', 'pending', 'submitted', 'under_review')
-      ORDER BY id DESC
+      ORDER BY id ASC
       LIMIT 2`,
     [userId],
   );

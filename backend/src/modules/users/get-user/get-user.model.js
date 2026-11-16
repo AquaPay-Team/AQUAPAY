@@ -30,19 +30,8 @@ const USER_PROJECTION = `
   JOIN roles r ON r.id = u.role_id
   LEFT JOIN companies c ON c.id = u.company_id
   LEFT JOIN users p ON p.id = u.parent_id
-  LEFT JOIN kyc_cases k ON k.id = (
-    SELECT k2.id
-      FROM kyc_cases k2
-     WHERE k2.user_id = u.id
-     ORDER BY CASE WHEN k2.status IN ('draft', 'pending', 'submitted', 'under_review') THEN 0 ELSE 1 END,
-              k2.id DESC
-     LIMIT 1
-  )
+  LEFT JOIN kyc_cases k ON k.user_id = u.id
 `;
-
-function escapeLikeSearch(value) {
-  return String(value).replace(/[!%_]/g, "!$&");
-}
 
 function formatUserRow(row) {
   if (!row) return null;
@@ -93,12 +82,12 @@ async function findAllUsers(options = {}) {
 
   if (options.search) {
     conditions.push(`(
-      u.name LIKE ? ESCAPE '!'
-      OR u.mobile LIKE ? ESCAPE '!'
-      OR u.email LIKE ? ESCAPE '!'
+      u.name LIKE ?
+      OR u.mobile LIKE ?
+      OR u.email LIKE ?
     )`);
 
-    const searchValue = `%${escapeLikeSearch(options.search)}%`;
+    const searchValue = `%${options.search}%`;
 
     params.push(searchValue, searchValue, searchValue);
   }
@@ -107,8 +96,7 @@ async function findAllUsers(options = {}) {
     query += ` WHERE ${conditions.join(" AND ")}`;
   }
 
-  query += ` ORDER BY u.id DESC LIMIT ? OFFSET ?`;
-  params.push(options.pageSize ?? 25, options.offset ?? 0);
+  query += ` ORDER BY u.id DESC`;
 
   const [rows] = await pool.execute(query, params);
   return rows.map(formatUserRow);
@@ -141,18 +129,17 @@ async function findChildrenByParentId(parentId, options = {}) {
 
   if (options.search) {
     query += ` AND (
-      u.name LIKE ? ESCAPE '!'
-      OR u.mobile LIKE ? ESCAPE '!'
-      OR u.email LIKE ? ESCAPE '!'
+      u.name LIKE ?
+      OR u.mobile LIKE ?
+      OR u.email LIKE ?
     )`;
 
-  const searchValue = `%${escapeLikeSearch(options.search)}%`;
+    const searchValue = `%${options.search}%`;
 
     params.push(searchValue, searchValue, searchValue);
   }
 
-  query += ` ORDER BY u.id DESC LIMIT ? OFFSET ?`;
-  params.push(options.pageSize ?? 25, options.offset ?? 0);
+  query += ` ORDER BY u.id DESC`;
 
   const [rows] = await pool.execute(query, params);
   return rows.map(formatUserRow);
@@ -177,7 +164,6 @@ export {
   findChildrenByParentId,
   findChildByIdAndParentId,
   formatUserRow,
-  escapeLikeSearch,
 };
 
 export default {
@@ -187,5 +173,4 @@ export default {
   findChildrenByParentId,
   findChildByIdAndParentId,
   formatUserRow,
-  escapeLikeSearch,
 };

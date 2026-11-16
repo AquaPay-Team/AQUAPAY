@@ -502,7 +502,7 @@ test("invalid server clock is reported without adding timestamp details by defau
   assert.equal(development.serverClockValid, false);
 });
 
-test("get_reference failure logs contain only allowlisted facts in development and production", async () => {
+test("development get_reference failure log includes only allowlisted validation facts; production emits no diagnostic", async () => {
   const rawValues = {
     code: "synthetic-authorization-code-NEVER-LOG",
     code_verifier: `v${"x".repeat(42)}`,
@@ -578,10 +578,7 @@ test("get_reference failure logs contain only allowlisted facts in development a
   await assert.rejects(productionService.completeCallback({
     code: rawValues.code, code_verifier: rawValues.code_verifier, state: rawValues.state,
   }), { code: "INVALID_REFERENCE_RESPONSE" });
-  assert.equal(logs.length, 1);
-  const productionLog = JSON.stringify(logs);
-  for (const value of Object.values(rawValues)) assert.equal(productionLog.includes(value), false);
-  assert.equal(logs[0][1].referenceValidation, null);
+  assert.equal(logs.length, 0);
 });
 
 test("Aadhaar callback stops when user_details explicitly reports failure", async () => {

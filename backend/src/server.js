@@ -13,11 +13,9 @@ import { getAuthConfig } from "./config/auth.js";
 import { assertDigiLockerSignaturePolicy } from "./modules/kyc/document-verification/digilocker/digilocker.signatureConfig.js";
 import { assertIdentityEncryptionConfiguration } from "./modules/kyc/document-verification/shared/identityData.crypto.js";
 import { assertProviderSessionEncryptionConfiguration } from "./modules/kyc/document-verification/shared/providerSession.crypto.js";
-import logger from "./utils/logger.js";
 
 async function start() {
   try {
-    process.env.NODE_ENV ||= "production";
     const signaturePolicy = assertDigiLockerSignaturePolicy(process.env);
     assertIdentityEncryptionConfiguration(process.env);
     assertProviderSessionEncryptionConfiguration();
@@ -37,25 +35,22 @@ async function start() {
     const port = Number(process.env.PORT || 3000);
 
     const { default: digilockerProvider } = await import("./modules/kyc/document-verification/digilocker/digilocker.provider.js");
-    logger.info("server.digilocker_provider_configured", {
-      providerMode: digilockerProvider.mode,
-      aadhaarXmlCryptographicVerification: "not_performed",
-      legacyXmlSignaturePolicy: signaturePolicy.mode,
-    });
+    console.info(
+      `AquaPay DigiLocker provider: ${digilockerProvider.mode}; Aadhaar XML signatures are not verified; PAN XML signature policy: ${signaturePolicy.mode}`,
+    );
     if (signaturePolicy.developmentOnly) {
-      logger.warn("server.legacy_xml_signature_verification_is_development_only");
+      console.warn("PAN XML verification results will be marked development-only and cryptographically unverified");
     }
 
     const server = app.listen(port, () => {
-      logger.info("server.listening", { port, databaseConnection: "verified" });
+      console.log(
+        `AquaPay API listening on port ${port}; database connection verified`,
+      );
     });
 
     return server;
   } catch (error) {
-    logger.error("server.startup_failed", {
-      errorName: error?.name || "Error",
-      code: typeof error?.code === "string" && /^[A-Z0-9_]{1,80}$/.test(error.code) ? error.code : undefined,
-    });
+    console.error("AquaPay startup failed:", error.message);
     // Ensure pool is closed if it was created
     await pool.end().catch(() => {});
     process.exitCode = 1;
@@ -68,7 +63,7 @@ function installGracefulShutdown(server) {
   const shutdown = (signal) => {
     if (shuttingDown) return;
     shuttingDown = true;
-    logger.info("server.shutdown_requested", { signal });
+    console.info(`AquaPay received ${signal}; shutting down`);
     server.close(async (serverError) => {
       const results = await Promise.allSettled([
         pool.end(),

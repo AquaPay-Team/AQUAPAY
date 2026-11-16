@@ -3,7 +3,6 @@ import * as mediaModel from "./media.model.js";
 import getCloudinary from "../../../config/cloudinary.js";
 import ApiError from "../../../utils/ApiError.js";
 import httpStatus from "../../../utils/httpStatus.js";
-import logger from "../../../utils/logger.js";
 
 const MEDIA_STEP = 5;
 const IMAGE_MAX_SIZE = 5 * 1024 * 1024;
@@ -51,7 +50,7 @@ function logMediaFailure(operation, error) {
     details.errorType = error?.name || "UnknownError";
   }
 
-  logger.error("media.operation_failed", { operation, ...details });
+  console.error(`[AquaPay Media] ${operation} failed`, details);
 }
 
 async function releaseConnection(connection, rollback = false) {
@@ -120,8 +119,8 @@ function validateUpload(assetType, file) {
 // Check ownership and upload eligibility.
 // Called inside a database transaction.
 
-async function findEligibleCase(connection, userId, model = mediaModel) {
-  const cases = await model.findCasesByUserIdForUpdate(
+async function findEligibleCase(connection, userId) {
+  const cases = await mediaModel.findCasesByUserIdForUpdate(
     connection,
     userId,
   );
@@ -156,7 +155,7 @@ async function findEligibleCase(connection, userId, model = mediaModel) {
   }
 
   // Step 5 requires Step 4 (Bank Details) to be completed.
-  const bankDetailsStep = await model.findStepByCaseIdAndNumber(
+  const bankDetailsStep = await mediaModel.findStepByCaseIdAndNumber(
     connection,
     kycCase.id,
     4,
@@ -172,7 +171,7 @@ async function findEligibleCase(connection, userId, model = mediaModel) {
   }
 
   // Check whether Step 5 is initialized.
-  const step = await model.findStepByCaseIdAndNumber(
+  const step = await mediaModel.findStepByCaseIdAndNumber(
     connection,
     kycCase.id,
     MEDIA_STEP,
@@ -187,19 +186,28 @@ async function findEligibleCase(connection, userId, model = mediaModel) {
     );
   }
 
+  if (step.status === "completed") {
+    throw new ApiError(
+      httpStatus.CONFLICT,
+      "Media upload step is already completed.",
+      [],
+      "KYC_STEP_ALREADY_COMPLETED",
+    );
+  }
+
   return kycCase.id;
 }
 
 
 // Verify that the user can upload to an existing KYC case.
-async function verifyUploadEligibility(userId, model = mediaModel) {
-  const connection = await model.getConnection();
+async function verifyUploadEligibility(userId) {
+  const connection = await mediaModel.getConnection();
   let rollback = false;
 
   try {
     await connection.beginTransaction();
 
-    const caseId = await findEligibleCase(connection, userId, model);
+    const caseId = await findEligibleCase(connection, userId);
 
     await connection.commit();
 
@@ -269,19 +277,16 @@ async function cleanupCloudinaryAsset(publicId, resourceType) {
 }
 
 // Main upload operation.
-async function uploadMedia(userId, assetType, file, dependencies = {}) {
-  const model = dependencies.model || mediaModel;
-  const uploadAsset = dependencies.uploadAsset || uploadToCloudinary;
-  const cleanupAsset = dependencies.cleanupAsset || cleanupCloudinaryAsset;
+async function uploadMedia(userId, assetType, file) {
   const rules = validateUpload(assetType, file);
 
   // Initial ownership and eligibility check.
-  const caseId = await verifyUploadEligibility(userId, model);
+  const caseId = await verifyUploadEligibility(userId);
 
   let cloudinaryResult;
 
   try {
-    cloudinaryResult = await uploadAsset(file, rules, caseId);
+    cloudinaryResult = await uploadToCloudinary(file, rules, caseId);
   } catch (error) {
     logMediaFailure("Cloudinary upload", error);
 
@@ -302,14 +307,7 @@ async function uploadMedia(userId, assetType, file, dependencies = {}) {
     );
   }
 
-  let connection;
-  try {
-    connection = await model.getConnection();
-  } catch (error) {
-    logMediaFailure("media database connection", error);
-    await cleanupAsset(cloudinaryResult.public_id, rules.resourceType);
-    throw serviceUnavailable();
-  }
+  const connection = await mediaModel.getConnection();
   let rollback = false;
   let databaseSaved = false;
 
@@ -317,7 +315,7 @@ async function uploadMedia(userId, assetType, file, dependencies = {}) {
     await connection.beginTransaction();
 
     // Recheck eligibility to avoid saving against a changed case.
-    const currentCaseId = await findEligibleCase(connection, userId, model);
+    const currentCaseId = await findEligibleCase(connection, userId);
 
     if (currentCaseId !== caseId) {
       throw new ApiError(
@@ -328,11 +326,7 @@ async function uploadMedia(userId, assetType, file, dependencies = {}) {
       );
     }
 
-    // Preserve previous evidence while making the new upload the current asset.
-    // Both this update and the insert roll back together if persistence fails.
-    await model.supersedeCurrentAssets(connection, caseId, assetType);
-
-    const mediaId = await model.insertMediaAsset(connection, {
+    const mediaId = await mediaModel.insertMediaAsset(connection, {
       caseId,
       assetType,
       storageProvider: "cloudinary",
@@ -342,29 +336,28 @@ async function uploadMedia(userId, assetType, file, dependencies = {}) {
     });
 
     // Step 5 is complete only when all three required media types exist.
-    const allRequiredMediaUploaded = await model.hasAllRequiredMedia(
+    const allRequiredMediaUploaded = await mediaModel.hasAllRequiredMedia(
       connection,
       caseId,
     );
 
-    const step5 = await model.findStepByCaseIdAndNumber(
-      connection,
-      caseId,
-      MEDIA_STEP,
-    );
-    if (allRequiredMediaUploaded && step5?.status !== "completed") {
-      const step5Completed = await model.completeStep5(connection, caseId);
-      if (!step5Completed) {
-        throw new ApiError(
-          httpStatus.CONFLICT,
-          "Unable to complete media upload step.",
-          [],
-          "KYC_STEP_COMPLETION_FAILED",
-        );
-      }
-    }
+    if (allRequiredMediaUploaded) {
+  const step5Completed = await mediaModel.completeStep5(
+    connection,
+    caseId,
+  );
 
-    const stepsCompleted = await model.updateCompletedStepsCount(
+  if (!step5Completed) {
+    throw new ApiError(
+      httpStatus.CONFLICT,
+      "Unable to complete media upload step.",
+      [],
+      "KYC_STEP_COMPLETION_FAILED",
+    );
+  }
+}
+
+    const stepsCompleted = await mediaModel.updateCompletedStepsCount(
       connection,
       caseId,
     );
@@ -395,7 +388,7 @@ async function uploadMedia(userId, assetType, file, dependencies = {}) {
     await releaseConnection(connection, rollback);
 
     if (!databaseSaved) {
-      await cleanupAsset(
+      await cleanupCloudinaryAsset(
         cloudinaryResult.public_id,
         rules.resourceType,
       );

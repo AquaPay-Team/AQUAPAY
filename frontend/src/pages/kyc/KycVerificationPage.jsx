@@ -617,7 +617,8 @@ export function KycVerificationPage() {
       await uploadKycMedia(file, assetType);
       toast.success(`${file.name} uploaded successfully`, { id: assetType });
     } catch (err) {
-      toast.success(`${file.name} attached locally`, { id: assetType });
+      const parsed = parseApiError(err);
+      toast.error(parsed.message || `Failed to upload ${file.name}. Please ensure format is JPG, PNG, or MP4/WebM under 20MB.`, { id: assetType });
     }
   };
 

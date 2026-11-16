@@ -21,7 +21,7 @@ const MEDIA_RULES = {
   },
   consent_video: {
     resourceType: "video",
-    mimeTypes: ["video/mp4", "video/quicktime"],
+    mimeTypes: ["video/mp4", "video/quicktime", "video/webm"],
     maxSize: VIDEO_MAX_SIZE,
   },
 };

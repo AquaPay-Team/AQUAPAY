@@ -359,45 +359,124 @@ export const ROLE_NAVIGATION = {
     },
   ],
 
-  // Retailer Navigation (Level 7) - Dedicated Merchant Terminal
+  // Retailer Navigation (Level 7) - Dedicated Merchant Terminal matching user UI
   RT: [
     {
       id: "rt-dashboard",
-      label: "Terminal Dashboard",
+      label: "Dashboard",
       path: "/user/dashboard",
       icon: "LayoutDashboard",
+    },
+    {
+      id: "rt-fund",
+      label: "Fund",
+      icon: "Wallet",
+      children: [
+        {
+          id: "rt-fund-transfer",
+          label: "Transfer/Return",
+          path: "/user/fund/transfer-return",
+          icon: "Send",
+        },
+        {
+          id: "rt-fund-report",
+          label: "Transfer Return Report",
+          path: "/user/fund/transfer-return-report",
+          icon: "FileText",
+        },
+      ],
+    },
+    {
+      id: "rt-services",
+      label: "Services",
+      icon: "Zap",
+      children: [
+        {
+          id: "rt-services-add-money",
+          label: "Add Money",
+          path: "/user/services/add-money",
+          icon: "Zap",
+        },
+        {
+          id: "rt-services-cc-bill",
+          label: "Credit Card Bill 2",
+          path: "/user/services/credit-card-bill",
+          icon: "CreditCard",
+        },
+        {
+          id: "rt-services-payout",
+          label: "Payout",
+          path: "/user/services/payout",
+          icon: "Send",
+        },
+        {
+          id: "rt-services-rupay-upi",
+          label: "RupayUpi",
+          path: "/user/services/rupay-upi",
+          icon: "QrCode",
+        },
+      ],
+    },
+    {
+      id: "rt-reports",
+      label: "Transaction Report",
+      icon: "FileText",
+      children: [
+        {
+          id: "rt-reports-all",
+          label: "All Transaction Report",
+          path: "/user/dashboard",
+          icon: "FileText",
+        },
+        {
+          id: "rt-reports-payout",
+          label: "Payout Report",
+          path: "/user/reports/payout",
+          icon: "FileText",
+        },
+        {
+          id: "rt-reports-cc-offline",
+          label: "Creditcard Offline Report",
+          path: "/user/reports/creditcard-offline",
+          icon: "FileText",
+        },
+        {
+          id: "rt-reports-cc-payment",
+          label: "Creditcard Payment Report",
+          path: "/user/reports/creditcard-payment",
+          icon: "FileText",
+        },
+        {
+          id: "rt-reports-pg",
+          label: "Payment Gateway Report",
+          path: "/user/reports/pg",
+          icon: "FileText",
+        },
+        {
+          id: "rt-reports-pos",
+          label: "POS Report",
+          path: "/user/reports/pos",
+          icon: "FileText",
+        },
+        {
+          id: "rt-reports-pos-request",
+          label: "POS Request Report",
+          path: "/user/reports/pos-request",
+          icon: "FileText",
+        },
+      ],
+    },
+    {
+      id: "rt-statement",
+      label: "Account Statement",
+      path: "/user/statement",
+      icon: "Landmark",
     },
     {
       id: "rt-kyc",
       label: "My KYC Verification",
       path: "/user/kyc",
       icon: "ShieldCheck",
-      children: [
-        {
-          id: "rt-kyc-status",
-          label: "Verification Overview",
-          path: "/user/kyc",
-          icon: "ShieldCheck",
-        },
-        {
-          id: "rt-kyc-basic",
-          label: "Business Details",
-          path: "/user/kyc/basic-details",
-          icon: "Store",
-        },
-        {
-          id: "rt-kyc-bank",
-          label: "Bank Details",
-          path: "/user/kyc/bank-details",
-          icon: "Building2",
-        },
-        {
-          id: "rt-kyc-agreement",
-          label: "Merchant Agreement",
-          path: "/user/kyc/agreement",
-          icon: "FileSignature",
-        },
-      ],
     },
     {
       id: "rt-profile",

@@ -52,7 +52,7 @@ export function UserLayout() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 flex font-sans text-slate-800 antialiased">
+    <div className="min-h-screen bg-slate-50 flex font-sans text-slate-800 antialiased">
       {/* Dynamic Normal User Sidebar */}
       <UserSidebar
         collapsed={collapsed}

@@ -7,6 +7,7 @@ const ALLOWED_MIME_TYPES = [
   "image/webp",
   "video/mp4",
   "video/quicktime",
+  "video/webm",
 ];
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024;

@@ -13,7 +13,12 @@ import {
   LogOut,
   ChevronDown,
   X,
-  CreditCard
+  CreditCard,
+  Wallet,
+  FileText,
+  Send,
+  QrCode,
+  Landmark
 } from "lucide-react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { toast } from "sonner";
@@ -110,6 +115,18 @@ export function UserSidebar({
         return User;
       case "Settings":
         return Settings;
+      case "Wallet":
+        return Wallet;
+      case "CreditCard":
+        return CreditCard;
+      case "FileText":
+        return FileText;
+      case "Send":
+        return Send;
+      case "QrCode":
+        return QrCode;
+      case "Landmark":
+        return Landmark;
       default:
         return LayoutDashboard;
     }

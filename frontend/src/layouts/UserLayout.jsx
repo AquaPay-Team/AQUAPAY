@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Outlet } from "react-router-dom";
 import { UserSidebar } from "../components/user/UserSidebar";
 import { DashboardHeader } from "../components/common/DashboardHeader";
@@ -11,13 +11,28 @@ export function UserLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [addAgentModalOpen, setAddAgentModalOpen] = useState(false);
 
-  const currentUser = (() => {
+  const [currentUser, setCurrentUser] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem("user") || "{}");
     } catch {
       return {};
     }
-  })();
+  });
+
+  useEffect(() => {
+    const handleUserUpdate = (e) => {
+      try {
+        const fresh = e?.detail || JSON.parse(localStorage.getItem("user") || "{}");
+        setCurrentUser(fresh);
+      } catch {}
+    };
+    window.addEventListener("aquapay:user_updated", handleUserUpdate);
+    window.addEventListener("storage", handleUserUpdate);
+    return () => {
+      window.removeEventListener("aquapay:user_updated", handleUserUpdate);
+      window.removeEventListener("storage", handleUserUpdate);
+    };
+  }, []);
 
   const roleId = Number(currentUser.role_id) || 8;
   const canManageAgents = roleId >= 2 && roleId <= 7;

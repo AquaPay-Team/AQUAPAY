@@ -1,6 +1,11 @@
 import submissionModel from "./submission.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import httpStatus from "../../../utils/httpStatus.js";
+import {
+  DEFAULT_AGREEMENT_CODE,
+  DEFAULT_AGREEMENT_VERSION,
+} from "../agreement/agreement.service.js";
+import logger from "../../../utils/logger.js";
 
 const REQUIRED_STEPS = [1, 2, 3, 4, 5, 6];
 
@@ -13,6 +18,68 @@ const STEP_NAMES = Object.freeze({
   6: "Agent Agreement Acceptance",
   7: "Final Submission Confirmation",
 });
+
+const REQUIRED_MEDIA_TYPES = ["shop_image", "selfie", "consent_video"];
+const REQUIRED_VERIFICATION_PROVIDERS = Object.freeze({
+  aadhaar: "idto_digilocker_v1",
+  pan: "idto_pan_detailed_v2",
+});
+
+function validVerificationEvidence(record, type) {
+  if (
+    !record || record.verification_type !== type ||
+    record.provider !== REQUIRED_VERIFICATION_PROVIDERS[type] ||
+    typeof record.verified_name !== "string" ||
+    record.verified_name.trim().length === 0 ||
+    record.verified_name.length > 150 ||
+    /[\u0000-\u001f\u007f]/.test(record.verified_name) ||
+    typeof record.masked_identifier !== "string" ||
+    record.masked_identifier.length < 4 || record.masked_identifier.length > 32 ||
+    /[\u0000-\u001f\u007f]/.test(record.masked_identifier) ||
+    record.has_encrypted_identity !== 1
+  ) return false;
+
+  if (type === "aadhaar" && /^\d{12}$/.test(record.masked_identifier)) return false;
+  return true;
+}
+
+function missingSubmissionEvidenceSteps(evidence) {
+  const missing = [];
+  const basic = evidence?.basicDetails;
+  if (
+    !basic ||
+    !String(basic.business_type || "").trim() ||
+    !String(basic.address || "").trim() ||
+    !String(basic.city || "").trim() ||
+    !String(basic.pincode || "").trim()
+  ) missing.push(1);
+
+  const verificationRecords = evidence?.verificationRecords || [];
+  for (const [type, stepNumber] of [["aadhaar", 2], ["pan", 3]]) {
+    const records = verificationRecords.filter((record) => record.verification_type === type);
+    if (records.length !== 1 || !validVerificationEvidence(records[0], type)) {
+      missing.push(stepNumber);
+    }
+  }
+
+  const bankAccounts = evidence?.bankAccounts || [];
+  if (
+    bankAccounts.length !== 1 ||
+    bankAccounts[0]?.verification_status !== "verified" ||
+    !Buffer.isBuffer(bankAccounts[0]?.account_number_encrypted) ||
+    bankAccounts[0].account_number_encrypted.length === 0
+  ) missing.push(4);
+
+  const latestMedia = new Map(
+    (evidence?.latestMedia || []).map((row) => [row.asset_type, row.status]),
+  );
+  if (REQUIRED_MEDIA_TYPES.some((type) => !["uploaded", "verified"].includes(latestMedia.get(type)))) {
+    missing.push(5);
+  }
+
+  if (!evidence?.agreementAcceptance) missing.push(6);
+  return missing;
+}
 
 function serviceUnavailable() {
   return new ApiError(
@@ -229,6 +296,29 @@ async function submitKycApplication(userId, { notes } = {}) {
       );
     }
 
+    // Step flags are user-facing progress only. Revalidate durable evidence
+    // while the case is locked before final submission.
+    const evidence = await submissionModel.findSubmissionEvidence(
+      connection,
+      userId,
+      kycCase.id,
+      DEFAULT_AGREEMENT_CODE,
+      DEFAULT_AGREEMENT_VERSION,
+    );
+    const missingEvidence = missingSubmissionEvidenceSteps(evidence);
+    if (missingEvidence.length > 0) {
+      const details = missingEvidence.map((stepNumber) => ({
+        stepNumber,
+        name: STEP_NAMES[stepNumber],
+      }));
+      throw new ApiError(
+        httpStatus.CONFLICT,
+        "Cannot submit KYC because required verification evidence is missing or invalid.",
+        details,
+        "INCOMPLETE_KYC_EVIDENCE",
+      );
+    }
+
     const submittedAt = new Date();
 
     // 1. Update KYC Case to 'submitted'
@@ -269,6 +359,12 @@ async function submitKycApplication(userId, { notes } = {}) {
       throw error;
     }
 
+    logger.error("kyc.submission_failed", {
+      errorName: typeof error?.name === "string" ? error.name : "UnknownError",
+      errorCode: typeof error?.code === "string" && /^[A-Z0-9_]{1,80}$/.test(error.code)
+        ? error.code
+        : undefined,
+    });
     throw serviceUnavailable();
   } finally {
     await releaseConnection(connection, rollback);
@@ -278,6 +374,8 @@ async function submitKycApplication(userId, { notes } = {}) {
 const submissionService = {
   REQUIRED_STEPS,
   STEP_NAMES,
+  validVerificationEvidence,
+  missingSubmissionEvidenceSteps,
   getSubmissionStatus,
   submitKycApplication,
 };
@@ -285,6 +383,8 @@ const submissionService = {
 export {
   REQUIRED_STEPS,
   STEP_NAMES,
+  validVerificationEvidence,
+  missingSubmissionEvidenceSteps,
   getSubmissionStatus,
   submitKycApplication,
 };

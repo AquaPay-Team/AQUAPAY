@@ -81,7 +81,7 @@ Set-LocalEncryptionKey 'KYC_PROVIDER_SESSION_DEV_ENCRYPTION_KEY_V1'
 
 Use a separate secret-manager key in production for each key family. Retain prior key versions until encrypted rows and retained backups have been re-encrypted or expired. Back up keys separately from database backups; loss of a key makes its corresponding encrypted data unrecoverable. Never reuse a local key in production.
 
-The application still validates the existing signature-policy configuration because PAN retains its existing verification behavior. `IDTO_PAN_XML_TRUSTED_CERT_PATH` is a PAN setting. No Aadhaar certificate setting or Aadhaar signature bypass is used by the Aadhaar validator.
+The application still validates the legacy DigiLocker XML signature-policy configuration at startup because the legacy signature code remains in the repository. The active PAN Detailed v2 flow uses IDTO's JSON API and does not use this XML signature policy. `IDTO_PAN_XML_TRUSTED_CERT_PATH` is a legacy PAN XML setting and is not used by PAN Detailed v2. No Aadhaar certificate setting or Aadhaar signature bypass is used by the Aadhaar validator.
 
 ## Local workflow
 
@@ -123,4 +123,4 @@ The public IDTO integration guide currently documents `issued_docs` and `get_iss
 
 ## PAN
 
-PAN remains in the existing PAN module and retains its existing `issued_docs` / `get_issued_docs_xml` retrieval, parser, persistence, and signature policy. Aadhaar-only provider changes do not replace PAN behavior.
+PAN verification uses the IDTO PAN Detailed v2 JSON endpoint through the PAN module. It does not use DigiLocker `issued_docs` / `get_issued_docs_xml`, XML parsing, or the legacy XML signature policy. The legacy XML signature implementation remains in the repository for compatibility; it is not evidence that the current PAN JSON response or the Aadhaar XML response is cryptographically authenticated.

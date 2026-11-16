@@ -12,6 +12,7 @@ async function findCasesByUserIdForUpdate(connection, userId) {
     `SELECT id, user_id, status, steps_completed
        FROM kyc_cases
       WHERE user_id = ?
+        AND status IN ('draft', 'pending', 'submitted', 'under_review')
       ORDER BY id ASC
       LIMIT 2
       FOR UPDATE`,
@@ -60,6 +61,18 @@ async function insertMediaAsset(connection, mediaData) {
   );
 
   return result.insertId;
+}
+
+async function supersedeCurrentAssets(connection, caseId, assetType) {
+  const [result] = await connection.execute(
+    `UPDATE media_assets
+        SET status = 'superseded'
+      WHERE case_id = ?
+        AND asset_type = ?
+        AND status IN ('uploaded', 'verified', 'rejected')`,
+    [caseId, assetType],
+  );
+  return Number(result.affectedRows || 0);
 }
 
 // Get all media records belonging to a KYC case.
@@ -168,6 +181,7 @@ async function updateCompletedStepsCount(connection, caseId) {
 export {
   getConnection,
   insertMediaAsset,
+  supersedeCurrentAssets,
   findMediaByCaseId,
   findMediaByIdAndCaseId,
   countUploadedAssetTypes,

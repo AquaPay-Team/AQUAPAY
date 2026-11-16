@@ -11,6 +11,34 @@ const VALID_KYC_STATUSES = new Set([
   "rejected",
 ]);
 
+const DEFAULT_PAGE = 1;
+const DEFAULT_PAGE_SIZE = 25;
+const MAX_PAGE_SIZE = 100;
+
+function parsePagination(pageInput, pageSizeInput) {
+  const parseValue = (value, fallback, label) => {
+    if (value === undefined || value === null) return fallback;
+    if (typeof value !== "string" || !/^[1-9]\d*$/.test(value)) {
+      throw new ApiError(httpStatus.BAD_REQUEST, `Invalid ${label}`, [], "VALIDATION_ERROR");
+    }
+    const parsed = Number(value);
+    if (!Number.isSafeInteger(parsed)) {
+      throw new ApiError(httpStatus.BAD_REQUEST, `Invalid ${label}`, [], "VALIDATION_ERROR");
+    }
+    return parsed;
+  };
+
+  const page = parseValue(pageInput, DEFAULT_PAGE, "page");
+  const pageSize = parseValue(pageSizeInput, DEFAULT_PAGE_SIZE, "page size");
+  const offset = (page - 1) * pageSize;
+
+  if (pageSize > MAX_PAGE_SIZE || !Number.isSafeInteger(offset)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, "Invalid pagination parameters", [], "VALIDATION_ERROR");
+  }
+
+  return { page, pageSize, offset };
+}
+
 async function getActor(actorId) {
   const parentId = Number(actorId);
 
@@ -43,6 +71,7 @@ function isAdmin(actor) {
 
 async function getUsers(actorId, options = {}) {
   const actor = await getActor(actorId);
+  const pagination = parsePagination(options.page, options.pageSize);
 
   const kycStatus = options.kycStatus;
 
@@ -70,6 +99,7 @@ async function getUsers(actorId, options = {}) {
 
 const userOptions = {
   ...options,
+    ...pagination,
 };
 
 if (search) {
@@ -139,5 +169,6 @@ const getUserService = {
 };
 
 export { getUsers, getUserById };
+export { parsePagination };
 
 export default getUserService;

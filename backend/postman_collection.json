@@ -27,7 +27,7 @@
     },
     {
       "key": "adminPassword",
-      "value": "AdminPassword@123",
+      "value": "",
       "type": "string"
     },
     {
@@ -52,7 +52,7 @@
     },
     {
       "key": "agentPassword",
-      "value": "SecureUser@123",
+      "value": "",
       "type": "string"
     },
     {

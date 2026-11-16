@@ -1,4 +1,5 @@
 import { createClient } from "redis";
+import logger from "../utils/logger.js";
 
 let client;
 let connectPromise;
@@ -22,8 +23,11 @@ function createRedisClient() {
   });
 
   // Do not include the error message because connection URLs can contain credentials.
-  redisClient.on("error", () => {
-    console.error("[AquaPay Redis] connection error");
+  redisClient.on("error", (error) => {
+    logger.error("redis.connection_error", {
+      errorName: error?.name || "RedisError",
+      code: typeof error?.code === "string" && /^[A-Z0-9_]{1,80}$/.test(error.code) ? error.code : undefined,
+    });
   });
   return redisClient;
 }

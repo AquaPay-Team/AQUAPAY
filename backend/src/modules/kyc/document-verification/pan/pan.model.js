@@ -50,7 +50,9 @@ function createPanModel({ dbPool = pool, identityModel = identityDataModel } = {
 
       const [cases] = await connection.execute(
         `SELECT id, status FROM kyc_cases
-          WHERE user_id = ? ORDER BY id ASC LIMIT 2 FOR UPDATE`,
+          WHERE user_id = ?
+            AND status IN ('draft', 'pending', 'submitted', 'under_review')
+          ORDER BY id DESC LIMIT 2 FOR UPDATE`,
         [userId],
       );
       if (cases.length === 0) throw new Error("KYC_CASE_NOT_FOUND");

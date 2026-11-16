@@ -9,9 +9,11 @@ import authRoutes from "./modules/auth/auth.routes.js";
 import kycRoutes from "./modules/kyc/kyc.routes.js";
 
 import { notFound, errorHandler } from "./middlewares/error.middleware.js";
+import requestContextMiddleware from "./middlewares/requestContext.middleware.js";
 
 const app = express();
 
+app.use(requestContextMiddleware);
 app.use(helmet());
 
 app.use(

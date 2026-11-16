@@ -36,28 +36,50 @@ async function findActiveUser(userId) {
 }
 
 async function findCasesByUserIdForUpdate(connection, userId) {
-  const [rows] = await getDb(connection).execute(
+  const db = getDb(connection);
+  const [activeRows] = await db.execute(
     `SELECT id, user_id, status, steps_completed, business_type, submitted_at, reviewed_at, rejection_reason
        FROM kyc_cases
       WHERE user_id = ?
-      ORDER BY id ASC
+        AND status IN ('draft', 'pending', 'submitted', 'under_review')
+      ORDER BY id DESC
+      LIMIT 2
       FOR UPDATE`,
     [userId],
   );
-
-  return rows;
-}
-
-async function findCasesByUserId(userId) {
-  const [rows] = await pool.execute(
+  if (activeRows.length > 0) return activeRows;
+  const [closedRows] = await db.execute(
     `SELECT id, user_id, status, steps_completed, business_type, submitted_at, reviewed_at, rejection_reason
        FROM kyc_cases
       WHERE user_id = ?
-      ORDER BY id ASC`,
+      ORDER BY id DESC
+      LIMIT 1
+      FOR UPDATE`,
     [userId],
   );
+  return closedRows;
+}
 
-  return rows;
+async function findCasesByUserId(userId) {
+  const [activeRows] = await pool.execute(
+    `SELECT id, user_id, status, steps_completed, business_type, submitted_at, reviewed_at, rejection_reason
+       FROM kyc_cases
+      WHERE user_id = ?
+        AND status IN ('draft', 'pending', 'submitted', 'under_review')
+      ORDER BY id DESC
+      LIMIT 2`,
+    [userId],
+  );
+  if (activeRows.length > 0) return activeRows;
+  const [closedRows] = await pool.execute(
+    `SELECT id, user_id, status, steps_completed, business_type, submitted_at, reviewed_at, rejection_reason
+       FROM kyc_cases
+      WHERE user_id = ?
+      ORDER BY id DESC
+      LIMIT 1`,
+    [userId],
+  );
+  return closedRows;
 }
 
 async function findStepsByCaseId(db, caseId) {
@@ -70,6 +92,92 @@ async function findStepsByCaseId(db, caseId) {
   );
 
   return rows;
+}
+
+async function findSubmissionEvidence(db, userId, caseId, agreementCode, agreementVersion) {
+  const connection = getDb(db);
+  const [basicDetailsRows] = await connection.execute(
+    `SELECT kc.business_type, u.address, u.city, u.pincode
+       FROM kyc_cases kc
+       JOIN users u ON u.id = kc.user_id
+      WHERE kc.id = ? AND kc.user_id = ?
+      LIMIT 1
+      FOR UPDATE`,
+    [caseId, userId],
+  );
+  const [verificationRecords] = await connection.execute(
+    `SELECT verification.verification_type,
+            verification.provider,
+            verification.verified_name,
+            verification.masked_identifier,
+            CASE
+              WHEN identity_data.id IS NOT NULL
+               AND OCTET_LENGTH(identity_data.payload_ciphertext) > 0
+               AND identity_data.payload_iv IS NOT NULL
+               AND identity_data.payload_authentication_tag IS NOT NULL
+               AND identity_data.encryption_key_version > 0
+              THEN 1 ELSE 0
+            END AS has_encrypted_identity
+       FROM kyc_verifications verification
+       JOIN kyc_cases verification_case
+         ON verification_case.id = verification.case_id
+        AND verification_case.user_id = ?
+       LEFT JOIN kyc_identity_data identity_data
+         ON identity_data.verification_id = verification.id
+        AND identity_data.case_id = verification.case_id
+        AND identity_data.user_id = verification_case.user_id
+        AND identity_data.identity_type = verification.verification_type
+      WHERE verification.case_id = ?
+        AND verification.status = 'verified'
+        AND (
+          (verification.verification_type = 'aadhaar' AND verification.provider = 'idto_digilocker_v1')
+          OR
+          (verification.verification_type = 'pan' AND verification.provider = 'idto_pan_detailed_v2')
+        )
+      FOR UPDATE`,
+    [userId, caseId],
+  );
+  const [bankRows] = await connection.execute(
+    `SELECT id, verification_status, account_number_encrypted
+       FROM bank_accounts
+      WHERE case_id = ?
+      ORDER BY id ASC
+      LIMIT 2
+      FOR UPDATE`,
+    [caseId],
+  );
+  const [mediaRows] = await connection.execute(
+    `SELECT asset_type, status
+       FROM media_assets current_asset
+      WHERE current_asset.case_id = ?
+        AND current_asset.asset_type IN ('shop_image', 'selfie', 'consent_video')
+        AND NOT EXISTS (
+          SELECT 1 FROM media_assets newer
+           WHERE newer.case_id = current_asset.case_id
+             AND newer.asset_type = current_asset.asset_type
+             AND newer.id > current_asset.id
+        )
+      FOR UPDATE`,
+    [caseId],
+  );
+  const [agreementRows] = await connection.execute(
+    `SELECT id
+       FROM agreement_acceptances
+      WHERE case_id = ?
+        AND agreement_code = ?
+        AND agreement_version = ?
+      LIMIT 1
+      FOR UPDATE`,
+    [caseId, agreementCode, agreementVersion],
+  );
+
+  return {
+    basicDetails: basicDetailsRows[0] || null,
+    verificationRecords,
+    bankAccounts: bankRows,
+    latestMedia: mediaRows,
+    agreementAcceptance: agreementRows[0] || null,
+  };
 }
 
 async function submitKycCase(connection, caseId, submittedAt) {
@@ -143,6 +251,7 @@ const submissionModel = {
   findCasesByUserIdForUpdate,
   findCasesByUserId,
   findStepsByCaseId,
+  findSubmissionEvidence,
   submitKycCase,
   completeStep7,
   updateCompletedStepsCount,
@@ -156,6 +265,7 @@ export {
   findCasesByUserIdForUpdate,
   findCasesByUserId,
   findStepsByCaseId,
+  findSubmissionEvidence,
   submitKycCase,
   completeStep7,
   updateCompletedStepsCount,

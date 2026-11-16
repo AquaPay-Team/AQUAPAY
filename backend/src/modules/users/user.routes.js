@@ -5,10 +5,17 @@ import { requireAuth } from "../../middlewares/auth.middleware.js";
 import getUserRoutes from "./get-user/get-user.routes.js";
 import getMeRoutes from "./getMe.routes.js";
 import updateUserRoutes from "./update-user/update-user.routes.js";
+import { rateLimit } from "../../middlewares/authRateLimit.middleware.js";
 
 const router = Router();
 
-router.post("/", requireAuth, validateCreateUser, controller.createUser);
+router.post(
+  "/",
+  requireAuth,
+  rateLimit("userCreation"),
+  validateCreateUser,
+  controller.createUser,
+);
 router.use("/", getMeRoutes);
 router.use("/", getUserRoutes);
 router.use("/", updateUserRoutes);

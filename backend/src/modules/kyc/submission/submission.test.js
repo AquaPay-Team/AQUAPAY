@@ -6,6 +6,40 @@ import submissionController from "./submission.controller.js";
 import submissionService from "./submission.service.js";
 import submissionModel from "./submission.model.js";
 
+const validSubmissionEvidence = {
+  basicDetails: {
+    business_type: "Retail",
+    address: "10 Sample Road",
+    city: "Pune",
+    pincode: "411001",
+  },
+  verificationRecords: [
+    {
+      verification_type: "aadhaar",
+      provider: "idto_digilocker_v1",
+      verified_name: "Synthetic Aadhaar Name",
+      masked_identifier: "XXXXXX1234",
+      has_encrypted_identity: 1,
+    },
+    {
+      verification_type: "pan",
+      provider: "idto_pan_detailed_v2",
+      verified_name: "Synthetic PAN Name",
+      masked_identifier: "XXXXX2345F",
+      has_encrypted_identity: 1,
+    },
+  ],
+  bankAccounts: [
+    { verification_status: "verified", account_number_encrypted: Buffer.from("encrypted") },
+  ],
+  latestMedia: [
+    { asset_type: "shop_image", status: "uploaded" },
+    { asset_type: "selfie", status: "verified" },
+    { asset_type: "consent_video", status: "uploaded" },
+  ],
+  agreementAcceptance: { id: 1 },
+};
+
 // Helper to mock express req, res, next
 function createMockReqRes({ body = {}, user = { id: 1 } } = {}) {
   const req = {
@@ -196,11 +230,96 @@ test("submission.service: submitKycApplication rejects when steps 1-6 are not co
   }
 });
 
+test("submission.service: rejects completed step flags when durable evidence is missing", async () => {
+  const originalGetConnection = submissionModel.getConnection;
+  const originalFindActiveUserForUpdate = submissionModel.findActiveUserForUpdate;
+  const originalFindCasesByUserIdForUpdate = submissionModel.findCasesByUserIdForUpdate;
+  const originalFindStepsByCaseId = submissionModel.findStepsByCaseId;
+  const originalFindSubmissionEvidence = submissionModel.findSubmissionEvidence;
+  const originalSubmitKycCase = submissionModel.submitKycCase;
+  let rolledBack = false;
+  let submitted = false;
+  const mockConnection = {
+    beginTransaction: async () => {},
+    commit: async () => {},
+    rollback: async () => { rolledBack = true; },
+    release: () => {},
+  };
+  submissionModel.getConnection = async () => mockConnection;
+  submissionModel.findActiveUserForUpdate = async () => ({ id: 1, status: "active" });
+  submissionModel.findCasesByUserIdForUpdate = async () => [
+    { id: 25, user_id: 1, status: "pending", steps_completed: 6 },
+  ];
+  submissionModel.findStepsByCaseId = async () =>
+    [1, 2, 3, 4, 5, 6].map((step_number) => ({ step_number, status: "completed" }));
+  submissionModel.findSubmissionEvidence = async () => ({
+    ...validSubmissionEvidence,
+    verificationRecords: [validSubmissionEvidence.verificationRecords[0]],
+  });
+  submissionModel.submitKycCase = async () => { submitted = true; };
+
+  try {
+    await assert.rejects(
+      submissionService.submitKycApplication(1),
+      (error) => error.code === "INCOMPLETE_KYC_EVIDENCE",
+    );
+    assert.equal(rolledBack, true);
+    assert.equal(submitted, false);
+  } finally {
+    submissionModel.getConnection = originalGetConnection;
+    submissionModel.findActiveUserForUpdate = originalFindActiveUserForUpdate;
+    submissionModel.findCasesByUserIdForUpdate = originalFindCasesByUserIdForUpdate;
+    submissionModel.findStepsByCaseId = originalFindStepsByCaseId;
+    submissionModel.findSubmissionEvidence = originalFindSubmissionEvidence;
+    submissionModel.submitKycCase = originalSubmitKycCase;
+  }
+});
+
+test("submission evidence rejects missing names, plaintext Aadhaar IDs, mocks, and absent encrypted payloads", () => {
+  const invalidRecords = [
+    { ...validSubmissionEvidence.verificationRecords[0], verified_name: "  " },
+    { ...validSubmissionEvidence.verificationRecords[0], provider: "idto_digilocker_v1_dev_unverified" },
+    { ...validSubmissionEvidence.verificationRecords[0], has_encrypted_identity: 0 },
+  ];
+
+  for (const invalidRecord of invalidRecords) {
+    const missing = submissionService.missingSubmissionEvidenceSteps({
+      ...validSubmissionEvidence,
+      verificationRecords: [invalidRecord, validSubmissionEvidence.verificationRecords[1]],
+    });
+    assert.ok(missing.includes(2));
+    assert.ok(!missing.includes(3));
+  }
+});
+
+test("submission evidence query scopes records to the user and joins encrypted identity payloads", async () => {
+  const statements = [];
+  const connection = {
+    async execute(sql, params) {
+      statements.push({ sql, params });
+      return [[]];
+    },
+  };
+
+  await submissionModel.findSubmissionEvidence(connection, 52, 13, "AGENT", "1");
+
+  const verificationQuery = statements.find(({ sql }) => sql.includes("FROM kyc_verifications verification"));
+  assert.ok(verificationQuery);
+  assert.deepEqual(verificationQuery.params, [52, 13]);
+  assert.match(verificationQuery.sql, /verification_case\.user_id = \?/);
+  assert.match(verificationQuery.sql, /JOIN kyc_identity_data identity_data/);
+  assert.match(verificationQuery.sql, /identity_data\.user_id = verification_case\.user_id/);
+  assert.match(verificationQuery.sql, /identity_data\.identity_type = verification\.verification_type/);
+  assert.match(verificationQuery.sql, /idto_digilocker_v1/);
+  assert.match(verificationQuery.sql, /idto_pan_detailed_v2/);
+});
+
 test("submission.service: submitKycApplication transactionally submits when all steps 1-6 are completed", async () => {
   const originalGetConnection = submissionModel.getConnection;
   const originalFindActiveUserForUpdate = submissionModel.findActiveUserForUpdate;
   const originalFindCasesByUserIdForUpdate = submissionModel.findCasesByUserIdForUpdate;
   const originalFindStepsByCaseId = submissionModel.findStepsByCaseId;
+  const originalFindSubmissionEvidence = submissionModel.findSubmissionEvidence;
   const originalSubmitKycCase = submissionModel.submitKycCase;
   const originalCompleteStep7 = submissionModel.completeStep7;
   const originalUpdateCompletedStepsCount = submissionModel.updateCompletedStepsCount;
@@ -234,6 +353,7 @@ test("submission.service: submitKycApplication transactionally submits when all 
     { step_number: 6, status: "completed" },
     { step_number: 7, status: "pending" },
   ];
+  submissionModel.findSubmissionEvidence = async () => validSubmissionEvidence;
   submissionModel.submitKycCase = async () => {
     caseSubmitted = true;
     return true;
@@ -265,6 +385,7 @@ test("submission.service: submitKycApplication transactionally submits when all 
     submissionModel.findActiveUserForUpdate = originalFindActiveUserForUpdate;
     submissionModel.findCasesByUserIdForUpdate = originalFindCasesByUserIdForUpdate;
     submissionModel.findStepsByCaseId = originalFindStepsByCaseId;
+    submissionModel.findSubmissionEvidence = originalFindSubmissionEvidence;
     submissionModel.submitKycCase = originalSubmitKycCase;
     submissionModel.completeStep7 = originalCompleteStep7;
     submissionModel.updateCompletedStepsCount = originalUpdateCompletedStepsCount;

@@ -119,6 +119,22 @@ async function isUserActive(userId) {
   return rows.length > 0;
 }
 
+async function isAdmin(userId) {
+  const [rows] = await pool.execute(
+    `SELECT u.id
+       FROM users u
+       JOIN roles r ON r.id = u.role_id
+      WHERE u.id = ?
+        AND u.status = 'active'
+        AND r.id = 1
+        AND r.slug = 'AD'
+      LIMIT 1`,
+    [userId],
+  );
+
+  return rows.length > 0;
+}
+
 async function incrementRateLimitCounter(
   bucketHash,
   windowStart,
@@ -408,6 +424,7 @@ const authModel = {
   findUserByIdentifier,
   findActiveUserById,
   isUserActive,
+  isAdmin,
   incrementRateLimitCounter,
   createPasswordReset,
   checkPasswordResetCredentials,
@@ -419,6 +436,7 @@ export {
   findUserByIdentifier,
   findActiveUserById,
   isUserActive,
+  isAdmin,
   incrementRateLimitCounter,
   createPasswordReset,
   checkPasswordResetCredentials,

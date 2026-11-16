@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import {
   User,
   Mail,
@@ -14,13 +14,28 @@ import {
 import { getRoleMeta } from "../../constants/roles";
 
 export default function UserProfile() {
-  const currentUser = (() => {
+  const [currentUser, setCurrentUser] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem("user") || "{}");
     } catch {
       return {};
     }
-  })();
+  });
+
+  useEffect(() => {
+    const handleUserUpdate = (e) => {
+      try {
+        const fresh = e?.detail || JSON.parse(localStorage.getItem("user") || "{}");
+        setCurrentUser(fresh);
+      } catch {}
+    };
+    window.addEventListener("aquapay:user_updated", handleUserUpdate);
+    window.addEventListener("storage", handleUserUpdate);
+    return () => {
+      window.removeEventListener("aquapay:user_updated", handleUserUpdate);
+      window.removeEventListener("storage", handleUserUpdate);
+    };
+  }, []);
 
   const roleMeta = getRoleMeta(currentUser) || {
     name: currentUser.role_name || "Partner",

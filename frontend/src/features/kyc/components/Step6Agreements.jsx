@@ -55,7 +55,7 @@ export function Step6Agreements({
   });
 
   // Dynamic merchant details from verified state
-  const agentName = agreementData?.agentDetails?.name || formData.fullName || "[Agent Name]";
+  const agentName = formData.fullName || agreementData?.agentDetails?.name || "[Agent Name]";
   const agentCity = agreementData?.agentDetails?.city || formData.city || "[City]";
   const agentMobile = agreementData?.agentDetails?.mobile || formData.phone || "[Mobile Number]";
   const documentId = agreementData?.id || "4cfb7c48-5913-44e0-8b2c-5e75b346ff14";

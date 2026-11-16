@@ -51,10 +51,6 @@ export function Step2AadhaarAuth({
   };
 
   const handleStartVerification = () => {
-    if (cleanAadhaar.length !== 12) {
-      setAadhaarError("Please enter your complete 12-digit Aadhaar number.");
-      return;
-    }
     if (!consentGiven) {
       setAadhaarError("Please accept the UIDAI consent agreement to proceed.");
       return;
@@ -95,7 +91,7 @@ export function Step2AadhaarAuth({
             <div>
               <span className="text-slate-500 block text-[11px] mb-0.5">Masked Aadhaar</span>
               <span className="font-mono font-semibold text-slate-900 text-sm">
-                {verifiedData?.maskedIdentifier || `•••• •••• ${cleanAadhaar.slice(-4) || "XXXX"}`}
+                {verifiedData?.maskedIdentifier || (cleanAadhaar ? `•••• •••• ${cleanAadhaar.slice(-4)}` : "•••• •••• ••••")}
               </span>
             </div>
             <div>
@@ -210,7 +206,7 @@ export function Step2AadhaarAuth({
               onClick={onResetSession}
               className="text-xs text-slate-500 hover:text-slate-800 transition cursor-pointer underline underline-offset-2"
             >
-              Click to re-enter Aadhaar number
+              Click to restart DigiLocker session
             </button>
           </div>
         </div>
@@ -235,45 +231,15 @@ export function Step2AadhaarAuth({
       </div>
 
       <div className="bg-slate-50 border border-slate-200 p-6 rounded-2xl space-y-5">
-        {/* Aadhaar Input */}
-        <div>
-          <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-            Aadhaar Card Number (12 Digits) <span className="text-rose-500">*</span>
-          </label>
-          <input
-            type="text"
-            maxLength={14}
-            value={formData.aadhaarNumber || ""}
-            onChange={handleAadhaarChange}
-            placeholder="•••• •••• ••••"
-            className={`w-full bg-white border rounded-xl px-4 py-3 text-base tracking-widest font-mono text-slate-900 focus:outline-none transition placeholder:tracking-normal placeholder:font-sans placeholder:text-sm ${
-              aadhaarError
-                ? "border-amber-400 bg-amber-50/20 focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
-                : "border-slate-300 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 shadow-xs"
-            }`}
-          />
-
-          {aadhaarError && (
-            <p className="text-xs text-amber-600 mt-2 flex items-center gap-1.5 font-medium">
-              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-              {aadhaarError}
-            </p>
-          )}
-
-          {!aadhaarError && cleanAadhaar.length === 12 && (
-            <p className="text-xs text-emerald-600 mt-2 flex items-center gap-1.5 font-medium">
-              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-              12-digit Aadhaar number ready.
-            </p>
-          )}
-        </div>
-
         {/* Consent Checkbox */}
-        <label className="flex items-start gap-3 cursor-pointer p-3.5 bg-white border border-slate-200 rounded-xl">
+        <label className="flex items-start gap-3 cursor-pointer p-4 bg-white border border-slate-200 rounded-xl hover:border-blue-300 transition-colors">
           <input
             type="checkbox"
             checked={consentGiven}
-            onChange={(e) => setConsentGiven(e.target.checked)}
+            onChange={(e) => {
+              setConsentGiven(e.target.checked);
+              if (e.target.checked) setAadhaarError("");
+            }}
             className="mt-0.5 w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
           />
           <span className="text-xs text-slate-600 leading-relaxed">
@@ -284,11 +250,18 @@ export function Step2AadhaarAuth({
           </span>
         </label>
 
+        {aadhaarError && (
+          <p className="text-xs text-amber-600 flex items-center gap-1.5 font-medium">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+            {aadhaarError}
+          </p>
+        )}
+
         {/* Launch Button */}
         <button
           type="button"
           onClick={handleStartVerification}
-          disabled={isInitiating || cleanAadhaar.length !== 12 || !consentGiven}
+          disabled={isInitiating || !consentGiven}
           className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white font-semibold text-sm py-3.5 rounded-xl shadow-xs transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
         >
           {isInitiating ? (

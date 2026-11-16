@@ -18,6 +18,7 @@ import {
 import { toast } from "sonner";
 import { parseApiError } from "../../utils/errorHandler";
 import { isAdminRole } from "../../constants/roles";
+import { getCurrentUser } from "../../api/auth.api";
 
 // Reusable White-Theme Components
 import KycHeader from "../../features/kyc/components/KycHeader";
@@ -143,6 +144,54 @@ export function KycVerificationPage() {
     { id: 7, name: "Review & Submit", icon: Send, desc: "Final submission" },
   ];
 
+  // Synchronize real legal name fetched from UIDAI Aadhaar across entire app state
+  const syncAadhaarVerifiedName = async (directVerifiedName, maskedId) => {
+    let finalName = directVerifiedName;
+    try {
+      // Authoritative check: fetch real user from /api/auth/me (backend aadhaar.model updates users.name upon UIDAI success)
+      const meRes = await getCurrentUser();
+      if (meRes?.data?.name) {
+        finalName = meRes.data.name;
+      }
+    } catch (err) {
+      console.warn("Could not retrieve updated user from /api/auth/me:", err);
+    }
+
+    if (!finalName && directVerifiedName) {
+      finalName = directVerifiedName;
+    }
+
+    if (finalName) {
+      // 1. Replace the admin-entered name in formData (fullName, panName, accountHolderName)
+      setFormData((prev) => ({
+        ...prev,
+        fullName: finalName,
+        panName: finalName.toUpperCase(),
+        accountHolderName:
+          !prev.accountHolderName || prev.accountHolderName === storedUser?.name
+            ? finalName
+            : prev.accountHolderName,
+      }));
+
+      // 2. Update localStorage user so entire app immediately displays the real Aadhaar name
+      try {
+        const stored = JSON.parse(localStorage.getItem("user") || "{}");
+        stored.name = finalName;
+        localStorage.setItem("user", JSON.stringify(stored));
+        window.dispatchEvent(new CustomEvent("aquapay:user_updated", { detail: stored }));
+      } catch (e) {
+        console.error("Failed to update user in localStorage", e);
+      }
+    }
+
+    setAadhaarVerifiedData({
+      verifiedName: finalName || "Verified User",
+      maskedIdentifier: maskedId || "•••• •••• ••••",
+    });
+
+    return finalName;
+  };
+
   // Fetch KYC status on mount & enforce Admin exemption
   useEffect(() => {
     // Admin accounts are exempt from merchant KYC onboarding
@@ -178,6 +227,10 @@ export function KycVerificationPage() {
 
           if (Array.isArray(kycData.completedSteps)) {
             setCompletedSteps(kycData.completedSteps);
+            if (kycData.completedSteps.includes(2)) {
+              setAadhaarVerified(true);
+              syncAadhaarVerifiedName();
+            }
             if (kycData.completedSteps.includes(4)) {
               try {
                 const bankRes = await getBankDetails();
@@ -237,21 +290,14 @@ export function KycVerificationPage() {
           if (statusUpper === "VERIFIED") {
             setAadhaarVerified(true);
             setCompletedSteps((prev) => Array.from(new Set([...prev, 2])));
-            const verifiedName = statusRes.data?.verifiedName;
-            const maskedId = statusRes.data?.maskedIdentifier;
-            setAadhaarVerifiedData({ verifiedName, maskedIdentifier: maskedId });
-            if (verifiedName) {
-              setFormData((prev) => ({
-                ...prev,
-                fullName: verifiedName,
-                panName: verifiedName.toUpperCase(),
-              }));
-            }
+            await syncAadhaarVerifiedName(statusRes.data?.verifiedName, statusRes.data?.maskedIdentifier);
           } else if (
             statusUpper === "PENDING" ||
             statusRes?.data?.stage === "authorization_pending"
           ) {
             setOtpSent(true);
+          } else {
+            setOtpSent(false);
           }
         } catch {
           // Ignore lookup errors
@@ -411,12 +457,6 @@ export function KycVerificationPage() {
   };
 
   const handleTriggerOtp = async () => {
-    const cleanAadhaar = String(formData.aadhaarNumber || "").replace(/\D/g, "");
-    if (cleanAadhaar.length !== 12) {
-      toast.error("Please enter a valid 12-digit Aadhaar number before requesting OTP.");
-      return;
-    }
-
     setIsInitiatingDigilocker(true);
     try {
       toast.info("Connecting to UIDAI verification gateway...");
@@ -449,16 +489,10 @@ export function KycVerificationPage() {
                 clearInterval(interval);
                 setAadhaarPollInterval(null);
                 setAadhaarVerified(true);
-                const verifiedName = statusRes.data.verifiedName;
-                const maskedId = statusRes.data.maskedIdentifier;
-                setAadhaarVerifiedData({ verifiedName, maskedIdentifier: maskedId });
-                if (verifiedName) {
-                  setFormData((prev) => ({
-                    ...prev,
-                    fullName: verifiedName,
-                    panName: verifiedName.toUpperCase(),
-                  }));
-                }
+                const verifiedName = await syncAadhaarVerifiedName(
+                  statusRes.data?.verifiedName,
+                  statusRes.data?.maskedIdentifier
+                );
                 setCompletedSteps((prev) => Array.from(new Set([...prev, 2])));
                 toast.success(`Aadhaar e-KYC verified with UIDAI: ${verifiedName || "Verified"}`);
               }
@@ -501,9 +535,10 @@ export function KycVerificationPage() {
           const statusUpper = String(statusRes?.data?.status || "").toUpperCase();
           if (statusUpper === "VERIFIED") {
             setAadhaarVerified(true);
-            const verifiedName = statusRes.data.verifiedName;
-            const maskedId = statusRes.data.maskedIdentifier;
-            setAadhaarVerifiedData({ verifiedName, maskedIdentifier: maskedId });
+            const verifiedName = await syncAadhaarVerifiedName(
+              statusRes.data?.verifiedName,
+              statusRes.data?.maskedIdentifier
+            );
             setCompletedSteps((prev) => Array.from(new Set([...prev, 2])));
             toast.success(`Aadhaar already verified: ${verifiedName || "Verified"}`);
           }
@@ -532,16 +567,10 @@ export function KycVerificationPage() {
           setAadhaarPollInterval(null);
         }
         setAadhaarVerified(true);
-        const verifiedName = statusRes.data?.verifiedName;
-        const maskedId = statusRes.data?.maskedIdentifier;
-        setAadhaarVerifiedData({ verifiedName, maskedIdentifier: maskedId });
-        if (verifiedName) {
-          setFormData((prev) => ({
-            ...prev,
-            fullName: verifiedName,
-            panName: verifiedName.toUpperCase(),
-          }));
-        }
+        const verifiedName = await syncAadhaarVerifiedName(
+          statusRes.data?.verifiedName,
+          statusRes.data?.maskedIdentifier
+        );
         setCompletedSteps((prev) => Array.from(new Set([...prev, 2])));
         toast.success(`Aadhaar e-KYC verified successfully: ${verifiedName || "Verified"}`);
         // Advance to Step 3 (PAN Verification)
@@ -558,8 +587,9 @@ export function KycVerificationPage() {
           setAadhaarPollInterval(null);
         }
         setAadhaarVerified(true);
+        const verifiedName = await syncAadhaarVerifiedName();
         setCompletedSteps((prev) => Array.from(new Set([...prev, 2])));
-        toast.success("Aadhaar e-KYC authenticated successfully. Proceeding to Step 3.");
+        toast.success(`Aadhaar e-KYC authenticated successfully: ${verifiedName || "Verified"}. Proceeding to Step 3.`);
         setCurrentStep(3);
         window.scrollTo({ top: 0, behavior: "smooth" });
         return;
@@ -575,6 +605,20 @@ export function KycVerificationPage() {
     } finally {
       setIsCheckingAadhaarStatus(false);
     }
+  };
+
+  const handleResetAadhaarSession = async () => {
+    setOtpSent(false);
+    setDigilockerSessionId(null);
+    setAadhaarVerified(false);
+    if (aadhaarPollInterval) {
+      clearInterval(aadhaarPollInterval);
+      setAadhaarPollInterval(null);
+    }
+    try {
+      await getAadhaarVerificationStatus();
+    } catch {}
+    toast.info("Session reset. You can now request a new Aadhaar verification.");
   };
 
   const handleVerifyPan = async () => {
@@ -991,7 +1035,7 @@ export function KycVerificationPage() {
                 isCheckingStatus={isCheckingAadhaarStatus}
                 aadhaarVerified={aadhaarVerified}
                 verifiedData={aadhaarVerifiedData}
-                onResetSession={() => setOtpSent(false)}
+                onResetSession={handleResetAadhaarSession}
               />
             )}
 

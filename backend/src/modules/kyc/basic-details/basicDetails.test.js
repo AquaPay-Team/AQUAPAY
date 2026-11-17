@@ -26,10 +26,8 @@ after(() => {
 });
 
 const validBody = {
-  businessType: "Retail Store",
+  businessType: "Sole Proprietorship",
   shopAddress: "12 Market Road",
-  city: "Pune",
-  pincode: "411001",
 };
 
 function runValidator(body) {
@@ -101,7 +99,7 @@ function setupOtpContext({
     findCasesByUserIdForUpdate: async () => cases || [{
       id: caseId,
       user_id: userId,
-      business_type: "Retail Store",
+      business_type: "Sole Proprietorship",
       status: caseStatus,
       steps_completed: 2,
     }],
@@ -275,10 +273,8 @@ function mockExistingCase(connection, overrides = {}) {
 
 test("basic-details validator normalizes supported fields and rejects unknown fields", () => {
   const { req, error } = runValidator({
-    businessType: "  Retail Store  ",
+    businessType: "  Sole Proprietorship  ",
     shopAddress: "  12 Market Road  ",
-    city: "  Pune  ",
-    pincode: " 411001 ",
   });
 
   assert.equal(error, undefined);
@@ -288,8 +284,10 @@ test("basic-details validator normalizes supported fields and rejects unknown fi
   assert.equal(invalid.error.statusCode, 400);
   assert.equal(invalid.error.code, "VALIDATION_ERROR");
 
-  const invalidPincode = runValidator({ ...validBody, pincode: "011001" });
-  assert.equal(invalidPincode.error.code, "VALIDATION_ERROR");
+  const legacyFields = runValidator({ ...validBody, city: "Pune", pincode: "411001" });
+  assert.equal(legacyFields.error.code, "VALIDATION_ERROR");
+  const invalidBusinessType = runValidator({ ...validBody, businessType: "Retail Store" });
+  assert.equal(invalidBusinessType.error.code, "VALIDATION_ERROR");
 });
 
 test("KYC OTP validators accept an empty request body and exactly six numeric digits", () => {
@@ -333,10 +331,8 @@ test("KYC OTP request stores a bound hash and prints only the OTP in development
         "52",
         "13",
         1,
-        "Retail Store",
+        "Sole Proprietorship",
         "12 Market Road",
-        "Pune",
-        "411001",
       ])}`)
       .digest("hex");
     const expectedOtpHash = crypto
@@ -419,8 +415,8 @@ test("KYC OTP request requires one saved case and valid saved details", async ()
 
   const ambiguousCases = setupOtpContext({
     cases: [
-      { id: 13, user_id: "52", business_type: "Retail Store", status: "pending" },
-      { id: 14, user_id: "52", business_type: "Retail Store", status: "pending" },
+      { id: 13, user_id: "52", business_type: "Sole Proprietorship", status: "pending" },
+      { id: 14, user_id: "52", business_type: "Sole Proprietorship", status: "pending" },
     ],
   });
   const ambiguousStore = replaceStoreMethods({
@@ -762,6 +758,7 @@ test("KYC OTP fails closed when Redis is not configured instead of using in-memo
 
 test("KYC service-unavailable errors retain HTTP 503 without exposing internal details", () => {
   const originalError = console.error;
+  const originalNodeEnv = process.env.NODE_ENV;
   const logs = [];
   const response = {
     headersSent: false,
@@ -774,11 +771,12 @@ test("KYC service-unavailable errors retain HTTP 503 without exposing internal d
       return this;
     },
   };
+  process.env.NODE_ENV = "development";
   console.error = (...args) => logs.push(args);
   try {
     errorHandler(
       new ApiError(503, "KYC service is temporarily unavailable", ["private"], "SERVICE_UNAVAILABLE"),
-      {},
+      { method: "PUT", baseUrl: "/api/kyc", route: { path: "/basic-details" }, path: "/basic-details?search=private" },
       response,
       () => {},
     );
@@ -790,8 +788,37 @@ test("KYC service-unavailable errors retain HTTP 503 without exposing internal d
     });
     assert.equal(JSON.stringify(response.body).includes("private"), false);
     assert.equal(JSON.stringify(logs).includes("private"), false);
+    assert.equal(JSON.stringify(logs).includes('"errorCode":"SERVICE_UNAVAILABLE"'), true);
+    assert.equal(JSON.stringify(logs).includes("search=private"), false);
   } finally {
     console.error = originalError;
+    if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = originalNodeEnv;
+  }
+});
+
+test("production error logs omit diagnostic error codes", () => {
+  const originalError = console.error;
+  const originalNodeEnv = process.env.NODE_ENV;
+  const logs = [];
+  const response = {
+    headersSent: false,
+    status() { return this; },
+    json(body) { this.body = body; return this; },
+  };
+  process.env.NODE_ENV = "production";
+  console.error = (...args) => logs.push(args);
+  try {
+    const error = new ApiError(503, "Service unavailable", [], "SERVICE_UNAVAILABLE");
+    error.cause = Object.assign(new Error("secret detail"), { code: "ER_SECRET_DETAIL" });
+    errorHandler(error, { method: "PUT", path: "/api/kyc/basic-details" }, response, () => {});
+    assert.equal(JSON.stringify(logs).includes("errorCode"), false);
+    assert.equal(JSON.stringify(logs).includes("ER_SECRET_DETAIL"), false);
+    assert.equal(JSON.stringify(logs).includes("secret detail"), false);
+  } finally {
+    console.error = originalError;
+    if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = originalNodeEnv;
   }
 });
 
@@ -843,16 +870,12 @@ test("basic-details service reuses the registered user's case and leaves Step 1 
     );
     assert.deepEqual(
       modelCalls.find(([name]) => name === "updateUser"),
-      ["updateUser", "52", {
-        shopAddress: validBody.shopAddress,
-        city: validBody.city,
-        pincode: validBody.pincode,
-      }],
+      ["updateUser", "52", validBody.shopAddress],
     );
     assert.deepEqual(result.kyc, {
       status: "pending",
       steps_completed: 0,
-      business_type: "Retail Store",
+      business_type: "Sole Proprietorship",
     });
     assert.deepEqual(connection.calls, ["begin", "commit", "release"]);
   } finally {

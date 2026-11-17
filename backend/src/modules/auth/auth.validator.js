@@ -73,11 +73,35 @@ function validateResetPassword(req, res, next) {
   return next();
 }
 
-export { normalizeIdentifier, validateLogin, validateForgotPassword, validateResetPassword };
+function validateChangePassword(req, res, next) {
+  const body = bodyObject(req);
+  const config = getAuthConfig();
+  const errors = [];
+  if (rejectUnknownKeys(body, ["currentPassword", "newPassword", "confirmPassword"])) {
+    errors.push("Unexpected request field");
+  }
+  if (typeof body.currentPassword !== "string" || !body.currentPassword || Buffer.byteLength(body.currentPassword, "utf8") > 72) {
+    errors.push("Current password is required");
+  }
+  if (typeof body.newPassword !== "string" || body.newPassword.length < config.passwordMinLength) {
+    errors.push(`Password must contain at least ${config.passwordMinLength} characters`);
+  } else if (Buffer.byteLength(body.newPassword, "utf8") > 72) {
+    errors.push("Password must not exceed 72 bytes");
+  }
+  if (typeof body.confirmPassword !== "string" || body.confirmPassword !== body.newPassword) {
+    errors.push("Password confirmation does not match");
+  }
+  if (errors.length) return next(new ApiError(400, errors.join(", "), errors, "VALIDATION_ERROR"));
+  req.validatedBody = { currentPassword: body.currentPassword, newPassword: body.newPassword };
+  return next();
+}
+
+export { normalizeIdentifier, validateLogin, validateForgotPassword, validateResetPassword, validateChangePassword };
 
 export default {
   normalizeIdentifier,
   validateLogin,
   validateForgotPassword,
   validateResetPassword,
+  validateChangePassword,
 };

@@ -7,15 +7,21 @@ import {
   Mic, 
   CreditCard, 
   Volume2,
-  FileText
+  FileText,
+  AlertCircle,
+  RefreshCw,
+  Loader2
 } from "lucide-react";
+import { toast } from "sonner";
 
 export function Step5MediaUploads({ 
   formData, 
   onFileUpload, 
   onNext, 
   onPrev, 
-  isSavingStep 
+  isSavingStep,
+  uploadStates = {}, // { selfie: { status, error, name }, video: { status, error, name }, shop: { status, error, name } }
+  onRetryUpload,
 }) {
   const [activeTab, setActiveTab] = useState("consent"); // "consent" | "upload"
 
@@ -35,26 +41,67 @@ export function Step5MediaUploads({
     setDragActive((prev) => ({ ...prev, [target]: status }));
   };
 
+  const validateAndUpload = (file, assetType, fieldName, target) => {
+    if (!file) return;
+
+    // File validation
+    if (assetType === "selfie" || assetType === "shop_image") {
+      const validTypes = ["image/jpeg", "image/png", "image/jpg", "image/webp"];
+      if (!validTypes.includes(file.type)) {
+        toast.error(`Invalid file format for ${file.name}. Only JPG, PNG, and WebP images are allowed.`);
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error(`File size exceeds 10 MB limit (${(file.size / (1024 * 1024)).toFixed(1)} MB).`);
+        return;
+      }
+    } else if (assetType === "consent_video") {
+      const validVideoTypes = ["video/mp4", "video/webm", "video/quicktime"];
+      if (!validVideoTypes.includes(file.type)) {
+        toast.error(`Invalid video format for ${file.name}. Only MP4, WebM, and MOV videos are allowed.`);
+        return;
+      }
+      if (file.size > 20 * 1024 * 1024) {
+        toast.error(`Video file size exceeds 20 MB limit (${(file.size / (1024 * 1024)).toFixed(1)} MB).`);
+        return;
+      }
+    }
+
+    onFileUpload(file, assetType, fieldName);
+  };
+
   const handleDrop = (e, assetType, fieldName, target) => {
     e.preventDefault();
     e.stopPropagation();
     setDragActive((prev) => ({ ...prev, [target]: false }));
     const file = e.dataTransfer?.files?.[0];
     if (file) {
-      onFileUpload(file, assetType, fieldName);
+      validateAndUpload(file, assetType, fieldName, target);
     }
   };
 
   const handleFileInputChange = (e, assetType, fieldName) => {
     const file = e.target.files?.[0];
     if (file) {
-      onFileUpload(file, assetType, fieldName);
+      validateAndUpload(file, assetType, fieldName);
     }
+    // Reset file input value so re-selecting same file fires change
+    e.target.value = "";
   };
 
-  const selfieFile = formData.selfieFile;
-  const videoFile = formData.videoFile;
-  const shopPhotoFile = formData.shopPhotoFile;
+  const selfieState = uploadStates.selfie || { status: formData.selfieFile ? "uploaded" : "idle" };
+  const videoState = uploadStates.video || { status: formData.videoFile ? "uploaded" : "idle" };
+  const shopState = uploadStates.shop || { status: formData.shopPhotoFile ? "uploaded" : "idle" };
+
+  const allUploaded =
+    selfieState.status === "uploaded" &&
+    videoState.status === "uploaded" &&
+    shopState.status === "uploaded";
+
+  const isUploadingAny =
+    selfieState.status === "uploading" ||
+    videoState.status === "uploading" ||
+    shopState.status === "uploading";
 
   const nameVal = formData.fullName || "[Full Name]";
   const aadhaarVal = formData.aadhaarNumber 
@@ -105,7 +152,7 @@ export function Step5MediaUploads({
         >
           <Upload className="w-4 h-4" />
           <span>2. Upload Files</span>
-          {(selfieFile || videoFile || shopPhotoFile) && (
+          {allUploaded && (
             <span className="w-2 h-2 rounded-full bg-emerald-500" />
           )}
         </button>
@@ -188,18 +235,18 @@ export function Step5MediaUploads({
         </div>
       )}
 
-      {/* TAB 2: EXISTING UPLOAD ZONES */}
+      {/* TAB 2: UPLOAD ZONES WITH GRANULAR STATUS TRACKING */}
       {activeTab === "upload" && (
         <div className="space-y-5 pt-2">
           {/* 1. Selfie Photo */}
           <div>
             <label className="block text-sm font-semibold text-slate-900 mb-2">
-              Selfie Photo
+              Signatory Photo (Selfie) *
             </label>
             <input
               type="file"
               ref={selfieInputRef}
-              accept="image/png,image/jpeg,image/jpg"
+              accept="image/png,image/jpeg,image/jpg,image/webp"
               className="hidden"
               onChange={(e) => handleFileInputChange(e, "selfie", "selfieFile")}
             />
@@ -210,24 +257,43 @@ export function Step5MediaUploads({
               className={`border-2 border-dashed rounded-2xl p-6 sm:p-8 flex flex-col items-center justify-center text-center transition ${
                 dragActive.selfie
                   ? "border-[#00c5ff] bg-cyan-50/20"
-                  : selfieFile
+                  : selfieState.status === "uploaded"
                   ? "border-emerald-400 bg-emerald-50/10"
+                  : selfieState.status === "failed"
+                  ? "border-rose-400 bg-rose-50/10"
                   : "border-slate-300 bg-white hover:border-slate-400"
               }`}
             >
-              {selfieFile ? (
+              {selfieState.status === "uploading" ? (
+                <div className="flex flex-col items-center space-y-2">
+                  <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+                  <span className="text-xs font-semibold text-slate-800">Uploading selfie to backend…</span>
+                </div>
+              ) : selfieState.status === "uploaded" ? (
                 <div className="flex flex-col items-center space-y-2">
                   <CheckCircle2 className="w-8 h-8 text-emerald-600" />
                   <span className="text-sm font-semibold text-slate-900 truncate max-w-xs">
-                    {typeof selfieFile === "string" ? selfieFile : selfieFile.name}
+                    {selfieState.name || "Selfie attached"}
                   </span>
-                  <span className="text-xs text-emerald-700 font-medium">Selfie Attached Successfully</span>
+                  <span className="text-xs text-emerald-700 font-medium">Uploaded & Confirmed by Server ✓</span>
                   <button
                     type="button"
                     onClick={() => selfieInputRef.current?.click()}
                     className="mt-2 text-xs font-semibold text-[#0a1945] hover:underline cursor-pointer"
                   >
-                    Change File
+                    Change Photo
+                  </button>
+                </div>
+              ) : selfieState.status === "failed" ? (
+                <div className="flex flex-col items-center space-y-2">
+                  <AlertCircle className="w-8 h-8 text-rose-500" />
+                  <span className="text-xs font-semibold text-rose-700">{selfieState.error || "Upload failed"}</span>
+                  <button
+                    type="button"
+                    onClick={() => selfieInputRef.current?.click()}
+                    className="mt-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold px-4 py-2 rounded-xl transition cursor-pointer"
+                  >
+                    Retry Upload
                   </button>
                 </div>
               ) : (
@@ -237,7 +303,7 @@ export function Step5MediaUploads({
                     Drag and drop selfie photo here
                   </span>
                   <span className="text-xs text-slate-400 mt-0.5 mb-3">
-                    PNG, JPG or JPEG (max. 10 MB)
+                    PNG, JPG or WebP (max. 10 MB)
                   </span>
                   <button
                     type="button"
@@ -255,7 +321,7 @@ export function Step5MediaUploads({
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="block text-sm font-semibold text-slate-900">
-                Video KYC upload
+                Video KYC Upload *
               </label>
               <button
                 type="button"
@@ -268,7 +334,7 @@ export function Step5MediaUploads({
             <input
               type="file"
               ref={videoInputRef}
-              accept="video/mp4,video/quicktime,video/mov,video/webm"
+              accept="video/mp4,video/quicktime,video/webm"
               className="hidden"
               onChange={(e) => handleFileInputChange(e, "consent_video", "videoFile")}
             />
@@ -279,25 +345,37 @@ export function Step5MediaUploads({
               className={`border-2 border-dashed rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 transition ${
                 dragActive.video
                   ? "border-[#00c5ff] bg-cyan-50/20"
-                  : videoFile
+                  : videoState.status === "uploaded"
                   ? "border-emerald-400 bg-emerald-50/10"
+                  : videoState.status === "failed"
+                  ? "border-rose-400 bg-rose-50/10"
                   : "border-slate-300 bg-white hover:border-slate-400"
               }`}
             >
               <div className="flex items-center space-x-3.5 min-w-0">
-                {videoFile ? (
+                {videoState.status === "uploading" ? (
+                  <Loader2 className="w-7 h-7 text-blue-600 animate-spin shrink-0" />
+                ) : videoState.status === "uploaded" ? (
                   <CheckCircle2 className="w-7 h-7 text-emerald-600 shrink-0" />
+                ) : videoState.status === "failed" ? (
+                  <AlertCircle className="w-7 h-7 text-rose-500 shrink-0" />
                 ) : (
                   <Upload className="w-7 h-7 text-[#0284c7] shrink-0 stroke-[1.8]" />
                 )}
                 <div className="text-left min-w-0">
                   <span className="block text-sm font-medium text-slate-900 truncate">
-                    {videoFile 
-                      ? (typeof videoFile === "string" ? videoFile : videoFile.name)
+                    {videoState.status === "uploading"
+                      ? "Uploading video…"
+                      : videoState.status === "uploaded"
+                      ? (videoState.name || "Video KYC attached")
+                      : videoState.status === "failed"
+                      ? (videoState.error || "Video upload failed")
                       : "Drag and drop KYC video here"}
                   </span>
                   <span className="block text-xs text-slate-400">
-                    MP4, MOV (max. 50 MB)
+                    {videoState.status === "uploaded"
+                      ? "Uploaded & Confirmed by Server ✓"
+                      : "MP4, WebM, MOV (max. 20 MB)"}
                   </span>
                 </div>
               </div>
@@ -305,9 +383,10 @@ export function Step5MediaUploads({
               <button
                 type="button"
                 onClick={() => videoInputRef.current?.click()}
-                className="bg-[#0a1945] hover:bg-[#13286b] active:scale-[0.99] text-white text-xs font-semibold px-5 py-2 rounded-xl shadow-xs transition shrink-0 cursor-pointer self-start sm:self-auto"
+                disabled={videoState.status === "uploading"}
+                className="bg-[#0a1945] hover:bg-[#13286b] active:scale-[0.99] text-white text-xs font-semibold px-5 py-2 rounded-xl shadow-xs transition shrink-0 cursor-pointer self-start sm:self-auto disabled:opacity-50"
               >
-                {videoFile ? "Change File" : "Browse Files"}
+                {videoState.status === "uploaded" ? "Change File" : videoState.status === "failed" ? "Retry" : "Browse Files"}
               </button>
             </div>
           </div>
@@ -315,12 +394,12 @@ export function Step5MediaUploads({
           {/* 3. Shop / Business Location Photo */}
           <div>
             <label className="block text-sm font-semibold text-slate-900 mb-2">
-              Shop / Business Location Photo
+              Commercial Premise Photo *
             </label>
             <input
               type="file"
               ref={shopInputRef}
-              accept="image/png,image/jpeg,image/jpg"
+              accept="image/png,image/jpeg,image/jpg,image/webp"
               className="hidden"
               onChange={(e) => handleFileInputChange(e, "shop_image", "shopPhotoFile")}
             />
@@ -331,25 +410,37 @@ export function Step5MediaUploads({
               className={`border-2 border-dashed rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 transition ${
                 dragActive.shop
                   ? "border-[#00c5ff] bg-cyan-50/20"
-                  : shopPhotoFile
+                  : shopState.status === "uploaded"
                   ? "border-emerald-400 bg-emerald-50/10"
+                  : shopState.status === "failed"
+                  ? "border-rose-400 bg-rose-50/10"
                   : "border-slate-300 bg-white hover:border-slate-400"
               }`}
             >
               <div className="flex items-center space-x-3.5 min-w-0">
-                {shopPhotoFile ? (
+                {shopState.status === "uploading" ? (
+                  <Loader2 className="w-7 h-7 text-blue-600 animate-spin shrink-0" />
+                ) : shopState.status === "uploaded" ? (
                   <CheckCircle2 className="w-7 h-7 text-emerald-600 shrink-0" />
+                ) : shopState.status === "failed" ? (
+                  <AlertCircle className="w-7 h-7 text-rose-500 shrink-0" />
                 ) : (
                   <Upload className="w-7 h-7 text-[#0284c7] shrink-0 stroke-[1.8]" />
                 )}
                 <div className="text-left min-w-0">
                   <span className="block text-sm font-medium text-slate-900 truncate">
-                    {shopPhotoFile 
-                      ? (typeof shopPhotoFile === "string" ? shopPhotoFile : shopPhotoFile.name)
+                    {shopState.status === "uploading"
+                      ? "Uploading shop photo…"
+                      : shopState.status === "uploaded"
+                      ? (shopState.name || "Premise photo attached")
+                      : shopState.status === "failed"
+                      ? (shopState.error || "Premise upload failed")
                       : "Drag and drop shop location photo here"}
                   </span>
                   <span className="block text-xs text-slate-400">
-                    PNG, JPG or JPEG (max. 10 MB)
+                    {shopState.status === "uploaded"
+                      ? "Uploaded & Confirmed by Server ✓"
+                      : "PNG, JPG or WebP (max. 10 MB)"}
                   </span>
                 </div>
               </div>
@@ -357,9 +448,10 @@ export function Step5MediaUploads({
               <button
                 type="button"
                 onClick={() => shopInputRef.current?.click()}
-                className="bg-[#0a1945] hover:bg-[#13286b] active:scale-[0.99] text-white text-xs font-semibold px-5 py-2 rounded-xl shadow-xs transition shrink-0 cursor-pointer self-start sm:self-auto"
+                disabled={shopState.status === "uploading"}
+                className="bg-[#0a1945] hover:bg-[#13286b] active:scale-[0.99] text-white text-xs font-semibold px-5 py-2 rounded-xl shadow-xs transition shrink-0 cursor-pointer self-start sm:self-auto disabled:opacity-50"
               >
-                {shopPhotoFile ? "Change File" : "Browse Files"}
+                {shopState.status === "uploaded" ? "Change File" : shopState.status === "failed" ? "Retry" : "Browse Files"}
               </button>
             </div>
           </div>
@@ -371,19 +463,23 @@ export function Step5MediaUploads({
         <button
           type="button"
           onClick={onPrev}
-          disabled={isSavingStep}
-          className="px-5 py-2.5 rounded-xl border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+          disabled={isSavingStep || isUploadingAny}
+          className="px-5 py-2.5 rounded-xl border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer disabled:opacity-50"
         >
-          Cancel
+          Previous Step
         </button>
 
         <button
           type="button"
           onClick={onNext}
-          disabled={isSavingStep}
-          className="bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 text-white text-xs font-semibold px-7 py-2.5 rounded-xl shadow-md transition cursor-pointer"
+          disabled={!allUploaded || isSavingStep || isUploadingAny}
+          className={`text-white text-xs font-semibold px-7 py-2.5 rounded-xl shadow-md transition cursor-pointer ${
+            allUploaded && !isUploadingAny
+              ? "bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600"
+              : "bg-slate-300 cursor-not-allowed opacity-60"
+          }`}
         >
-          {isSavingStep ? "Processing..." : "Continue"}
+          {isSavingStep ? "Processing..." : isUploadingAny ? "Uploading Files..." : "Continue to Step 6"}
         </button>
       </div>
     </div>

@@ -3,7 +3,6 @@ import basicDetailsModel from "./basicDetails.model.js";
 import kycOtpStore from "./kycOtpStore.js";
 import ApiError from "../../../utils/ApiError.js";
 import httpStatus from "../../../utils/httpStatus.js";
-import { isValidPincode } from "../../../utils/validationHelper.js";
 
 const BASIC_DETAILS_STEP = 1;
 const OTP_TTL_SECONDS = 300;
@@ -17,7 +16,9 @@ function serviceUnavailable() {
   );
 }
 
-function logKycFailure(operation, error) {
+function logDevelopmentFailure(operation, error) {
+  if (process.env.NODE_ENV !== "development") return;
+
   const details = {};
   if (typeof error?.code === "string" && /^[A-Z0-9_]+$/.test(error.code)) {
     details.code = error.code;
@@ -32,7 +33,6 @@ function logKycFailure(operation, error) {
 
   console.error(`[AquaPay KYC] ${operation} failed`, details);
 }
-const logDevelopmentFailure = logKycFailure;
 
 function invalidOtp() {
   return new ApiError(
@@ -61,21 +61,13 @@ function getSavedBasicDetails(user, kycCase) {
       ? kycCase.business_type.trim()
       : "",
     shopAddress: typeof user.address === "string" ? user.address.trim() : "",
-    city: typeof user.city === "string" ? user.city.trim() : "",
-    pincode: user.pincode === null || user.pincode === undefined
-      ? ""
-      : String(user.pincode).trim(),
   };
 
   if (
     !details.businessType ||
-    details.businessType.length > 100 ||
+    !["Sole Proprietorship", "Private Limited Company", "Partnership / LLP"].includes(details.businessType) ||
     !details.shopAddress ||
-    details.shopAddress.length > 255 ||
-    !details.city ||
-    details.city.length > 100 ||
-    !details.pincode ||
-    !isValidPincode(details.pincode)
+    details.shopAddress.length > 255
   ) {
     throw new ApiError(
       httpStatus.BAD_REQUEST,
@@ -96,8 +88,6 @@ function detailsFingerprint(secret, userId, caseId, details) {
       BASIC_DETAILS_STEP,
       details.businessType,
       details.shopAddress,
-      details.city,
-      details.pincode,
     ])}`)
     .digest("hex");
 }
@@ -229,7 +219,7 @@ async function requestStep1Otp(userId, ipAddress) {
   try {
     connection = await basicDetailsModel.getConnection();
   } catch (error) {
-    logKycFailure("Step 1 OTP database connection", error);
+    logDevelopmentFailure("Step 1 OTP database connection", error);
     throw serviceUnavailable();
   }
 
@@ -289,7 +279,7 @@ async function requestStep1Otp(userId, ipAddress) {
       }).catch(() => {});
     }
     if (error instanceof ApiError) throw error;
-    logKycFailure("Step 1 OTP request", error);
+    logDevelopmentFailure("Step 1 OTP request", error);
     throw serviceUnavailable();
   } finally {
     if (connection) await releaseConnection(connection);
@@ -310,7 +300,7 @@ async function verifyStep1Otp(userId, otp, ipAddress) {
   try {
     connection = await basicDetailsModel.getConnection();
   } catch (error) {
-    logKycFailure("Step 1 OTP verification database connection", error);
+    logDevelopmentFailure("Step 1 OTP verification database connection", error);
     throw serviceUnavailable();
   }
 
@@ -385,7 +375,7 @@ async function verifyStep1Otp(userId, otp, ipAddress) {
 
     if (committed && result) return result;
     if (error instanceof ApiError) throw error;
-    logKycFailure("Step 1 OTP verification", error);
+    logDevelopmentFailure("Step 1 OTP verification", error);
     throw serviceUnavailable();
   } finally {
     if (connection) await releaseConnection(connection);
@@ -400,12 +390,12 @@ async function verifyStep1Otp(userId, otp, ipAddress) {
   return result;
 }
 
-async function saveBasicDetails(userId, { businessType, shopAddress, city, pincode }) {
+async function saveBasicDetails(userId, { businessType, shopAddress }) {
   let connection;
   try {
     connection = await basicDetailsModel.getConnection();
   } catch (error) {
-    logKycFailure("Basic Details database connection", error);
+    logDevelopmentFailure("Basic Details database connection", error);
     throw serviceUnavailable();
   }
 
@@ -490,7 +480,7 @@ async function saveBasicDetails(userId, { businessType, shopAddress, city, pinco
     const userUpdated = await basicDetailsModel.updateUserAddress(
       connection,
       userId,
-      { shopAddress, city, pincode },
+      shopAddress,
     );
     if (!userUpdated) throw new Error("User address could not be updated");
 
@@ -504,8 +494,6 @@ async function saveBasicDetails(userId, { businessType, shopAddress, city, pinco
     return {
       businessType,
       shopAddress,
-      city,
-      pincode,
       kyc: {
         status: kycCase.status,
         steps_completed: stepsCompleted,
@@ -516,7 +504,7 @@ async function saveBasicDetails(userId, { businessType, shopAddress, city, pinco
     await releaseConnection(connection, true);
     connection = null;
     if (error instanceof ApiError) throw error;
-    logKycFailure("Basic Details save", error);
+    logDevelopmentFailure("Basic Details save", error);
     throw serviceUnavailable();
   } finally {
     if (connection) await releaseConnection(connection);

@@ -21,7 +21,9 @@ function createRateLimiter({ incrementCounter = authModel.incrementRateLimitCoun
       const expiresAt = sqlDate(new Date(windowStartMs + windowMs * 2));
       const buckets = [{ kind: "ip", value: req.ip || req.socket?.remoteAddress || "unknown", maximum: policy.ip }];
 
-      if (scope === "resetPassword") {
+      if (scope === "changePassword" && req.user?.id) {
+        buckets.push({ kind: "user", value: req.user.id, maximum: policy.identifier });
+      } else if (scope === "resetPassword") {
         const token = req.body?.token;
         if (typeof token === "string" && /^[A-Za-z0-9_-]{43}$/.test(token)) {
           buckets.push({ kind: "token", value: token, maximum: policy.identifier });

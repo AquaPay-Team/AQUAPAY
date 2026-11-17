@@ -59,12 +59,18 @@ function safeUser(user) {
     name: user.name,
     email: user.email,
     mobile: user.mobile,
+    shopname: user.shopname,
+    address: user.address,
+    state: user.state,
+    city: user.city,
+    pincode: user.pincode,
     role_id: user.role_id,
     company_id: user.company_id,
     parent_id: user.parent_id,
     status: user.status,
     role_name: user.role_name,
     company_name: user.company_name,
+    parent_name: user.parent_name,
     kyc: user.kyc ?? null,
   };
 }
@@ -256,13 +262,52 @@ async function resetPassword({ token, otp, password }) {
   };
 }
 
+async function changePassword(userId, { currentPassword, newPassword }) {
+  if (!userId) {
+    throw new ApiError(401, "Authentication required", "UNAUTHORIZED");
+  }
+  const config = getAuthConfig();
+  if (
+    typeof newPassword !== "string" ||
+    newPassword.length < config.passwordMinLength ||
+    Buffer.byteLength(newPassword, "utf8") > 72
+  ) {
+    throw new ApiError(400, "New password does not meet the password policy", "VALIDATION_ERROR");
+  }
+
+  let connection;
+  try {
+    connection = await authModel.getConnection();
+    await connection.beginTransaction();
+    const account = await authModel.findPasswordHashForUpdate(connection, userId);
+    if (!account) throw new ApiError(401, "Invalid or inactive user", "UNAUTHORIZED");
+    const matches = await bcrypt.compare(currentPassword, account.password_hash);
+    if (!matches) {
+      throw new ApiError(400, "Current password is incorrect", "CURRENT_PASSWORD_INVALID");
+    }
+    const passwordHash = await bcrypt.hash(newPassword, config.bcryptSaltRounds);
+    if (!(await authModel.updatePasswordHash(connection, userId, passwordHash))) {
+      throw new Error("Password update failed");
+    }
+    await connection.commit();
+    return { message: "Password changed successfully" };
+  } catch (error) {
+    if (connection) await connection.rollback().catch(() => {});
+    if (error instanceof ApiError) throw error;
+    throw new ApiError(503, "Authentication is temporarily unavailable", "SERVICE_UNAVAILABLE");
+  } finally {
+    connection?.release();
+  }
+}
+
 const authService = {
   login,
   getCurrentUser,
   forgotPassword,
   resetPassword,
+  changePassword,
 };
 
-export { login, getCurrentUser, forgotPassword, resetPassword };
+export { login, getCurrentUser, forgotPassword, resetPassword, changePassword };
 
 export default authService;

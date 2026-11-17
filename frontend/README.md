@@ -1,16 +1,85 @@
-# React + Vite
+# AquaPay - Frontend Merchant & Partner Portal
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+AquaPay Frontend is a high-performance, responsive React 19 application built with Vite and Tailwind CSS. It powers both the Merchant Counter Terminal (Retailers & Distributors) and the Super Admin Compliance Dashboard.
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 🌟 Features
 
-## React Compiler
+- **Modern Merchant Dashboard:**
+  - Multi-wallet overview (Main Wallet, Settlement Wallet, UPI Wallet)
+  - Core banking services: Payout, Credit Card Bill 2, Rupay UPI Collection, Add Money
+  - Real-time business metrics counter (Today Business, This Month, Last Month, This Year)
+  - Full-featured transaction ledger with date-range filters, live search, export, and pagination
+  - Top navigation with search shortcut (`Ctrl + K`), balance quick-pill, and notification popover
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- **7-Step RBI-Compliant Digital KYC:**
+  - OTP verification (Mobile & Email)
+  - Aadhaar eKYC via DigiLocker with automated popup window communication
+  - PAN verification with legal name matching
+  - Bank account Penny Drop verification
+  - Media asset uploads (Shop photo, live selfie, video consent with WebM/MP4 support)
+  - Legal digital agreement review, checkbox confirmation, and PDF download
+  - Real-time application status tracking
 
-## Expanding the Oxlint configuration
+- **8-Tier Role Hierarchy & Navigation:**
+  - Dynamic navigation adapts based on logged-in user role (Retailer, Distributor, MD, CNF, State Head, NSM, Sub-Admin, Admin)
+  - Built-in child agent onboarding modal for authorized distributor tiers
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+---
+
+## 🛠️ Tech Stack
+
+- **Framework:** [React 19](https://react.dev/)
+- **Bundler:** [Vite](https://vitejs.dev/)
+- **Styling:** [Tailwind CSS v4](https://tailwindcss.com/)
+- **Icons:** [Lucide React](https://lucide.dev/) (Stroke width 2.25 minimalist line icons)
+- **Routing:** [React Router v7](https://reactrouter.com/)
+- **Toasts:** [Sonner](https://sonner.emilkowal.ski/)
+- **PDF Generation:** [jsPDF](https://github.com/parallax/jsPDF) & [html2canvas](https://html2canvas.hertzen.com/)
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+- Node.js >= 20.x
+- npm >= 10.x
+
+### Installation
+```bash
+npm install
+```
+
+### Development Server
+```bash
+npm run dev
+```
+The application will launch at `http://localhost:5173`.
+
+### Production Build
+```bash
+npm run build
+```
+
+---
+
+## 📂 Project Structure
+
+```text
+src/
+├── api/             # Backend API service integrations
+├── assets/          # Static assets & brand media
+├── components/      # Common & layout components (Header, Sidebar)
+├── config/          # Centralized role navigation & configs
+├── constants/       # Role metadata, statuses, and options
+├── features/        # Feature-specific modules (KYC, Admin, Modals)
+├── layouts/         # UserLayout & AdminLayout wrappers
+├── pages/           # Application views (Dashboard, KYC, Auth, Profile)
+└── styles/          # Global styles and Tailwind configuration
+```
+
+---
+
+## 📄 License
+Proprietary & Confidential - AquaPay Platform. All rights reserved.

@@ -24,5 +24,10 @@ const resetPassword = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, message: result.message, data: null });
 });
 
-export { login, getCurrentUser, forgotPassword, resetPassword };
-export default { login, getCurrentUser, forgotPassword, resetPassword };
+const changePassword = asyncHandler(async (req, res) => {
+  const result = await authService.changePassword(req.user?.id, req.validatedBody);
+  res.status(200).json({ success: true, message: result.message, data: null });
+});
+
+export { login, getCurrentUser, forgotPassword, resetPassword, changePassword };
+export default { login, getCurrentUser, forgotPassword, resetPassword, changePassword };

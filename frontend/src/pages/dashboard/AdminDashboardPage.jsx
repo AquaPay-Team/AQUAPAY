@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
+import React, { useEffect, useRef } from 'react';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAdminDashboard } from '../../features/admin/hooks/useAdminDashboard';
 import { AdminSidebar } from '../../features/admin/components/AdminSidebar';
 import { AdminHeader } from '../../features/admin/components/AdminHeader';
@@ -9,6 +9,7 @@ import { AdminUserTable } from '../../features/admin/components/AdminUserTable';
 import { CommandSearchModal } from '../../features/admin/modals/CommandSearchModal';
 import { ActionModal } from '../../features/admin/modals/ActionModal';
 import { AddAgentModal } from '../../features/admin/modals/AddAgentModal';
+import UserProfile from '../user/UserProfile';
 
 export default function AdminDashboardPage() {
   const {
@@ -22,9 +23,11 @@ export default function AdminDashboardPage() {
     openNavCategory,
     toggleCategory,
     getCurrentRoleTitle,
+    permittedRoles,
+    selectedRoleId,
+    setSelectedRoleId,
 
     // Real Data & Stats
-    users,
     filteredMembers,
     isLoadingUsers,
     stats,
@@ -53,28 +56,53 @@ export default function AdminDashboardPage() {
   } = useAdminDashboard();
 
   const location = useLocation();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const requestedRoleId = searchParams.get('roleId') || '';
+  const targetUserMatch = location.pathname.match(/^\/admin\/users\/(\d+)$/);
+  const isProfileRoute = location.pathname === '/admin/profile' || Boolean(targetUserMatch);
+  const isDirectoryRoute = location.pathname === '/admin/users';
+  const selectedRole = permittedRoles.find((role) => String(role.id) === String(selectedRoleId));
+  const directoryRoleId = selectedRole ? String(selectedRole.id) : '';
+  const previousDirectoryRef = useRef({ pathname: location.pathname, roleId: directoryRoleId });
 
-  // Sync route with active dashboard tab & modals
+  // Keep the selected role in the URL so direct links and refreshes retain the directory.
   useEffect(() => {
-    if (location.pathname.includes('/admin/users/create')) {
+    if (location.pathname === '/admin/users/create') {
+      navigate('/admin/users', { replace: true });
+      return;
+    }
+
+    if (location.pathname === '/admin/users') {
       setActiveTab('all-users');
-      setAddAgentModalOpen(true);
-    } else if (location.pathname.includes('/admin/users')) {
-      setActiveTab('all-users');
+      setSelectedRoleId(requestedRoleId);
+      if (requestedRoleId) loadUsers(requestedRoleId);
     } else if (location.pathname.includes('/admin/kyc')) {
       setActiveTab('all-users');
     } else if (location.pathname.includes('/admin/dashboard')) {
       setActiveTab('dashboard');
+      setSelectedRoleId('');
+      loadUsers();
+    } else if (isProfileRoute) {
+      setActiveTab('profile');
     }
-  }, [location.pathname, setActiveTab, setAddAgentModalOpen]);
+  }, [location.pathname, location.search, requestedRoleId, isProfileRoute, navigate, setActiveTab, setSelectedRoleId, loadUsers]);
+
+  useEffect(() => {
+    const selectionChanged = previousDirectoryRef.current.pathname !== location.pathname ||
+      previousDirectoryRef.current.roleId !== directoryRoleId;
+    if (!isDirectoryRoute || !directoryRoleId || selectionChanged) setAddAgentModalOpen(false);
+    previousDirectoryRef.current = { pathname: location.pathname, roleId: directoryRoleId };
+  }, [isDirectoryRoute, location.pathname, directoryRoleId, setAddAgentModalOpen]);
 
   return (
-    <div className="min-h-screen bg-slate-100 flex font-sans text-slate-800 antialiased">
+    <div className="min-h-screen bg-[#f8fafc] flex font-sans text-slate-800 antialiased selection:bg-blue-600 selection:text-white">
       {/* Admin Sidebar Navigation */}
       <AdminSidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         sidebarCollapsed={sidebarCollapsed}
+        setSidebarCollapsed={setSidebarCollapsed}
         mobileSidebarOpen={mobileSidebarOpen}
         setMobileSidebarOpen={setMobileSidebarOpen}
         openNavCategory={openNavCategory}
@@ -84,7 +112,7 @@ export default function AdminDashboardPage() {
       {/* Main Content Area */}
       <div
         className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${
-          sidebarCollapsed ? 'md:ml-20' : 'md:ml-64'
+          sidebarCollapsed ? 'md:ml-20' : 'md:ml-72'
         }`}
       >
         {/* Top Header */}
@@ -93,17 +121,15 @@ export default function AdminDashboardPage() {
           setSidebarCollapsed={setSidebarCollapsed}
           setMobileSidebarOpen={setMobileSidebarOpen}
           setShowCommandModal={setShowCommandModal}
-          loadUsers={loadUsers}
-          isLoadingUsers={isLoadingUsers}
         />
 
         {/* Dynamic Main Workspace Views - Backend-Backed Only */}
         <main className="p-4 md:p-6 lg:p-8 flex-1">
-          {activeTab === 'dashboard' ? (
+          {isProfileRoute ? (
+            <UserProfile targetUserId={targetUserMatch?.[1]} />
+          ) : activeTab === 'dashboard' ? (
             <DashboardOverview
               stats={stats}
-              setActiveTab={setActiveTab}
-              setAddAgentModalOpen={setAddAgentModalOpen}
               loadUsers={loadUsers}
               isLoadingUsers={isLoadingUsers}
             />
@@ -114,11 +140,12 @@ export default function AdminDashboardPage() {
               setMemberSearch={setMemberSearch}
               statusFilter={statusFilter}
               setStatusFilter={setStatusFilter}
-              filteredMembers={filteredMembers}
+              filteredMembers={directoryRoleId ? filteredMembers : []}
               handleExportCSV={handleExportCSV}
               setAddAgentModalOpen={setAddAgentModalOpen}
               setActionModalUser={setActionModalUser}
-              isLoadingUsers={isLoadingUsers}
+              isLoadingUsers={Boolean(directoryRoleId) && isLoadingUsers}
+              selectedRoleId={directoryRoleId}
             />
           )}
         </main>
@@ -145,6 +172,7 @@ export default function AdminDashboardPage() {
         addAgentModalOpen={addAgentModalOpen}
         setAddAgentModalOpen={setAddAgentModalOpen}
         handleOnboardAgent={handleOnboardAgent}
+        selectedRole={selectedRole?.slug || ""}
       />
     </div>
   );

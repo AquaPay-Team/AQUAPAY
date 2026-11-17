@@ -10,16 +10,9 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "react-router-dom";
+import PasswordUpdateForm from "../../features/auth/components/PasswordUpdateForm";
 
 export default function UserSettings() {
-  const currentUser = (() => {
-    try {
-      return JSON.parse(localStorage.getItem("user") || "{}");
-    } catch {
-      return {};
-    }
-  })();
-
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [instantSettlement, setInstantSettlement] = useState(true);
 
@@ -35,6 +28,7 @@ export default function UserSettings() {
       </div>
 
       <div className="space-y-4">
+        <PasswordUpdateForm />
         {/* Security Box */}
         <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-2xs space-y-4">
           <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">

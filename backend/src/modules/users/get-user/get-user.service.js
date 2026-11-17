@@ -2,6 +2,7 @@
 import getUserModel from "./get-user.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import httpStatus from "../../../utils/httpStatus.js";
+import authorizationService from "../../authorization/authorization.service.js";
 
 const VALID_KYC_STATUSES = new Set([
   "pending",
@@ -38,7 +39,7 @@ async function getActor(actorId) {
 }
 
 function isAdmin(actor) {
-  return actor.role_id === 1 || actor.role_slug === "AD";
+  return Number(actor.role_id) === 1 || actor.role_slug === "AD";
 }
 
 async function getUsers(actorId, options = {}) {
@@ -63,20 +64,25 @@ async function getUsers(actorId, options = {}) {
   }
 
   // Search by name, mobile number, or email
-  const search =
-  typeof options.search === "string"
-    ? options.search.trim()
-    : "";
+  const search = typeof options.search === "string" ? options.search.trim() : "";
+  const userOptions = { ...options };
+  if (search) userOptions.search = search;
+  else delete userOptions.search;
 
-const userOptions = {
-  ...options,
-};
+  let selectedRoleId;
+  if (options.roleId !== undefined && options.roleId !== null && options.roleId !== "") {
+    selectedRoleId = Number(options.roleId);
+    if (!Number.isSafeInteger(selectedRoleId) || selectedRoleId <= 0) {
+      throw new ApiError(httpStatus.BAD_REQUEST, "Invalid role ID", [], "VALIDATION_ERROR");
+    }
+    const permitted = await authorizationService.canCreateRole(actor.role_id, selectedRoleId);
+    if (!permitted) {
+      throw new ApiError(httpStatus.FORBIDDEN, "You are not authorized to view users in this role", [], "FORBIDDEN");
+    }
+    userOptions.roleId = selectedRoleId;
+    return getUserModel.findUsersInDescendantScope(actor.id, selectedRoleId, userOptions);
+  }
 
-if (search) {
-  userOptions.search = search;
-} else {
-  delete userOptions.search;
-}
   if (isAdmin(actor)) {
     return getUserModel.findAllUsers(userOptions);
   }
@@ -116,7 +122,7 @@ async function getUserById(actorId, userId) {
     return user;
   }
 
-  const child = await getUserModel.findChildByIdAndParentId(
+  const child = await getUserModel.findDescendantUserById(
     childId,
     actor.id,
   );
@@ -130,14 +136,30 @@ async function getUserById(actorId, userId) {
     );
   }
 
+  const rolePermitted = await authorizationService.canCreateRole(actor.role_id, child.role_id);
+  if (!rolePermitted) {
+    throw new ApiError(
+      httpStatus.NOT_FOUND,
+      "User not found or outside your authorized hierarchy",
+      [],
+      "NOT_FOUND",
+    );
+  }
+
   return child;
+}
+
+async function getDescendantRoles(actorId) {
+  const actor = await getActor(actorId);
+  return getUserModel.findDescendantRoles(actor.id);
 }
 
 const getUserService = {
   getUsers,
   getUserById,
+  getDescendantRoles,
 };
 
-export { getUsers, getUserById };
+export { getUsers, getUserById, getDescendantRoles };
 
 export default getUserService;

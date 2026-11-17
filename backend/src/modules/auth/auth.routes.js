@@ -6,6 +6,7 @@ import {
   validateLogin,
   validateForgotPassword,
   validateResetPassword,
+  validateChangePassword,
 } from "./auth.validator.js";
 
 const router = Router();
@@ -24,6 +25,13 @@ router.post(
   controller.resetPassword
 );
 router.get("/me", requireAuth, controller.getCurrentUser);
+router.post(
+  "/change-password",
+  requireAuth,
+  rateLimit("changePassword"),
+  validateChangePassword,
+  controller.changePassword,
+);
 
 export { router };
 export default router;

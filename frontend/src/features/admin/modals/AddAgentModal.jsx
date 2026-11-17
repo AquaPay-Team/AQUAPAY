@@ -15,8 +15,7 @@ import { toast } from 'sonner';
 
 /**
  * Secure cryptographic password generator using Web Crypto API
- * Generates an unbiased 12-character password meeting all enterprise complexity requirements:
- * - Upper, Lower, Numbers, Special Symbols
+ * Generates a random 12-character temporary password using the available character sets.
  */
 function generateSecurePassword(length = 12) {
   const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
@@ -56,7 +55,8 @@ function generateSecurePassword(length = 12) {
 export function AddAgentModal({
   addAgentModalOpen,
   setAddAgentModalOpen,
-  handleOnboardAgent
+  handleOnboardAgent,
+  selectedRole = "",
 }) {
   // --- ALL HOOKS AT TOP LEVEL (Rules of Hooks) ---
   const [isLoading, setIsLoading] = useState(false);
@@ -109,39 +109,9 @@ export function AddAgentModal({
     setAddAgentModalOpen(false);
   }, [setAddAgentModalOpen]);
 
-  const currentUser = (() => {
-    try {
-      return JSON.parse(localStorage.getItem("user") || "{}");
-    } catch {
-      return {};
-    }
-  })();
+  const selectedRoleSlug = String(selectedRole || "");
 
-  const creatorRoleId = Number(currentUser.role_id) || 1;
-
-  // Permitted child roles according to backend role_hierarchy:
-  // Admin (1) -> Sub Admin (2) -> NSM (3) -> SH (4) -> CNF (5) -> MD (6) -> DT (7) -> RT (8)
-  const allRoles = [
-    { value: 'SA', label: 'Sub Admin (SA)', maxCreatorRole: 1 },
-    { value: 'NSM', label: 'NSM / ZSH', maxCreatorRole: 2 },
-    { value: 'SH', label: 'State Head (SH)', maxCreatorRole: 3 },
-    { value: 'CNF', label: 'CNF / ASM', maxCreatorRole: 4 },
-    { value: 'MD', label: 'Master Distributor (MD)', maxCreatorRole: 5 },
-    { value: 'DT', label: 'Distributor (DT)', maxCreatorRole: 6 },
-    { value: 'RT', label: 'Retailer (RT)', maxCreatorRole: 7 },
-  ];
-
-  const permittedRoles = allRoles.filter((r) => creatorRoleId <= r.maxCreatorRole);
-
-  // Password requirements check
-  const passwordChecks = {
-    length: password.length >= 8 && password.length <= 72,
-    hasUpper: /[A-Z]/.test(password),
-    hasLower: /[a-z]/.test(password),
-    hasNumber: /[0-9]/.test(password),
-    hasSymbol: /[@$!%*?&#^()_+\-=[\]{};':"\\|,.<>/?]/.test(password),
-  };
-  const isPasswordValid = Object.values(passwordChecks).every(Boolean);
+  const isPasswordValid = password.length >= 8;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -165,10 +135,13 @@ export function AddAgentModal({
       errors.email = "Please enter a valid email address";
     }
 
-    if (!password) {
-      errors.password = "Password is required";
-    } else if (!isPasswordValid) {
-      errors.password = "Password does not meet the complexity requirements";
+    if (!selectedRoleSlug) {
+      toast.error("Select a permitted role directory before creating a user");
+      return;
+    }
+
+    if (password.length < 8) {
+      errors.password = "Password must contain at least 8 characters";
     }
 
     const pincodeVal = form.pincode.value.trim();
@@ -189,7 +162,7 @@ export function AddAgentModal({
       name: nameVal,
       mobile: mobileVal,
       email: emailVal,
-      role: form.role.value,
+      role: selectedRoleSlug,
       password: password,
       shopname: form.shopname.value.trim() || null,
       city: form.city.value.trim() || null,
@@ -225,12 +198,12 @@ export function AddAgentModal({
           <div>
             <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
               <UserPlus className="w-5 h-5 text-blue-600" />
-              {createdAgent ? "Agent Account Created" : "Onboard New Agent"}
+              {createdAgent ? "User Account Created" : "Create User"}
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
               {createdAgent
                 ? "Account has been successfully registered in the database"
-                : "Creates a real agent record in MySQL via POST /api/users"}
+                : "Enter the account details for the selected role directory."}
             </p>
           </div>
           <button
@@ -254,10 +227,6 @@ export function AddAgentModal({
                 <div>
                   <span className="text-slate-500 block text-[11px]">Full Name</span>
                   <span className="font-semibold text-slate-900">{createdAgent.name}</span>
-                </div>
-                <div>
-                  <span className="text-slate-500 block text-[11px]">Role Tier</span>
-                  <span className="font-semibold text-slate-900">{createdAgent.role}</span>
                 </div>
                 <div>
                   <span className="text-slate-500 block text-[11px]">Email</span>
@@ -337,38 +306,22 @@ export function AddAgentModal({
               )}
             </div>
 
-            {/* Mobile & Role Tier */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Mobile Number *</label>
-                <input
-                  type="tel"
-                  name="mobile"
-                  maxLength={10}
-                  required
-                  placeholder="10-digit mobile"
-                  className={`w-full bg-slate-50 border rounded-lg p-2 text-xs focus:outline-none focus:border-blue-500 ${
-                    fieldErrors.mobile ? "border-rose-400 bg-rose-50/20" : "border-slate-200"
-                  }`}
-                />
-                {fieldErrors.mobile && (
-                  <p className="text-[11px] text-rose-500 mt-1 font-medium">{fieldErrors.mobile}</p>
-                )}
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Role Tier *</label>
-                <select
-                  name="role"
-                  defaultValue={permittedRoles[permittedRoles.length - 1]?.value || "RT"}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:border-blue-500 font-medium"
-                >
-                  {permittedRoles.map((r) => (
-                    <option key={r.value} value={r.value}>
-                      {r.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            {/* Mobile Number */}
+            <div>
+              <label className="block font-semibold text-slate-700 mb-1">Mobile Number *</label>
+              <input
+                type="tel"
+                name="mobile"
+                maxLength={10}
+                required
+                placeholder="10-digit mobile"
+                className={`w-full bg-slate-50 border rounded-lg p-2 text-xs focus:outline-none focus:border-blue-500 ${
+                  fieldErrors.mobile ? "border-rose-400 bg-rose-50/20" : "border-slate-200"
+                }`}
+              />
+              {fieldErrors.mobile && (
+                <p className="text-[11px] text-rose-500 mt-1 font-medium">{fieldErrors.mobile}</p>
+              )}
             </div>
 
             {/* Email Address */}
@@ -391,10 +344,10 @@ export function AddAgentModal({
               )}
             </div>
 
-            {/* Password Field with Show/Hide, Regenerate, Copy, and Strength */}
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
+            {/* Password field uses the same input treatment as the other fields. */}
+            <div>
               <div className="flex items-center justify-between">
-                <label className="block font-semibold text-slate-700">
+                <label htmlFor="create-user-password" className="block font-semibold text-slate-700 mb-1">
                   Default Temporary Password *
                 </label>
                 <button
@@ -407,24 +360,27 @@ export function AddAgentModal({
                 </button>
               </div>
 
-              <div className="relative flex items-center">
+              <div className="relative">
                 <input
+                  id="create-user-password"
                   type={showPassword ? "text" : "password"}
                   name="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
+                  minLength={8}
                   placeholder="Enter or generate password"
-                  className={`w-full bg-white border rounded-lg pl-3 pr-20 py-2 text-xs font-mono focus:outline-none focus:border-blue-500 ${
-                    fieldErrors.password ? "border-rose-400" : "border-slate-300"
+                  className={`w-full bg-slate-50 border rounded-lg p-2 pr-16 text-xs focus:outline-none focus:border-blue-500 ${
+                    fieldErrors.password ? "border-rose-400 bg-rose-50/20" : "border-slate-200"
                   }`}
                 />
-                <div className="absolute right-1 flex items-center gap-1">
+                <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1">
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     className="p-1.5 text-slate-400 hover:text-slate-600 transition-colors"
                     title={showPassword ? "Hide password" : "Show password"}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
                   >
                     {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                   </button>
@@ -433,27 +389,15 @@ export function AddAgentModal({
                     onClick={handleCopyPassword}
                     className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors"
                     title="Copy password"
+                    aria-label="Copy password"
                   >
                     {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
                   </button>
                 </div>
               </div>
-
-              {/* Password Requirements Checklist */}
-              <div className="grid grid-cols-2 gap-1 pt-1 text-[10px] text-slate-500">
-                <span className={passwordChecks.length ? "text-emerald-600 font-medium" : ""}>
-                  {passwordChecks.length ? "✓" : "•"} 8-72 characters
-                </span>
-                <span className={passwordChecks.hasUpper ? "text-emerald-600 font-medium" : ""}>
-                  {passwordChecks.hasUpper ? "✓" : "•"} 1 Uppercase letter
-                </span>
-                <span className={passwordChecks.hasLower ? "text-emerald-600 font-medium" : ""}>
-                  {passwordChecks.hasLower ? "✓" : "•"} 1 Lowercase letter
-                </span>
-                <span className={passwordChecks.hasNumber && passwordChecks.hasSymbol ? "text-emerald-600 font-medium" : ""}>
-                  {passwordChecks.hasNumber && passwordChecks.hasSymbol ? "✓" : "•"} Number & Symbol
-                </span>
-              </div>
+              {fieldErrors.password && (
+                <p className="text-[11px] text-rose-500 mt-1 font-medium">{fieldErrors.password}</p>
+              )}
             </div>
 
             {/* Shop Name & City */}

@@ -236,12 +236,15 @@ test("user.validator: validates password bounds including multibyte characters",
 test("get-user service: admin gets all users, non-admin gets only created users", async () => {
   const getUserModel = (await import("./get-user/get-user.model.js")).default;
   const getUserService = (await import("./get-user/get-user.service.js")).default;
+  const authorizationService = (await import("../authorization/authorization.service.js")).default;
 
   const originalFindActorRole = getUserModel.findActorRole;
   const originalFindAllUsers = getUserModel.findAllUsers;
   const originalFindChildrenByParentId = getUserModel.findChildrenByParentId;
   const originalFindUserById = getUserModel.findUserById;
   const originalFindChildByIdAndParentId = getUserModel.findChildByIdAndParentId;
+  const originalFindDescendantUserById = getUserModel.findDescendantUserById;
+  const originalCanCreateRole = authorizationService.canCreateRole;
 
   try {
     let called = "";
@@ -266,10 +269,11 @@ test("get-user service: admin gets all users, non-admin gets only created users"
       return { id, name: `User ${id}` };
     };
 
-    getUserModel.findChildByIdAndParentId = async (childId, parentId) => {
-      called = `findChild_${childId}_parent_${parentId}`;
+    getUserModel.findDescendantUserById = async (childId, parentId) => {
+      called = `findDescendant_${childId}_under_${parentId}`;
       return { id: childId, parent_id: parentId };
     };
+    authorizationService.canCreateRole = async () => true;
 
     // 1. Admin gets all users
     const adminUsers = await getUserService.getUsers(1);
@@ -288,7 +292,7 @@ test("get-user service: admin gets all users, non-admin gets only created users"
 
     // 4. Non-admin gets child user by ID
     const userForNonAdmin = await getUserService.getUserById(5, 20);
-    assert.equal(called, "findChild_20_parent_5");
+    assert.equal(called, "findDescendant_20_under_5");
     assert.equal(userForNonAdmin.id, 20);
   } finally {
     getUserModel.findActorRole = originalFindActorRole;
@@ -296,6 +300,93 @@ test("get-user service: admin gets all users, non-admin gets only created users"
     getUserModel.findChildrenByParentId = originalFindChildrenByParentId;
     getUserModel.findUserById = originalFindUserById;
     getUserModel.findChildByIdAndParentId = originalFindChildByIdAndParentId;
+    getUserModel.findDescendantUserById = originalFindDescendantUserById;
+    authorizationService.canCreateRole = originalCanCreateRole;
+  }
+});
+
+test("get-user service authorizes selected roles server-side and scopes records to descendant users", async () => {
+  const getUserModel = (await import("./get-user/get-user.model.js")).default;
+  const getUserService = (await import("./get-user/get-user.service.js")).default;
+  const authorizationService = (await import("../authorization/authorization.service.js")).default;
+  const originals = {
+    findActorRole: getUserModel.findActorRole,
+    findUsersInDescendantScope: getUserModel.findUsersInDescendantScope,
+    canCreateRole: authorizationService.canCreateRole,
+  };
+  try {
+    getUserModel.findActorRole = async () => ({ id: 10, role_id: 3, role_slug: "NSM" });
+    authorizationService.canCreateRole = async (actorRoleId, roleId) => actorRoleId === 3 && roleId === 8;
+    getUserModel.findUsersInDescendantScope = async (actorId, roleId, options) => {
+      assert.equal(actorId, 10);
+      assert.equal(roleId, 8);
+      assert.equal(options.roleId, 8);
+      return [{ id: 99, role_id: 8 }];
+    };
+    assert.deepEqual(await getUserService.getUsers(10, { roleId: "8" }), [{ id: 99, role_id: 8 }]);
+    await assert.rejects(getUserService.getUsers(10, { roleId: "2" }), (error) => error.statusCode === 403);
+  } finally {
+    getUserModel.findActorRole = originals.findActorRole;
+    getUserModel.findUsersInDescendantScope = originals.findUsersInDescendantScope;
+    authorizationService.canCreateRole = originals.canCreateRole;
+  }
+});
+
+test("admin password reset is restricted to Admin and returns no password material", async () => {
+  const model = (await import("./reset-password/reset-password.model.js")).default;
+  const service = (await import("./reset-password/reset-password.service.js")).default;
+  const bcrypt = (await import("bcryptjs")).default;
+  const originals = {
+    getConnection: model.getConnection,
+    findActiveUserForUpdate: model.findActiveUserForUpdate,
+    findTargetForUpdate: model.findTargetForUpdate,
+    isDescendant: model.isDescendant,
+    updatePasswordHash: model.updatePasswordHash,
+    hash: bcrypt.hash,
+  };
+  let actorRoleId = 2;
+  let writtenHash;
+  const calls = [];
+  try {
+    model.getConnection = async () => ({
+      beginTransaction: async () => calls.push("begin"),
+      commit: async () => calls.push("commit"),
+      rollback: async () => calls.push("rollback"),
+      release: () => calls.push("release"),
+    });
+    model.findActiveUserForUpdate = async (_connection, actorId) => ({ id: actorId, role_id: actorRoleId, status: "active" });
+    model.findTargetForUpdate = async (_connection, targetId) => ({ id: targetId, role_id: 8, parent_id: 20, status: "active" });
+    model.isDescendant = async () => true;
+    bcrypt.hash = async (password) => {
+      assert.equal(password, "NewSecurePassword123");
+      return "bcrypt-hash-only";
+    };
+    model.updatePasswordHash = async (_connection, targetId, hash) => {
+      writtenHash = hash;
+      assert.equal(targetId, 52);
+      return true;
+    };
+
+    await assert.rejects(
+      service.resetSubordinatePassword({ actorId: 20, targetUserId: 52, newPassword: "NewSecurePassword123" }),
+      (error) => error.statusCode === 403 && error.code === "FORBIDDEN",
+    );
+    assert.equal(calls.includes("commit"), false);
+
+    actorRoleId = 1;
+    const result = await service.resetSubordinatePassword({ actorId: 1, targetUserId: 52, newPassword: "NewSecurePassword123" });
+    assert.deepEqual(result, { message: "User password reset successfully" });
+    assert.equal(writtenHash, "bcrypt-hash-only");
+    assert.equal(JSON.stringify(result).includes("NewSecurePassword123"), false);
+    assert.equal(JSON.stringify(result).includes("bcrypt-hash-only"), false);
+    assert.equal(calls.at(-1), "release");
+  } finally {
+    model.getConnection = originals.getConnection;
+    model.findActiveUserForUpdate = originals.findActiveUserForUpdate;
+    model.findTargetForUpdate = originals.findTargetForUpdate;
+    model.isDescendant = originals.isDescendant;
+    model.updatePasswordHash = originals.updatePasswordHash;
+    bcrypt.hash = originals.hash;
   }
 });
 

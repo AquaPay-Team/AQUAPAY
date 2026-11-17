@@ -23,11 +23,12 @@ function getActorId(req) {
 
 const getUsers = asyncHandler(async (req, res) => {
   const actorId = getActorId(req);
-  const { kyc_status, kycStatus, search } = req.query || {};
+  const { kyc_status, kycStatus, search, roleId } = req.query || {};
 
   const result = await service.getUsers(actorId, {
     kycStatus: kyc_status || kycStatus,
     search,
+    roleId,
   });
 
   let message = "Users fetched successfully";
@@ -56,5 +57,12 @@ const getUserById = asyncHandler(async (req, res) => {
   );
 });
 
-export { getUsers, getUserById };
-export default { getUsers, getUserById };
+const getDescendantRoles = asyncHandler(async (req, res) => {
+  const roles = await service.getDescendantRoles(getActorId(req));
+  return res.status(httpStatus.OK).json(
+    new ApiResponse(httpStatus.OK, roles, "Permitted roles fetched successfully"),
+  );
+});
+
+export { getUsers, getUserById, getDescendantRoles };
+export default { getUsers, getUserById, getDescendantRoles };

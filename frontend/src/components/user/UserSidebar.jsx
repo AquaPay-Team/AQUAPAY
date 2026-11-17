@@ -24,12 +24,13 @@ import { useNavigate, useLocation, Link } from "react-router-dom";
 import { toast } from "sonner";
 import { getRoleNavigation } from "../../config/roleNavigation";
 import { getRoleMeta } from "../../constants/roles";
+import { RoleNavigationSection } from "../common/RoleNavigationSection";
 
 export function UserSidebar({
   collapsed = false,
+  setCollapsed = () => {},
   mobileOpen = false,
   setMobileOpen = () => {},
-  onOpenCreateAgentModal,
 }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -68,7 +69,7 @@ export function UserSidebar({
     localStorage.removeItem("user");
     localStorage.removeItem("adminUser");
     toast.info("Signed out successfully");
-    navigate("/login/user", { replace: true });
+    navigate("/login", { replace: true });
   };
 
   const isCurrentActive = (item) => {
@@ -82,11 +83,6 @@ export function UserSidebar({
 
   const handleNavClick = (item) => {
     if (setMobileOpen) setMobileOpen(false);
-
-    if (item.path === "/user/team/create" && onOpenCreateAgentModal) {
-      onOpenCreateAgentModal();
-      return;
-    }
 
     if (item.path) {
       navigate(item.path);
@@ -170,6 +166,18 @@ export function UserSidebar({
       {/* Dynamic Role-Based Navigation Items */}
       <div className="flex-1 overflow-y-auto px-3.5 py-4 space-y-1 text-[13px] custom-scrollbar">
         {navItems.map((item) => {
+          if (item.isDynamicRoles) {
+            return (
+              <RoleNavigationSection
+                key={item.id}
+                scope="user"
+                collapsed={collapsed}
+                onNavigate={() => setMobileOpen(false)}
+                onExpandSidebar={() => setCollapsed(false)}
+              />
+            );
+          }
+
           const IconComp = getIcon(item.icon);
 
           if (item.children && item.children.length > 0) {

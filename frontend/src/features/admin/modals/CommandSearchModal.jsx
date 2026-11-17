@@ -1,5 +1,6 @@
 import React from "react";
-import { Search, X, ChevronRight, User, Users, ShieldCheck, FileText, LayoutDashboard } from "lucide-react";
+import { Search, X, ChevronRight, Users, ShieldCheck, FileText, LayoutDashboard } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 export function CommandSearchModal({
   showCommandModal,
@@ -8,14 +9,12 @@ export function CommandSearchModal({
   setCmdSearchQuery,
   setActiveTab,
 }) {
+  const navigate = useNavigate();
   if (!showCommandModal) return null;
 
   const quickNav = [
     { label: "Dashboard Overview", tab: "dashboard", icon: LayoutDashboard, desc: "Network metrics & operational stats" },
-    { label: "All Users Directory", tab: "all-users", icon: Users, desc: "Manage all onboarded accounts & agents" },
-    { label: "Retailer Management", tab: "retailer", icon: User, desc: "View all retail counter outlets" },
-    { label: "Distributor Network", tab: "distributor", icon: Users, desc: "Manage tier-6 distributors" },
-    { label: "Sub Admin Directory", tab: "sub-admin", icon: Users, desc: "Executive sub-admins" },
+    { label: "Role Directory", path: "/admin/users", icon: Users, desc: "Choose a permitted role from the sidebar" },
     { label: "KYC Compliance Queue", tab: "kyc", icon: ShieldCheck, desc: "UIDAI Aadhaar & PAN verification audit" },
     { label: "Audit & Ledger Reports", tab: "reports", icon: FileText, desc: "System transaction logs & exports" },
   ];
@@ -34,7 +33,7 @@ export function CommandSearchModal({
           <input
             type="text"
             autoFocus
-            placeholder="Search menus, users by ID or mobile, or reports..."
+          placeholder="Search menus and reports..."
             value={cmdSearchQuery}
             onChange={(e) => setCmdSearchQuery(e.target.value)}
             className="w-full text-sm outline-none text-slate-800 placeholder-slate-400"
@@ -62,7 +61,8 @@ export function CommandSearchModal({
                   <button
                     key={item.tab}
                     onClick={() => {
-                      setActiveTab(item.tab);
+                      if (item.path) navigate(item.path);
+                      else if (item.tab) setActiveTab(item.tab);
                       setShowCommandModal(false);
                     }}
                     className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-slate-50 text-slate-700 font-medium flex items-center justify-between transition-colors cursor-pointer group"

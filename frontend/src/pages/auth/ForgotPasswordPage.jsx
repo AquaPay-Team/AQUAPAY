@@ -93,7 +93,6 @@ export const ForgotPasswordPage = () => {
       setResendCooldown(45);
       setStep(2);
     } catch (err) {
-      console.error("Forgot password error:", err);
       const parsed = parseApiError(err);
       setApiError(parsed);
       toast.error(parsed.message);
@@ -118,7 +117,6 @@ export const ForgotPasswordPage = () => {
       toast.success("A fresh verification OTP has been sent.");
       setResendCooldown(45);
     } catch (err) {
-      console.error("Resend OTP error:", err);
       const parsed = parseApiError(err);
       setApiError(parsed);
       toast.error(parsed.message);
@@ -192,7 +190,6 @@ export const ForgotPasswordPage = () => {
       toast.success(res?.message || "Password updated successfully!");
       setStep(3);
     } catch (err) {
-      console.error("Reset password error:", err);
       const parsed = parseApiError(err);
       setApiError(parsed);
       toast.error(parsed.message);
@@ -218,11 +215,11 @@ export const ForgotPasswordPage = () => {
                 src="/aquapay-logo.jpeg"
                 alt="AquaPay"
                 className="h-14 sm:h-16 w-auto object-contain select-none cursor-pointer"
-                onClick={() => navigate("/login/user")}
+                onClick={() => navigate("/login")}
               />
               <button
                 type="button"
-                onClick={() => navigate("/login/user")}
+                onClick={() => navigate("/login")}
                 className="inline-flex items-center gap-1.5 text-[13px] font-medium text-slate-500 hover:text-slate-900 transition-colors cursor-pointer"
               >
                 <ArrowLeft size={16} />
@@ -294,7 +291,7 @@ export const ForgotPasswordPage = () => {
                     <p className="text-xs text-slate-500">
                       Remember your password?{" "}
                       <Link
-                        to="/login/user"
+                        to="/login"
                         className="text-blue-600 hover:text-blue-700 font-semibold hover:underline"
                       >
                         Sign in
@@ -493,7 +490,7 @@ export const ForgotPasswordPage = () => {
 
                 <button
                   type="button"
-                  onClick={() => navigate("/login/user")}
+                  onClick={() => navigate("/login")}
                   className="w-full bg-black hover:bg-neutral-800 active:scale-[0.99] text-white font-semibold text-[14px] rounded-xl py-3.5 transition-all duration-150 shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <Lock size={16} />

@@ -4,15 +4,10 @@ import {
   Download,
   Plus,
   Settings,
-  ShieldCheck,
-  Building,
-  User,
-  Phone,
-  Mail,
-  MapPin,
-  RefreshCw,
   Filter,
+  Eye,
 } from "lucide-react";
+import { Link } from "react-router-dom";
 
 export function AdminUserTable({
   getCurrentRoleTitle = () => "All Users",
@@ -25,6 +20,7 @@ export function AdminUserTable({
   setAddAgentModalOpen = () => {},
   setActionModalUser = () => {},
   isLoadingUsers = false,
+  selectedRoleId = "",
 }) {
   return (
     <div className="space-y-5 max-w-7xl mx-auto pb-10">
@@ -41,7 +37,7 @@ export function AdminUserTable({
             </span>
           </div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight">
-            User & Agent Directory
+            {getCurrentRoleTitle()} Directory
           </h1>
           <p className="text-xs text-slate-400 mt-0.5">
             Manage agent profiles, verify compliance status, and inspect downline hierarchy.
@@ -50,10 +46,11 @@ export function AdminUserTable({
 
         <button
           onClick={() => setAddAgentModalOpen(true)}
-          className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs px-4 py-2 rounded-xl transition shadow-2xs flex items-center gap-2 cursor-pointer self-start sm:self-auto"
+          disabled={!selectedRoleId}
+          className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs px-4 py-2 rounded-xl transition shadow-2xs flex items-center gap-2 cursor-pointer self-start sm:self-auto disabled:opacity-50"
         >
           <Plus className="w-4 h-4 text-white" strokeWidth={2.25} />
-          <span>Onboard New Agent</span>
+          <span>Create User</span>
         </button>
       </div>
 
@@ -65,9 +62,7 @@ export function AdminUserTable({
             <h3 className="text-base font-bold text-slate-900">
               {getCurrentRoleTitle()} Records
             </h3>
-            <p className="text-xs text-slate-400 mt-1">
-              {filteredMembers.length} active agent accounts in database
-            </p>
+            <p className="text-xs text-slate-400 mt-1">{filteredMembers.length} accounts in this directory</p>
           </div>
 
           <div className="flex items-center gap-2.5 flex-wrap">
@@ -150,10 +145,10 @@ export function AdminUserTable({
                   <td colSpan="6" className="text-center py-12 text-slate-400">
                     <div className="max-w-sm mx-auto space-y-1.5">
                       <p className="font-semibold text-slate-700 text-sm">
-                        No {getCurrentRoleTitle()} agents found
+                        {selectedRoleId ? `No ${getCurrentRoleTitle()} users found` : "Choose a role directory"}
                       </p>
                       <p className="text-xs text-slate-400">
-                        Try adjusting your search criteria or click "Onboard New Agent" to register an agent.
+                        {selectedRoleId ? "Try adjusting your search criteria." : "Select a permitted role from the Roles section in the sidebar."}
                       </p>
                     </div>
                   </td>
@@ -257,13 +252,18 @@ export function AdminUserTable({
 
                       {/* Action Button */}
                       <td className="py-4 px-5 text-center align-middle">
-                        <button
-                          onClick={() => setActionModalUser(m)}
-                          className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition border border-slate-200 inline-flex items-center justify-center cursor-pointer shadow-2xs hover:shadow-xs"
-                          title="Edit Agent Details"
-                        >
-                          <Settings className="w-4 h-4 text-black" />
-                        </button>
+                        <div className="inline-flex items-center gap-1">
+                          <Link to={`/admin/users/${m.id}?roleId=${encodeURIComponent(selectedRoleId)}`} className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition border border-slate-200 inline-flex items-center justify-center" title="View user profile">
+                            <Eye className="w-4 h-4 text-black" />
+                          </Link>
+                          <button
+                            onClick={() => setActionModalUser(m)}
+                            className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition border border-slate-200 inline-flex items-center justify-center cursor-pointer shadow-2xs hover:shadow-xs"
+                            title="Edit Agent Details"
+                          >
+                            <Settings className="w-4 h-4 text-black" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

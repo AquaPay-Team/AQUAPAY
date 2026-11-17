@@ -27,6 +27,8 @@ export function Step7ReviewSubmit({ formData, onEditStep, onSubmitKyc, isSubmitt
     ? `••••••${cleanPan.slice(-4)}`
     : formData.panMasked || "—";
 
+  const operatingAddress = formData.shopAddress || formData.address || "—";
+
   // Mask sensitive Bank Account
   const cleanAcc = String(formData.accountNumber || "").replace(/\D/g, "");
   const maskedAcc = cleanAcc.length >= 4
@@ -61,10 +63,9 @@ export function Step7ReviewSubmit({ formData, onEditStep, onSubmitKyc, isSubmitt
           <div className="text-xs space-y-1.5 text-slate-700">
             <p><span className="text-slate-500">Legal Name:</span> <strong className="text-slate-900">{formData.fullName}</strong></p>
             <p><span className="text-slate-500">Business Type:</span> {formData.businessType || "Retail Merchant"}</p>
-            <p><span className="text-slate-500">Date of Birth:</span> {formData.dob || "—"}</p>
             <p><span className="text-slate-500">Mobile Number:</span> +91 {formData.phone}</p>
             <p><span className="text-slate-500">Email Address:</span> {formData.email}</p>
-            <p><span className="text-slate-500">Operating Address:</span> {formData.shopAddress || formData.address}, {formData.city} - {formData.pincode} ({formData.state})</p>
+            <p><span className="text-slate-500">Operating Address:</span> {operatingAddress}</p>
           </div>
         </div>
 
@@ -112,7 +113,6 @@ export function Step7ReviewSubmit({ formData, onEditStep, onSubmitKyc, isSubmitt
             <p><span className="text-slate-500">Bank Name:</span> <strong className="text-slate-900">{formData.bankName || "—"}</strong></p>
             <p><span className="text-slate-500">Account Number:</span> <span className="font-mono">{maskedAcc}</span></p>
             <p><span className="text-slate-500">IFSC Code:</span> <span className="font-mono">{formData.ifscCode || "—"}</span></p>
-            <p><span className="text-slate-500">Account Type:</span> {formData.accountType} Account</p>
           </div>
         </div>
 

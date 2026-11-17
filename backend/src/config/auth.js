@@ -54,6 +54,11 @@ function getAuthConfig() {
         windowSeconds: positiveInteger("AUTH_RECOVERY_WINDOW_SECONDS", 3600, 60, 86400),
         ip: positiveInteger("AUTH_RECOVERY_IP_LIMIT", 30, 1),
         identifier: positiveInteger("AUTH_RESET_TOKEN_LIMIT", 10, 1)
+      },
+      changePassword: {
+        windowSeconds: 900,
+        ip: 60,
+        identifier: 10
       }
     }
   };

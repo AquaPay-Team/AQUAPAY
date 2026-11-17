@@ -124,10 +124,6 @@ async function verifyBankAccountWithIdto(bankDetails) {
         typeof result?.error_code === "string"
           ? result.error_code
           : undefined,
-      providerMessage:
-        typeof result?.message === "string"
-          ? result.message.slice(0, 200)
-          : undefined,
     });
 
     throw serviceUnavailable();
@@ -141,10 +137,7 @@ async function verifyBankAccountWithIdto(bankDetails) {
     throw serviceUnavailable();
   }
 
-  console.log("[IDTO bank verification successful]", {
-  providerReference: result.tranx_id,
-  accountHolderName: result.data.account_holder_name,
-});
+  console.info("[AquaPay KYC] Bank verification completed");
 
 return {
   accountHolderName: result.data.account_holder_name,
@@ -165,10 +158,6 @@ function serviceUnavailable() {
 function logKycFailure(operation, error) {
   const details = {
     errorName: error?.name || "UnknownError",
-    errorMessage:
-      typeof error?.message === "string"
-        ? error.message.slice(0, 300)
-        : undefined,
   };
 
   if (typeof error?.code === "string" && /^[A-Z0-9_]+$/.test(error.code)) {
@@ -177,10 +166,6 @@ function logKycFailure(operation, error) {
 
   if (Number.isInteger(error?.errno)) {
     details.errno = error.errno;
-  }
-
-  if (typeof error?.sqlMessage === "string") {
-    details.sqlMessage = error.sqlMessage.slice(0, 300);
   }
 
   console.error(`[AquaPay KYC] ${operation} failed`, details);

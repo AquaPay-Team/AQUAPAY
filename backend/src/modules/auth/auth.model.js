@@ -7,6 +7,28 @@ const SAFE_USER_FIELDS = `u.id, u.name AS name, u.email, u.mobile,
 const RESET_OTP_ATTEMPT_WINDOW_START = "2000-01-01 00:00:00";
 const RESET_OTP_MAX_ATTEMPTS = 5;
 
+async function getConnection() {
+  return pool.getConnection();
+}
+
+async function findPasswordHashForUpdate(connection, userId) {
+  const [rows] = await connection.execute(
+    `SELECT id, password_hash FROM users
+      WHERE id = ? AND status = 'active'
+      LIMIT 1 FOR UPDATE`,
+    [userId],
+  );
+  return rows[0] || null;
+}
+
+async function updatePasswordHash(connection, userId, passwordHash) {
+  const [result] = await connection.execute(
+    "UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+    [passwordHash, userId],
+  );
+  return Number(result.affectedRows) === 1;
+}
+
 async function findUserByIdentifier(identifier, type) {
   const column = type === "email" ? "email" : "mobile";
 
@@ -55,6 +77,8 @@ async function findActiveUserById(userId) {
   const [rows] = await pool.execute(
     `SELECT
        ${SAFE_USER_FIELDS},
+       u.shopname, u.address, u.state, u.city, u.pincode,
+       p.name AS parent_name,
        u.created_at,
        k.id AS kyc_case_id,
        k.status AS kyc_status,
@@ -73,6 +97,7 @@ async function findActiveUserById(userId) {
      FROM users u
      JOIN roles r ON r.id = u.role_id
      LEFT JOIN companies c ON c.id = u.company_id
+     LEFT JOIN users p ON p.id = u.parent_id
      LEFT JOIN kyc_cases k ON k.user_id = u.id
      WHERE u.id = ? AND u.status = 'active'
      LIMIT 1`,
@@ -405,6 +430,9 @@ async function invalidatePasswordReset(tokenHash) {
 }
 
 const authModel = {
+  getConnection,
+  findPasswordHashForUpdate,
+  updatePasswordHash,
   findUserByIdentifier,
   findActiveUserById,
   isUserActive,
@@ -416,6 +444,9 @@ const authModel = {
 };
 
 export {
+  getConnection,
+  findPasswordHashForUpdate,
+  updatePasswordHash,
   findUserByIdentifier,
   findActiveUserById,
   isUserActive,

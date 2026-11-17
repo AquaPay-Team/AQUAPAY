@@ -1,7 +1,8 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import {
   fetchBackendUsers,
+  fetchBackendDescendantRoles,
   createBackendUser,
   updateBackendUser,
   adminLogout
@@ -23,6 +24,9 @@ export function useAdminDashboard() {
   // Real Database Users State
   const [users, setUsers] = useState([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(true);
+  const [permittedRoles, setPermittedRoles] = useState([]);
+  const [selectedRoleId, setSelectedRoleId] = useState("");
+  const userLoadRequestRef = useRef(0);
 
   // Search & Filter State
   const [memberSearch, setMemberSearch] = useState('');
@@ -35,27 +39,60 @@ export function useAdminDashboard() {
   const [addAgentModalOpen, setAddAgentModalOpen] = useState(false);
 
   // Fetch real users from backend API
-  const loadUsers = useCallback(async () => {
+  const loadUsers = useCallback(async (roleId) => {
+    const requestId = ++userLoadRequestRef.current;
     try {
       setIsLoadingUsers(true);
-      const res = await fetchBackendUsers();
+      const res = await fetchBackendUsers(roleId ? { roleId } : {});
+      if (requestId !== userLoadRequestRef.current) return;
       if (res && res.data) {
         setUsers(Array.isArray(res.data) ? res.data : []);
+      } else {
+        setUsers([]);
       }
     } catch (err) {
-      console.error('Failed to load users from backend:', err);
-      toast.error('Unable to fetch users from backend database');
+      if (requestId !== userLoadRequestRef.current) return;
+      setUsers([]);
+      const message = err?.response?.data?.message || "Unable to load users. Please try again.";
+      toast.error(message);
+      if (import.meta.env.DEV) {
+        console.warn("Admin user directory request failed", {
+          method: "GET",
+          endpoint: "/api/users",
+          status: err?.response?.status,
+          code: err?.response?.data?.code,
+        });
+      }
     } finally {
-      setIsLoadingUsers(false);
+      if (requestId === userLoadRequestRef.current) setIsLoadingUsers(false);
     }
   }, []);
 
   useEffect(() => {
-    loadUsers();
-  }, [loadUsers]);
+    let mounted = true;
+    fetchBackendDescendantRoles().then((response) => {
+      const roles = Array.isArray(response?.data) ? response.data : [];
+      if (!mounted) return;
+      setPermittedRoles(roles);
+    }).catch(() => {
+      if (mounted) {
+        toast.error("Unable to load permitted role directories");
+        if (import.meta.env.DEV) {
+          console.warn("Permitted role directory request failed", {
+            method: "GET",
+            endpoint: "/api/users/roles/descendants",
+          });
+        }
+      }
+    });
+    return () => { mounted = false; };
+  }, []);
 
   // Current active view heading helper
   const getCurrentRoleTitle = useCallback(() => {
+    if (activeTab === 'all-users' && selectedRoleId) {
+      return permittedRoles.find((role) => String(role.id) === String(selectedRoleId))?.name || 'User';
+    }
     switch (activeTab) {
       case 'all-users':
         return 'All Users';
@@ -80,7 +117,7 @@ export function useAdminDashboard() {
       default:
         return 'Member';
     }
-  }, [activeTab]);
+  }, [activeTab, selectedRoleId, permittedRoles]);
 
   // Filtered members list based on real backend data
   const filteredMembers = useMemo(() => {
@@ -148,11 +185,10 @@ export function useAdminDashboard() {
         const res = await createBackendUser(payload);
         if (res && res.data) {
           setUsers((prev) => [res.data, ...prev]);
-          toast.success(`Agent ${res.data.name} onboarded successfully in database!`);
+          toast.success("User created successfully.");
           return res.data;
         }
       } catch (err) {
-        console.error('Failed to create agent:', err);
         const errMsg =
           err.response?.data?.message || err.message || 'Failed to onboard agent';
         toast.error(errMsg);
@@ -170,11 +206,10 @@ export function useAdminDashboard() {
           setUsers((prev) =>
             prev.map((u) => (u.id === userId ? { ...u, ...res.data } : u))
           );
-          toast.success(`Agent #${userId} profile updated in database!`);
+          toast.success("User profile updated successfully.");
           setActionModalUser(null);
         }
       } catch (err) {
-        console.error('Failed to update agent:', err);
         const errMsg =
           err.response?.data?.message || err.message || 'Failed to update agent details';
         toast.error(errMsg);
@@ -250,6 +285,9 @@ export function useAdminDashboard() {
     // Navigation
     activeTab,
     setActiveTab,
+    permittedRoles,
+    selectedRoleId,
+    setSelectedRoleId,
     sidebarCollapsed,
     setSidebarCollapsed,
     mobileSidebarOpen,

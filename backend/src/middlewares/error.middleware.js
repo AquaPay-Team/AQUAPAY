@@ -36,11 +36,22 @@ function errorHandler(err, req, res, next) {
           : "Internal server error";
 
   if (!isClientError) {
-    console.error("[AquaPay Error]", {
+    const logEntry = {
       method: req.method,
-      path: req.originalUrl,
+      path: `${req.baseUrl || ""}${req.route?.path || req.path}`,
       statusCode,
-    });
+    };
+
+    if (process.env.NODE_ENV === "development") {
+      if (typeof err.name === "string" && /^[A-Za-z][A-Za-z0-9_]{0,39}$/.test(err.name)) {
+        logEntry.errorName = err.name;
+      }
+      if (typeof err.code === "string" && /^[A-Za-z0-9_]{1,48}$/.test(err.code)) {
+        logEntry.errorCode = err.code;
+      }
+    }
+
+    console.error("[AquaPay Error]", logEntry);
   }
 
   const response = {

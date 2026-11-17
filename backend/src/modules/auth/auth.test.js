@@ -21,6 +21,7 @@ import {
   validateLogin,
   validateForgotPassword,
   validateResetPassword,
+  validateChangePassword,
 } from "./auth.validator.js";
 
 function activeUser(overrides = {}) {
@@ -1106,5 +1107,86 @@ test("shared error middleware does not return or log raw SQL error details", () 
     assert.equal(JSON.stringify(logs).includes("secret"), false);
   } finally {
     console.error = originalError;
+  }
+});
+
+test("self-service password validation requires current, new, matching confirmation and rejects user IDs", () => {
+  const run = (body) => {
+    const req = { body };
+    let error;
+    validateChangePassword(req, {}, (nextError) => { error = nextError; });
+    return { req, error };
+  };
+  assert.equal(run({}).error.code, "VALIDATION_ERROR");
+  assert.equal(run({ currentPassword: "old-password", newPassword: "new-password", confirmPassword: "different-password" }).error.code, "VALIDATION_ERROR");
+  assert.equal(run({ currentPassword: "old-password", newPassword: "new-password", confirmPassword: "new-password", userId: 1 }).error.code, "VALIDATION_ERROR");
+  assert.deepEqual(run({ currentPassword: "old-password", newPassword: "new-password", confirmPassword: "new-password" }).req.validatedBody, {
+    currentPassword: "old-password",
+    newPassword: "new-password",
+  });
+});
+
+test("self-service password change verifies current password and updates only authenticated account transactionally", async () => {
+  const originalGetConnection = authModel.getConnection;
+  const originalFindPassword = authModel.findPasswordHashForUpdate;
+  const originalUpdatePassword = authModel.updatePasswordHash;
+  const previousHash = await bcrypt.hash("correct-current-password", 4);
+  const calls = [];
+  let updatedHash;
+  try {
+    authModel.getConnection = async () => ({
+      beginTransaction: async () => calls.push("begin"),
+      commit: async () => calls.push("commit"),
+      rollback: async () => calls.push("rollback"),
+      release: () => calls.push("release"),
+    });
+    authModel.findPasswordHashForUpdate = async (_connection, userId) => {
+      assert.equal(userId, "42");
+      return { id: 42, password_hash: previousHash };
+    };
+    authModel.updatePasswordHash = async (_connection, userId, passwordHash) => {
+      assert.equal(userId, "42");
+      updatedHash = passwordHash;
+      return true;
+    };
+
+    await assert.rejects(
+      authService.changePassword("42", { currentPassword: "wrong-current-password", newPassword: "new-password-123" }),
+      (error) => error.code === "CURRENT_PASSWORD_INVALID" && error.statusCode === 400,
+    );
+    assert.equal(updatedHash, undefined);
+    assert.equal(calls.includes("rollback"), true);
+    calls.length = 0;
+
+    const result = await authService.changePassword("42", { currentPassword: "correct-current-password", newPassword: "new-password-123" });
+    assert.deepEqual(result, { message: "Password changed successfully" });
+    assert.equal(await bcrypt.compare("new-password-123", updatedHash), true);
+    assert.equal(await bcrypt.compare("correct-current-password", updatedHash), false);
+    assert.equal(JSON.stringify(result).includes(updatedHash), false);
+    assert.deepEqual(calls, ["begin", "commit", "release"]);
+  } finally {
+    authModel.getConnection = originalGetConnection;
+    authModel.findPasswordHashForUpdate = originalFindPassword;
+    authModel.updatePasswordHash = originalUpdatePassword;
+  }
+});
+
+test("mounted self-service password endpoint rejects unauthenticated requests", async () => {
+  const server = app.listen(0);
+  try {
+    await new Promise((resolve, reject) => {
+      server.once("listening", resolve);
+      server.once("error", reject);
+    });
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/auth/change-password`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ currentPassword: "old-password", newPassword: "new-password", confirmPassword: "new-password" }),
+    });
+    const body = await response.json();
+    assert.equal(response.status, 401);
+    assert.equal(body.code, "UNAUTHORIZED");
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
   }
 });

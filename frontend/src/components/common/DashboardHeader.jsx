@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Menu, LogOut, CheckCircle2, Search, CreditCard, Bell, User, X } from "lucide-react";
-import { useNavigate, Link } from "react-router-dom";
-import { toast } from "sonner";
-import { getRoleMeta } from "../../constants/roles";
+import { Menu, CheckCircle2, Search, CreditCard, Bell, X } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { getCurrentUser } from "../../api/auth.api";
 
 // ─── Notification helpers (localStorage-backed until real API) ────────────────
 const NOTIF_STORAGE_KEY = "aquapay_notifications";
@@ -49,13 +48,12 @@ export function DashboardHeader({
 }) {
   const navigate = useNavigate();
   const [notificationOpen, setNotificationOpen] = useState(false);
-  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const searchInputRef = useRef(null);
   const headerSearchRef = useRef(null);
 
-  const [notifications, setNotifications] = useState(() => getStoredNotifications());
+  const [notifications] = useState(() => getStoredNotifications());
   const [unseenCount, setUnseenCount] = useState(() => getUnseenCount(getStoredNotifications()));
 
   const [currentUser, setCurrentUser] = useState(() => {
@@ -81,16 +79,21 @@ export function DashboardHeader({
     };
   }, []);
 
-  const roleMeta = getRoleMeta(currentUser) || {
-    name: currentUser.role_name || "Partner",
-  };
+  useEffect(() => {
+    let active = true;
+    getCurrentUser().then((response) => {
+      const fresh = response?.data || response;
+      if (!active || !fresh?.id) return;
+      setCurrentUser(fresh);
+      localStorage.setItem("user", JSON.stringify(fresh));
+    }).catch(() => {});
+    return () => { active = false; };
+  }, []);
 
   // Searchable pages
   const searchablePages = [
     { label: "Dashboard", path: "/user/dashboard", keywords: "home overview main" },
     { label: "KYC Verification", path: "/user/kyc", keywords: "kyc aadhaar pan identity verify" },
-    { label: "My Team", path: "/user/team", keywords: "team agents downline hierarchy" },
-    { label: "My Profile", path: "/user/profile", keywords: "profile account name email" },
     { label: "Settings", path: "/user/settings", keywords: "settings preferences" },
   ];
 
@@ -135,19 +138,10 @@ export function DashboardHeader({
   const handleOpenNotifications = () => {
     const next = !notificationOpen;
     setNotificationOpen(next);
-    setUserMenuOpen(false);
     if (next) {
       markAllSeen();
       setUnseenCount(0);
     }
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem("accessToken");
-    localStorage.removeItem("user");
-    localStorage.removeItem("adminUser");
-    toast.info("Signed out successfully");
-    navigate("/login/user", { replace: true });
   };
 
   const timeAgo = (isoDate) => {
@@ -267,10 +261,8 @@ export function DashboardHeader({
           {/* User Profile Avatar */}
           <div className="relative">
             <button
-              onClick={() => {
-                setUserMenuOpen(!userMenuOpen);
-                setNotificationOpen(false);
-              }}
+              onClick={() => navigate("/user/profile")}
+              aria-label="Open my profile"
               className="flex items-center gap-2 cursor-pointer focus:outline-none"
             >
               <div className="w-9 h-9 rounded-full bg-blue-100 border border-blue-200 text-blue-700 font-bold flex items-center justify-center text-sm overflow-hidden shadow-2xs">
@@ -278,42 +270,6 @@ export function DashboardHeader({
               </div>
             </button>
 
-            {/* User Profile Dropdown Menu */}
-            {userMenuOpen && (
-              <div className="absolute right-0 top-14 w-56 bg-white rounded-2xl shadow-xl border border-slate-200 p-2 z-50 text-xs">
-                <div className="px-3 py-2 border-b border-slate-100 mb-1">
-                  <span className="font-bold text-slate-900 block truncate">
-                    {currentUser.name || "Member"}
-                  </span>
-                  <span className="text-[10px] text-blue-600 font-semibold uppercase">
-                    {roleMeta.name} Terminal
-                  </span>
-                </div>
-                <Link
-                  to="/user/profile"
-                  onClick={() => setUserMenuOpen(false)}
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors"
-                >
-                  <User className="w-4 h-4 text-black" />
-                  <span>My Profile</span>
-                </Link>
-                <Link
-                  to="/user/kyc"
-                  onClick={() => setUserMenuOpen(false)}
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors"
-                >
-                  <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                  <span>KYC Verification</span>
-                </Link>
-                <button
-                  onClick={handleLogout}
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-rose-600 hover:bg-rose-50 transition-colors mt-1 cursor-pointer"
-                >
-                  <LogOut className="w-4 h-4" />
-                  <span>Sign Out</span>
-                </button>
-              </div>
-            )}
           </div>
         </div>
       </header>

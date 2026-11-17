@@ -31,7 +31,7 @@ export function UserProtectedRoute({ requireKyc = true }) {
 
       if (!token) {
         if (!cancelled) {
-          setState({ status: "unauthorized", redirectTo: "/login/user" });
+          setState({ status: "unauthorized", redirectTo: "/login" });
         }
         return;
       }
@@ -67,7 +67,7 @@ export function UserProtectedRoute({ requireKyc = true }) {
         if (!isNormalUserRole(verifiedUser)) {
           if (!cancelled) {
             toast.error("Access Denied: Unrecognized account role.");
-            setState({ status: "unauthorized", redirectTo: "/login/user" });
+            setState({ status: "unauthorized", redirectTo: "/login" });
           }
           return;
         }
@@ -93,7 +93,7 @@ export function UserProtectedRoute({ requireKyc = true }) {
             localStorage.removeItem("accessToken");
             localStorage.removeItem("user");
             localStorage.removeItem("adminUser");
-            setState({ status: "unauthorized", redirectTo: "/login/user?session=expired" });
+            setState({ status: "unauthorized", redirectTo: "/login?session=expired" });
           } else {
             // Network error — fall back to cached data (best effort)
             const cached = (() => {
@@ -114,7 +114,7 @@ export function UserProtectedRoute({ requireKyc = true }) {
             } else if (cached && cachedToken && isAdminRole(cached)) {
               setState({ status: "redirect_admin", redirectTo: "/admin/dashboard" });
             } else {
-              setState({ status: "unauthorized", redirectTo: "/login/user" });
+              setState({ status: "unauthorized", redirectTo: "/login" });
             }
           }
         }
@@ -145,7 +145,7 @@ export function UserProtectedRoute({ requireKyc = true }) {
   }
 
   if (state.status !== "authorized") {
-    return <Navigate to={state.redirectTo || "/login/user"} state={{ from: location }} replace />;
+    return <Navigate to={state.redirectTo || "/login"} state={{ from: location }} replace />;
   }
 
   return <Outlet />;

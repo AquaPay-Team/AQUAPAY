@@ -1,12 +1,13 @@
 import ApiError from "../../../utils/ApiError.js";
 import httpStatus from "../../../utils/httpStatus.js";
-import { isValidPincode } from "../../../utils/validationHelper.js";
-
 const ALLOWED_FIELDS = new Set([
   "businessType",
   "shopAddress",
-  "city",
-  "pincode",
+]);
+const BUSINESS_TYPES = new Set([
+  "Sole Proprietorship",
+  "Private Limited Company",
+  "Partnership / LLP",
 ]);
 
 function validateBasicDetails(req, res, next) {
@@ -34,26 +35,11 @@ function validateBasicDetails(req, res, next) {
   const shopAddress = typeof body.shopAddress === "string"
     ? body.shopAddress.trim()
     : "";
-  const city = typeof body.city === "string" ? body.city.trim() : "";
-  const pincode =
-    typeof body.pincode === "string" || typeof body.pincode === "number"
-      ? String(body.pincode).trim()
-      : "";
-
   if (!businessType) errors.push("Business type is required");
-  else if (businessType.length > 100) errors.push("Business type must not exceed 100 characters");
+  else if (!BUSINESS_TYPES.has(businessType)) errors.push("Select a valid business constitution");
 
   if (!shopAddress) errors.push("Shop address is required");
   else if (shopAddress.length > 255) errors.push("Shop address must not exceed 255 characters");
-
-  if (!city) errors.push("City is required");
-  else if (city.length > 100) errors.push("City must not exceed 100 characters");
-
-  if (!pincode) {
-    errors.push("Pincode is required");
-  } else if (!isValidPincode(pincode)) {
-    errors.push("Pincode must be a valid 6-digit postal code");
-  }
 
   if (errors.length) {
     return next(
@@ -66,7 +52,7 @@ function validateBasicDetails(req, res, next) {
     );
   }
 
-  req.validatedBody = { businessType, shopAddress, city, pincode };
+  req.validatedBody = { businessType, shopAddress };
   return next();
 }
 

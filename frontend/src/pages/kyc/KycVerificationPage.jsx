@@ -108,15 +108,11 @@ export function KycVerificationPage() {
 
   const [formData, setFormData] = useState({
     fullName: storedUser?.name || "",
-    dob: "",
     phone: storedUser?.mobile?.replace(/^\+91/, "") || "",
     email: storedUser?.email || "",
-    businessType: "Retail Merchant",
+    businessType: "Sole Proprietorship",
     shopAddress: storedUser?.address || "",
     address: storedUser?.address || "",
-    city: storedUser?.city || "",
-    state: storedUser?.state || "",
-    pincode: storedUser?.pincode || "",
 
     aadhaarNumber: "",
     panNumber: "",
@@ -128,7 +124,6 @@ export function KycVerificationPage() {
     confirmAccountNumber: "",
     ifscCode: "",
     bankName: "",
-    accountType: "Current",
 
     selfieFile: null,
     videoFile: null,
@@ -511,21 +506,6 @@ export function KycVerificationPage() {
   const handleChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
 
-    // Instant inline validation for Date of Birth (No future dates)
-    if (field === "dob") {
-      if (!value) {
-        setStep1Errors((prev) => ({ ...prev, dob: "Date of Birth is required." }));
-        return;
-      }
-      const selectedDate = new Date(value);
-      const today = new Date();
-      today.setHours(23, 59, 59, 999);
-      if (selectedDate > today) {
-        setStep1Errors((prev) => ({ ...prev, dob: "Date of Birth cannot be in the future." }));
-        return;
-      }
-    }
-
     if (step1Errors[field]) {
       setStep1Errors((prev) => {
         const updated = { ...prev };
@@ -543,17 +523,6 @@ export function KycVerificationPage() {
       errors.fullName = "Full Legal Name is required (minimum 2 characters).";
     }
 
-    if (!formData.dob) {
-      errors.dob = "Date of Birth is required.";
-    } else {
-      const selectedDate = new Date(formData.dob);
-      const today = new Date();
-      today.setHours(23, 59, 59, 999);
-      if (selectedDate > today) {
-        errors.dob = "Date of Birth cannot be in the future.";
-      }
-    }
-
     const cleanPhone = String(formData.phone || "").replace(/\D/g, "");
     if (!cleanPhone || cleanPhone.length !== 10) {
       errors.phone = "Please enter a valid 10-digit mobile number.";
@@ -567,19 +536,6 @@ export function KycVerificationPage() {
     const shopAddr = (formData.shopAddress || formData.address || "").trim();
     if (!shopAddr || shopAddr.length < 3) {
       errors.shopAddress = "Operating Commercial Address is required.";
-    }
-
-    if (!formData.city || formData.city.trim().length < 2) {
-      errors.city = "City is required.";
-    }
-
-    if (!formData.state || formData.state.trim().length < 2) {
-      errors.state = "State is required.";
-    }
-
-    const cleanPincode = String(formData.pincode || "").trim();
-    if (!cleanPincode || !/^[1-9][0-9]{5}$/.test(cleanPincode)) {
-      errors.pincode = "Please enter a valid 6-digit Indian PIN Code.";
     }
 
     setStep1Errors(errors);
@@ -795,25 +751,17 @@ export function KycVerificationPage() {
     if (currentStep === 1) {
       const isValid = validateStep1();
       if (!isValid) {
-        if (formData.dob && new Date(formData.dob) > new Date()) {
-          toast.error("Date of Birth cannot be in the future. Please correct it to proceed.");
-        } else {
-          toast.error("Please fill in all required fields accurately before proceeding.");
-        }
+        toast.error("Please fill in all required fields accurately before proceeding.");
         return;
       }
 
       setIsSavingStep(true);
       try {
-        const cleanPincode = String(formData.pincode || "").trim();
         await saveBasicDetails({
-          businessType: formData.businessType || "Retail Merchant",
+          businessType: formData.businessType,
           shopAddress: formData.shopAddress || formData.address,
-          city: formData.city.trim(),
-          pincode: cleanPincode,
         });
 
-        setCompletedSteps((prev) => Array.from(new Set([...prev, 1])));
         toast.success("Basic details saved. Please verify your identity with the OTP below.");
         setStep1OtpPhase(true);
         setStep1OtpValue(["", "", "", "", "", ""]);
@@ -823,7 +771,7 @@ export function KycVerificationPage() {
         try {
           await requestBasicDetailsOtp();
           setStep1OtpTimer(60);
-          toast.info("OTP requested. Check the backend console for the code (development mode).");
+          toast.info("A verification code has been requested.");
         } catch (otpErr) {
           const parsedOtp = parseApiError(otpErr);
           if (parsedOtp.type !== "RATE_LIMIT") {
@@ -883,14 +831,6 @@ export function KycVerificationPage() {
       if (completedSteps.includes(4)) {
         setCurrentStep(5);
         window.scrollTo({ top: 0, behavior: "smooth" });
-        return;
-      }
-      if (!formData.accountHolderName || !formData.accountHolderName.trim()) {
-        toast.error("Please enter beneficiary account holder name.");
-        return;
-      }
-      if (!formData.bankName || !formData.bankName.trim()) {
-        toast.error("Please enter bank name.");
         return;
       }
       const cleanAcc = String(formData.accountNumber || "").replace(/\D/g, "");
@@ -1036,7 +976,7 @@ export function KycVerificationPage() {
     localStorage.removeItem("accessToken");
     localStorage.removeItem("user");
     localStorage.removeItem("adminUser");
-    navigate("/login/user");
+    navigate("/login");
   };
 
   if (isSubmitted) {

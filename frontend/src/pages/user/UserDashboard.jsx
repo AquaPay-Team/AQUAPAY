@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Link, useOutletContext } from "react-router-dom";
+import { Link } from "react-router-dom";
 import {
   Calendar,
   BarChart2,
@@ -18,21 +18,15 @@ import {
   ChevronRight,
   Clock,
   AlertCircle,
-  Plus,
   ArrowUpRight,
   Wallet,
   Landmark,
   Smartphone,
 } from "lucide-react";
 import { toast } from "sonner";
-import { getRoleMeta } from "../../constants/roles";
-import { fetchBackendUsers } from "../../features/admin/services/adminApi";
-import { getKycStatus, getBankDetails } from "../../api/kyc.api";
+import { getKycStatus } from "../../api/kyc.api";
 
 export default function UserDashboard() {
-  const context = useOutletContext();
-  const onOpenAddAgent = context?.onOpenAddAgent;
-
   const currentUser = (() => {
     try {
       return JSON.parse(localStorage.getItem("user") || "{}");
@@ -41,56 +35,27 @@ export default function UserDashboard() {
     }
   })();
 
-  const roleId = Number(currentUser.role_id) || 8;
-  const roleMeta = getRoleMeta(currentUser) || {
-    name: currentUser.role_name || "Merchant",
-    slug: "RT",
-  };
-
-  const canManageAgents = roleId >= 2 && roleId <= 7;
-  const [downlineCount, setDownlineCount] = useState(0);
   const [kycData, setKycData] = useState(null);
-  const [bankData, setBankData] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
 
   // Filter & Search states for All Transaction Report
   const [dateFrom, setDateFrom] = useState("2026-10-12");
   const [dateTo, setDateTo] = useState("2026-10-12");
   const [searchQuery, setSearchQuery] = useState("");
   const [rowsPerPage, setRowsPerPage] = useState("50");
-  const [transactions, setTransactions] = useState([]);
+  const [transactions] = useState([]);
 
   useEffect(() => {
     let isMounted = true;
     async function loadBackendData() {
-      setIsLoading(true);
-      try {
-        const kycRes = await getKycStatus().catch(() => null);
-        if (isMounted && kycRes?.data) {
-          setKycData(kycRes.data);
-        }
-
-        const bankRes = await getBankDetails().catch(() => null);
-        if (isMounted && bankRes?.data) {
-          setBankData(bankRes.data);
-        }
-
-        if (canManageAgents) {
-          const usersRes = await fetchBackendUsers().catch(() => null);
-          if (isMounted && usersRes?.data && Array.isArray(usersRes.data)) {
-            setDownlineCount(usersRes.data.length);
-          }
-        }
-      } finally {
-        if (isMounted) setIsLoading(false);
-      }
+      const kycRes = await getKycStatus().catch(() => null);
+      if (isMounted && kycRes?.data) setKycData(kycRes.data);
     }
 
     loadBackendData();
     return () => {
       isMounted = false;
     };
-  }, [canManageAgents]);
+  }, []);
 
   const rawStatus = String(kycData?.status || currentUser.kyc?.status || "pending").toLowerCase();
   const isKycApproved = rawStatus === "approved" || rawStatus === "completed" || rawStatus === "verified";
@@ -106,15 +71,15 @@ export default function UserDashboard() {
   };
 
   const handleFetchReport = () => {
-    toast.info(`Fetching live ledger records from ${dateFrom} to ${dateTo}...`);
+    toast.error(`Transaction records are not available for ${dateFrom} through ${dateTo}.`);
   };
 
   const handleExport = () => {
-    toast.success("Transaction report export queued.");
+    toast.error("No transaction records are available to export.");
   };
 
   const handleRefresh = () => {
-    toast.info("Refreshed transaction records.");
+    toast.error("Transaction report refresh is not available yet.");
   };
 
   return (
@@ -165,17 +130,8 @@ export default function UserDashboard() {
       )}
 
       {/* Dashboard Page Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <h1 className="text-xl font-bold text-slate-900 tracking-tight">Dashboard</h1>
-        {canManageAgents && onOpenAddAgent && (
-          <button
-            onClick={onOpenAddAgent}
-            className="bg-white hover:bg-slate-50 text-slate-700 font-semibold px-4 py-2 rounded-xl text-xs transition border border-slate-200 shadow-2xs flex items-center gap-2 cursor-pointer hover:shadow-sm"
-          >
-            <Plus className="w-4 h-4 text-black" strokeWidth={2.25} />
-            <span>Onboard Agent</span>
-          </button>
-        )}
       </div>
 
       {/* ── Wallet Cards Row with Background Watermark Icons ─────── */}

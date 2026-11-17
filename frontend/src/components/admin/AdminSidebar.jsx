@@ -20,9 +20,11 @@ import {
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { toast } from "sonner";
 import { ROLE_NAVIGATION } from "../../config/roleNavigation";
+import { RoleNavigationSection } from "../common/RoleNavigationSection";
 
 export function AdminSidebar({
   sidebarCollapsed = false,
+  setSidebarCollapsed = () => {},
   mobileSidebarOpen = false,
   setMobileSidebarOpen = () => {},
   activeTab,
@@ -159,6 +161,18 @@ export function AdminSidebar({
       {/* Navigation Tree */}
       <div className="flex-1 overflow-y-auto px-3.5 py-4 space-y-1 text-[13px] custom-scrollbar">
         {navItems.map((item) => {
+          if (item.isDynamicRoles) {
+            return (
+              <RoleNavigationSection
+                key={item.id}
+                scope="admin"
+                collapsed={sidebarCollapsed}
+                onNavigate={() => setMobileSidebarOpen(false)}
+                onExpandSidebar={() => setSidebarCollapsed(false)}
+              />
+            );
+          }
+
           const IconComp = getIcon(item.icon);
 
           if (item.children) {

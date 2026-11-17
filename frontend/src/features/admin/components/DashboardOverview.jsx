@@ -1,35 +1,27 @@
 import React from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Users,
   UserCheck,
   ShieldCheck,
   Building,
-  Plus,
   ArrowRight,
   ArrowUpRight,
   Server,
-  Database,
   RefreshCw,
-  MoreHorizontal,
-  UserPlus,
-  FileText,
   Calendar,
   BarChart2,
   BarChart3,
   TrendingUp,
-  Cpu,
-  Layers,
-  Settings,
-  CheckCircle2,
 } from "lucide-react";
 
 export function DashboardOverview({
   stats = { total: 0, active: 0, retailers: 0, verifiedKyc: 0, pendingKyc: 0 },
-  setActiveTab = () => {},
-  setAddAgentModalOpen = () => {},
   loadUsers = () => {},
   isLoadingUsers = false,
 }) {
+  const navigate = useNavigate();
+  const openDirectory = () => navigate("/admin/users");
   const currentUser = (() => {
     try {
       return JSON.parse(
@@ -70,7 +62,7 @@ export function DashboardOverview({
         {canManageAgents && (
           <div className="flex items-center gap-2.5 flex-wrap">
             <button
-              onClick={loadUsers}
+              onClick={() => loadUsers()}
               disabled={isLoadingUsers}
               className="bg-white hover:bg-slate-50 text-slate-700 font-semibold px-4 py-2 rounded-xl text-xs transition border border-slate-200 shadow-2xs flex items-center gap-2 cursor-pointer hover:shadow-sm disabled:opacity-50"
             >
@@ -80,14 +72,6 @@ export function DashboardOverview({
                 }`}
               />
               <span>Refresh</span>
-            </button>
-
-            <button
-              onClick={() => setAddAgentModalOpen(true)}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs px-4 py-2 rounded-xl transition shadow-2xs flex items-center gap-2 cursor-pointer"
-            >
-              <Plus className="w-4 h-4 text-white" strokeWidth={2.25} />
-              <span>Onboard Agent</span>
             </button>
           </div>
         )}
@@ -105,16 +89,10 @@ export function DashboardOverview({
                 Welcome to your {currentUser.role_name || "Channel"} Console
               </span>
               <span className="text-slate-500 text-xs">
-                Your portal monitors and manages agents onboarded under your hierarchy. Click below to add your first downline agent.
+                Open a permitted role directory from the Roles section in the sidebar to add your first downline account.
               </span>
             </div>
           </div>
-          <button
-            onClick={() => setAddAgentModalOpen(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs px-5 py-2.5 rounded-xl transition shadow-2xs shrink-0 text-center cursor-pointer"
-          >
-            Onboard First Agent
-          </button>
         </div>
       )}
 
@@ -218,78 +196,6 @@ export function DashboardOverview({
           <p className="text-xs text-slate-400 mt-3">
             Compliance <span className="text-amber-500 font-medium">audit pass rate</span>
           </p>
-        </div>
-      </div>
-
-      {/* ── Admin Services & Operations (Exact User Dashboard Grid Style) ── */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-bold text-slate-900">Admin Operations & Services</h2>
-          <button
-            type="button"
-            className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg transition cursor-pointer"
-            title="Service options"
-          >
-            <MoreHorizontal className="w-4 h-4" />
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          {/* Op 1: Onboard New Agent */}
-          <div
-            onClick={() => setAddAgentModalOpen(true)}
-            className="bg-blue-50/50 border border-blue-100/90 rounded-2xl p-6 flex items-center justify-between shadow-2xs hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer group"
-          >
-            <div>
-              <h3 className="text-base font-bold text-slate-900">Onboard Agent</h3>
-              <p className="text-xs text-slate-400 mt-1.5">Instant Registration</p>
-            </div>
-            <div className="w-14 h-14 rounded-2xl bg-white shadow-sm border border-blue-100/80 flex items-center justify-center group-hover:scale-110 transition-transform">
-              <UserPlus className="w-6 h-6 text-black" strokeWidth={2} />
-            </div>
-          </div>
-
-          {/* Op 2: User Directory */}
-          <div
-            onClick={() => setActiveTab("all-users")}
-            className="bg-emerald-50/50 border border-emerald-100/90 rounded-2xl p-6 flex items-center justify-between shadow-2xs hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer group"
-          >
-            <div>
-              <h3 className="text-base font-bold text-slate-900">User Directory</h3>
-              <p className="text-xs text-slate-400 mt-1.5">Hierarchy & Accounts</p>
-            </div>
-            <div className="w-14 h-14 rounded-2xl bg-white shadow-sm border border-emerald-100/80 flex items-center justify-center group-hover:scale-110 transition-transform">
-              <Users className="w-6 h-6 text-black" strokeWidth={2} />
-            </div>
-          </div>
-
-          {/* Op 3: KYC Verification Queue */}
-          <div
-            onClick={() => setActiveTab("kyc")}
-            className="bg-amber-50/50 border border-amber-100/90 rounded-2xl p-6 flex items-center justify-between shadow-2xs hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer group"
-          >
-            <div>
-              <h3 className="text-base font-bold text-slate-900">KYC Verification</h3>
-              <p className="text-xs text-slate-400 mt-1.5">UIDAI & Compliance Queue</p>
-            </div>
-            <div className="w-14 h-14 rounded-2xl bg-white shadow-sm border border-amber-100/80 flex items-center justify-center group-hover:scale-110 transition-transform">
-              <ShieldCheck className="w-6 h-6 text-black" strokeWidth={2} />
-            </div>
-          </div>
-
-          {/* Op 4: Audit & Reports */}
-          <div
-            onClick={() => setActiveTab("reports")}
-            className="bg-purple-50/50 border border-purple-100/90 rounded-2xl p-6 flex items-center justify-between shadow-2xs hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer group"
-          >
-            <div>
-              <h3 className="text-base font-bold text-slate-900">Audit Reports</h3>
-              <p className="text-xs text-slate-400 mt-1.5">Ledger & System Logs</p>
-            </div>
-            <div className="w-14 h-14 rounded-2xl bg-white shadow-sm border border-purple-100/80 flex items-center justify-center group-hover:scale-110 transition-transform">
-              <FileText className="w-6 h-6 text-black" strokeWidth={2} />
-            </div>
-          </div>
         </div>
       </div>
 
@@ -480,7 +386,7 @@ export function DashboardOverview({
             </p>
           </div>
           <button
-            onClick={() => setActiveTab("all-users")}
+            onClick={openDirectory}
             className="inline-flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold px-4 py-2 rounded-xl text-xs transition shadow-2xs cursor-pointer shrink-0 hover:shadow-sm"
           >
             <span>{isSuperAdmin ? "Open User Directory" : "Open My Network"}</span>

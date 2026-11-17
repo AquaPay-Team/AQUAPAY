@@ -6,7 +6,7 @@ async function getConnection() {
 
 async function findActiveUserForUpdate(connection, userId) {
   const [rows] = await connection.execute(
-    `SELECT id, address, city, pincode, status
+    `SELECT id, name, email, mobile, address, city, pincode, status
        FROM users
       WHERE id = ?
       LIMIT 1
@@ -73,15 +73,13 @@ async function updateCaseBasicDetails(connection, caseId, businessType) {
   return true;
 }
 
-async function updateUserAddress(connection, userId, { shopAddress, city, pincode }) {
+async function updateUserAddress(connection, userId, shopAddress) {
   await connection.execute(
     `UPDATE users
         SET address = ?,
-            city = ?,
-            pincode = ?,
             updated_at = CURRENT_TIMESTAMP
       WHERE id = ?`,
-    [shopAddress, city, pincode, userId],
+    [shopAddress, userId],
   );
   return true;
 }

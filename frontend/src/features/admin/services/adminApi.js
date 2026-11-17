@@ -61,6 +61,11 @@ export const fetchBackendUsers = async (params = {}) => {
   return response.data;
 };
 
+export const fetchBackendDescendantRoles = async () => {
+  const response = await api.get("/users/roles/descendants");
+  return response.data;
+};
+
 export const fetchBackendUserById = async (id) => {
   const response = await api.get(`/users/${id}`);
   return response.data;
@@ -76,13 +81,20 @@ export const updateBackendUser = async (id, userData) => {
   return response.data;
 };
 
+export const resetBackendUserPassword = async (id, { newPassword, confirmPassword }) => {
+  const response = await api.post(`/users/${id}/reset-password`, { newPassword, confirmPassword });
+  return response.data;
+};
+
 export default {
   adminLogin,
   getAdminProfile,
   adminLogout,
   isAdminUser,
   fetchBackendUsers,
+  fetchBackendDescendantRoles,
   fetchBackendUserById,
   createBackendUser,
   updateBackendUser,
+  resetBackendUserPassword,
 };

@@ -31,7 +31,7 @@ export function AdminProtectedRoute() {
 
       if (!token) {
         if (!cancelled) {
-          setState({ status: "unauthorized", redirectTo: "/login/admin" });
+          setState({ status: "unauthorized", redirectTo: "/login" });
         }
         return;
       }
@@ -60,7 +60,7 @@ export function AdminProtectedRoute() {
           localStorage.removeItem("adminUser");
           if (!cancelled) {
             toast.error("You are not authorized to access the Admin Panel. Please use the User Login.");
-            setState({ status: "not_admin", redirectTo: "/login/admin" });
+            setState({ status: "not_admin", redirectTo: "/login" });
           }
         }
       } catch (err) {
@@ -72,7 +72,7 @@ export function AdminProtectedRoute() {
           localStorage.removeItem("adminUser");
 
           if (status === 401 || status === 403) {
-            setState({ status: "unauthorized", redirectTo: "/login/admin?session=expired" });
+            setState({ status: "unauthorized", redirectTo: "/login?session=expired" });
           } else {
             // Network error — fall back to localStorage check (best effort)
             const cached = (() => {
@@ -82,7 +82,7 @@ export function AdminProtectedRoute() {
             if (cached && cachedToken && isAdminRole(cached)) {
               setState({ status: "authorized", redirectTo: null });
             } else {
-              setState({ status: "unauthorized", redirectTo: "/login/admin" });
+              setState({ status: "unauthorized", redirectTo: "/login" });
             }
           }
         }
@@ -106,7 +106,7 @@ export function AdminProtectedRoute() {
   }
 
   if (state.status !== "authorized") {
-    return <Navigate to={state.redirectTo || "/login/admin"} state={{ from: location }} replace />;
+    return <Navigate to={state.redirectTo || "/login"} state={{ from: location }} replace />;
   }
 
   return <Outlet />;

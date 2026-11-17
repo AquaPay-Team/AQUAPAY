@@ -20,25 +20,7 @@ export const ROLE_NAVIGATION = {
       path: "/admin/dashboard",
       icon: "LayoutDashboard",
     },
-    {
-      id: "admin-users",
-      label: "User Management",
-      icon: "Users",
-      children: [
-        {
-          id: "admin-all-users",
-          label: "All Users",
-          path: "/admin/users",
-          icon: "Users",
-        },
-        {
-          id: "admin-create-user",
-          label: "Create User",
-          path: "/admin/users/create",
-          icon: "UserPlus",
-        },
-      ],
-    },
+    { id: "admin-roles", isDynamicRoles: true },
     {
       id: "admin-kyc",
       label: "KYC Management",
@@ -50,12 +32,6 @@ export const ROLE_NAVIGATION = {
       label: "Server & Reports",
       path: "/admin/reports",
       icon: "BarChart3",
-    },
-    {
-      id: "admin-profile",
-      label: "My Profile",
-      path: "/admin/profile",
-      icon: "User",
     },
     {
       id: "admin-settings",
@@ -367,6 +343,7 @@ export const ROLE_NAVIGATION = {
       path: "/user/dashboard",
       icon: "LayoutDashboard",
     },
+    { id: "rt-roles", isDynamicRoles: true },
     {
       id: "rt-fund",
       label: "Fund",
@@ -473,18 +450,6 @@ export const ROLE_NAVIGATION = {
       icon: "Landmark",
     },
     {
-      id: "rt-kyc",
-      label: "My KYC Verification",
-      path: "/user/kyc",
-      icon: "ShieldCheck",
-    },
-    {
-      id: "rt-profile",
-      label: "My Profile",
-      path: "/user/profile",
-      icon: "User",
-    },
-    {
       id: "rt-settings",
       label: "Settings",
       path: "/user/settings",
@@ -530,6 +495,25 @@ export function getRoleNavigation(userOrRole) {
   if (slug === "MASTER DISTRIBUTOR") slug = "MD";
   if (slug === "DISTRIBUTOR") slug = "DT";
   if (slug === "RETAILER") slug = "RT";
+
+  if (slug !== "AD") {
+    const items = [
+      { id: `${slug.toLowerCase()}-dashboard`, label: "Dashboard", path: "/user/dashboard", icon: "LayoutDashboard" },
+      { id: `${slug.toLowerCase()}-roles`, isDynamicRoles: true },
+    ];
+
+    if (slug === "RT") {
+      return [
+        ...items,
+        ...ROLE_NAVIGATION.RT.filter((item) => item.id.startsWith("rt-") && item.id !== "rt-dashboard" && item.id !== "rt-roles"),
+      ];
+    }
+
+    return [
+      ...items,
+      { id: `${slug.toLowerCase()}-settings`, label: "Settings", path: "/user/settings", icon: "Settings" },
+    ];
+  }
 
   return ROLE_NAVIGATION[slug] || ROLE_NAVIGATION.RT;
 }

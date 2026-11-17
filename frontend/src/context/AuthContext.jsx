@@ -98,12 +98,12 @@ export function AuthProvider({ children }) {
 
   const logout = useCallback(() => {
     clearSession();
-    window.location.href = "/login/user";
+    window.location.href = "/login";
   }, [clearSession]);
 
   const adminLogout = useCallback(() => {
     clearSession();
-    window.location.href = "/login/admin";
+    window.location.href = "/login";
   }, [clearSession]);
 
   /**

@@ -1,3 +1,4 @@
+
 import api from "./axios";
 
 // Status
@@ -22,9 +23,11 @@ export const verifyBasicDetailsOtp = async (otp) => {
   return response.data;
 };
 
-// Step 2 & 3: Document Verification (DigiLocker / Aadhaar / PAN)
+// Step 2 & 3: Aadhaar / PAN Verification
 export const initiateAadhaarVerification = async (consent = true) => {
-  const response = await api.post("/kyc/digilocker/aadhaar/initiate", { consent });
+  const response = await api.post("/kyc/digilocker/aadhaar/initiate", {
+    consent,
+  });
   return response.data;
 };
 
@@ -35,12 +38,20 @@ export const getAadhaarVerificationStatus = async (sessionId) => {
 };
 
 export const verifyPanDetails = async ({ panNumber, consent = true }) => {
-  const response = await api.post("/kyc/pan/verify", { panNumber, consent });
+  const response = await api.post(
+    "/kyc/pan/verify",
+    { panNumber, consent },
+    { timeout: 180000 }
+  );
   return response.data;
 };
 
 export const initiatePanVerification = async (consent = true) => {
-  const response = await api.post("/kyc/digilocker/pan/initiate", { consent });
+  const response = await api.post(
+    "/kyc/digilocker/pan/initiate",
+    { consent },
+    { timeout: 180000 }
+  );
   return response.data;
 };
 
@@ -55,9 +66,11 @@ export const getBankDetails = async () => {
   return response.data;
 };
 
-// Step 5: Media Uploads (shop_image, selfie, consent_video)
+// Step 5: Media Uploads
+
 export const uploadKycMedia = async (file, assetType) => {
   const formData = new FormData();
+
   formData.append("file", file);
   formData.append("assetType", assetType);
 
@@ -65,9 +78,12 @@ export const uploadKycMedia = async (file, assetType) => {
     headers: {
       "Content-Type": "multipart/form-data",
     },
+    timeout: 180000,
   });
+
   return response.data;
 };
+
 
 // Step 6: Agreements
 export const getAgreementDetails = async () => {
@@ -94,8 +110,10 @@ export const getSubmissionStatus = async () => {
   return response.data;
 };
 
-export const submitKycApplication = async ({ confirm = true, notes = "" } = {}) => {
+export const submitKycApplication = async ({
+  confirm = true,
+  notes = "",
+} = {}) => {
   const response = await api.post("/kyc/submit", { confirm, notes });
   return response.data;
 };
-

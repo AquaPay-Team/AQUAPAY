@@ -143,7 +143,7 @@ return {
   accountHolderName: result.data.account_holder_name,
   bankName,
   providerReference: result.tranx_id,
-};
+  };
 }
 
 function serviceUnavailable() {

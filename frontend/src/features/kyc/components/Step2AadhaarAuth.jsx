@@ -8,23 +8,19 @@ import {
   Loader2,
   AlertCircle,
   XCircle,
-  Edit2,
-  Check,
 } from "lucide-react";
 
 /**
  * Step 2 – Aadhaar Identity Verification via Official DigiLocker / UIDAI
  *
  * Flow:
- * 1. User must explicitly review and check the UIDAI consent checkbox (never checked by default).
- * 2. Clicks "Verify with DigiLocker / UIDAI" -> Opens the official UIDAI Meri Pehchaan window.
- * 3. User authenticates on the government window.
- * 4. AquaPay polls backend status (and detects popup message if available).
- * 5. Handles pending, processing, verified, failed, and expired session states.
+ * 1. User explicitly provides consent.
+ * 2. User authenticates through the official UIDAI DigiLocker portal.
+ * 3. AquaPay checks verification status.
+ * 4. Displays verified identity details as read-only.
  */
 export function Step2AadhaarAuth({
   formData = {},
-  onChange = () => {},
   onTriggerOtp = () => {},
   isInitiating = false,
   digilockerSessionActive = false,
@@ -32,74 +28,60 @@ export function Step2AadhaarAuth({
   isCheckingStatus = false,
   aadhaarVerified = false,
   verifiedData = {},
-  sessionStatus = "idle", // "idle" | "pending" | "processing" | "verified" | "failed" | "expired"
+  sessionStatus = "idle",
   errorMessage = "",
   onResetSession = () => {},
 }) {
   const [aadhaarError, setAadhaarError] = useState("");
-  // Explicit consent required by compliance - NEVER automatically checked by default
   const [consentGiven, setConsentGiven] = useState(false);
-  const [isEditingLast4, setIsEditingLast4] = useState(false);
-  const [tempLast4, setTempLast4] = useState("");
 
+  // Get the last four digits from existing verification data.
+  // Never generate or hardcode Aadhaar digits.
   const cleanAadhaar = String(formData.aadhaarNumber || "").replace(/\D/g, "");
 
-  // Determine unmasked last 4 digits (first 8 digits masked, last 4 digits unmasked)
   const currentLast4 = (() => {
-    if (verifiedData?.last4 && /^\d{4}$/.test(String(verifiedData.last4))) {
+    if (
+      verifiedData?.last4 &&
+      /^\d{4}$/.test(String(verifiedData.last4))
+    ) {
       return String(verifiedData.last4);
     }
-    if (verifiedData?.maskedIdentifier) {
-      const match = String(verifiedData.maskedIdentifier).match(/(\d{4})$/);
+
+    const maskedValue =
+      verifiedData?.maskedIdentifier || formData.aadhaarMasked;
+
+    if (maskedValue) {
+      const match = String(maskedValue).match(/(\d{4})$/);
       if (match) return match[1];
     }
-    if (formData.aadhaarMasked) {
-      const match = String(formData.aadhaarMasked).match(/(\d{4})$/);
-      if (match) return match[1];
-    }
-    if (cleanAadhaar && cleanAadhaar.length >= 4) {
+
+    if (cleanAadhaar.length >= 4) {
       return cleanAadhaar.slice(-4);
     }
-    const name = String(verifiedData?.verifiedName || formData.fullName || "").toLowerCase();
-    if (name.includes("chauhan") || name.includes("meet")) return "6508";
-    if (name.includes("mayur")) return "0318";
-    if (name.includes("karan")) return "2988";
-    return "6508";
+
+    return "";
   })();
 
-  const displayMaskedAadhaar = `•••• •••• ${currentLast4}`;
-
-  const handleSaveLast4 = () => {
-    const digits = tempLast4.replace(/\D/g, "").slice(0, 4);
-    if (digits.length === 4) {
-      onChange("aadhaarNumber", digits);
-      onChange("aadhaarMasked", `•••• •••• ${digits}`);
-      if (verifiedData) {
-        verifiedData.maskedIdentifier = `•••• •••• ${digits}`;
-        verifiedData.last4 = digits;
-      }
-      try {
-        const stored = JSON.parse(localStorage.getItem("user") || "{}");
-        if (stored.id) {
-          localStorage.setItem(`aquapay_aadhaar_last4_${stored.id}`, digits);
-        }
-      } catch {}
-    }
-    setIsEditingLast4(false);
-  };
+  const displayMaskedAadhaar = currentLast4
+    ? `•••• •••• ${currentLast4}`
+    : "Not available";
 
   const handleStartVerification = () => {
     if (!consentGiven) {
-      setAadhaarError("Please provide your explicit consent to proceed with UIDAI Aadhaar verification.");
+      setAadhaarError(
+        "Please provide your explicit consent to proceed with UIDAI Aadhaar verification."
+      );
       return;
     }
+
     setAadhaarError("");
     onTriggerOtp();
   };
 
-  /* ─────────────────────────────────────────────────────────────
+  /* ---------------------------------------------------------
      1. VERIFIED STATE
-  ────────────────────────────────────────────────────────────── */
+  --------------------------------------------------------- */
+
   if (aadhaarVerified || sessionStatus === "verified") {
     return (
       <div className="space-y-6 max-w-2xl mx-auto">
@@ -107,7 +89,11 @@ export function Step2AadhaarAuth({
           <div className="w-12 h-12 bg-emerald-50 border border-emerald-200 rounded-2xl mx-auto flex items-center justify-center">
             <CheckCircle2 className="w-6 h-6 text-emerald-600" />
           </div>
-          <h3 className="text-base font-semibold text-slate-900">Aadhaar Identity Verified</h3>
+
+          <h3 className="text-base font-semibold text-slate-900">
+            Aadhaar Identity Verified
+          </h3>
+
           <p className="text-xs text-slate-500">
             Your identity has been authenticated with UIDAI via DigiLocker.
           </p>
@@ -120,78 +106,65 @@ export function Step2AadhaarAuth({
           </div>
 
           <div className="text-xs text-slate-700 grid grid-cols-1 sm:grid-cols-3 gap-4 pt-3 border-t border-emerald-200/70">
+            {/* Verified Legal Name */}
             <div>
-              <span className="text-slate-500 block text-[11px] mb-0.5">Verified Legal Name</span>
+              <span className="text-slate-500 block text-[11px] mb-0.5">
+                Verified Legal Name
+              </span>
+
               <span className="font-semibold text-slate-900 text-sm">
-                {verifiedData?.verifiedName || formData.fullName || "Verified User"}
+                {verifiedData?.verifiedName ||
+                  formData.fullName ||
+                  "Verified User"}
               </span>
             </div>
+
+            {/* Masked Aadhaar - Read Only */}
             <div>
-              <span className="text-slate-500 block text-[11px] mb-0.5">Masked Aadhaar</span>
-              {isEditingLast4 ? (
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <span className="font-mono text-xs text-slate-600 font-semibold">•••• ••••</span>
-                  <input
-                    type="text"
-                    maxLength={4}
-                    value={tempLast4}
-                    onChange={(e) => setTempLast4(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                    placeholder={currentLast4}
-                    autoFocus
-                    className="w-14 bg-white border border-emerald-400 rounded px-1.5 py-0.5 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500 text-center"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleSaveLast4}
-                    className="p-1 text-emerald-700 hover:text-emerald-900 hover:bg-emerald-100 rounded cursor-pointer transition"
-                    title="Save Last 4 Digits"
-                  >
-                    <Check className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ) : (
-                <div className="flex items-center gap-1.5">
-                  <span className="font-mono font-semibold text-slate-900 text-sm tracking-wide">
-                    {displayMaskedAadhaar}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setTempLast4(currentLast4);
-                      setIsEditingLast4(true);
-                    }}
-                    className="p-1 text-slate-400 hover:text-slate-700 transition rounded hover:bg-emerald-100/60 cursor-pointer"
-                    title="Change Last 4 Digits"
-                  >
-                    <Edit2 className="w-3 h-3" />
-                  </button>
-                </div>
-              )}
+              <span className="text-slate-500 block text-[11px] mb-0.5">
+                Masked Aadhaar
+              </span>
+
+              <span className="font-mono font-semibold text-slate-900 text-sm tracking-wide select-none">
+                {displayMaskedAadhaar}
+              </span>
             </div>
+
+            {/* Authentication Authority */}
             <div>
-              <span className="text-slate-500 block text-[11px] mb-0.5">Authentication Authority</span>
-              <span className="text-emerald-700 font-semibold">UIDAI / Meri Pehchaan</span>
+              <span className="text-slate-500 block text-[11px] mb-0.5">
+                Authentication Authority
+              </span>
+
+              <span className="text-emerald-700 font-semibold">
+                UIDAI / Meri Pehchaan
+              </span>
             </div>
           </div>
 
           <div className="pt-2 text-xs text-emerald-800 font-medium flex items-center gap-1.5">
-            <span>✓ Ready for PAN Verification. Click "Continue to Step 3" below.</span>
+            <span>
+              ✓ Ready for PAN Verification. Click "Continue to Step 3" below.
+            </span>
           </div>
         </div>
 
         <div className="flex items-center gap-2 text-xs text-slate-500 bg-slate-50 border border-slate-200 p-3.5 rounded-xl">
           <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+
           <span>
-            Data processed in compliance with the Aadhaar Act, 2016 and RBI Digital KYC regulations.
+            Data processed in compliance with the Aadhaar Act, 2016 and RBI
+            Digital KYC regulations.
           </span>
         </div>
       </div>
     );
   }
 
-  /* ─────────────────────────────────────────────────────────────
+  /* ---------------------------------------------------------
      2. FAILED OR EXPIRED SESSION STATE
-  ────────────────────────────────────────────────────────────── */
+  --------------------------------------------------------- */
+
   if (sessionStatus === "failed" || sessionStatus === "expired") {
     return (
       <div className="space-y-6 max-w-2xl mx-auto">
@@ -199,20 +172,27 @@ export function Step2AadhaarAuth({
           <div className="w-12 h-12 bg-rose-50 border border-rose-200 rounded-2xl mx-auto flex items-center justify-center">
             <XCircle className="w-6 h-6 text-rose-600" />
           </div>
+
           <h3 className="text-base font-semibold text-slate-900">
-            {sessionStatus === "expired" ? "Aadhaar Session Expired" : "Verification Failed"}
+            {sessionStatus === "expired"
+              ? "Aadhaar Session Expired"
+              : "Verification Failed"}
           </h3>
+
           <p className="text-xs text-slate-500 max-w-md mx-auto">
-            {errorMessage || (sessionStatus === "expired"
-              ? "The DigiLocker authorization session has expired. Please initiate a new verification."
-              : "Unable to verify Aadhaar identity. Please restart the process and complete authentication.")}
+            {errorMessage ||
+              (sessionStatus === "expired"
+                ? "The DigiLocker authorization session has expired. Please initiate a new verification."
+                : "Unable to verify Aadhaar identity. Please restart the process and complete authentication.")}
           </p>
         </div>
 
         <div className="p-6 bg-rose-50/70 border border-rose-200 rounded-2xl space-y-4 shadow-xs text-center">
           <p className="text-xs text-rose-700 leading-relaxed">
-            Ensure that you submit the OTP within 10 minutes on the Meri Pehchaan portal. If your session stalled, click below to restart.
+            Ensure that you submit the OTP within 10 minutes on the Meri
+            Pehchaan portal. If your session stalled, click below to restart.
           </p>
+
           <button
             type="button"
             onClick={onResetSession}
@@ -226,9 +206,10 @@ export function Step2AadhaarAuth({
     );
   }
 
-  /* ─────────────────────────────────────────────────────────────
-     3. ACTIVE DIGILOCKER SESSION STATE (In Progress)
-  ────────────────────────────────────────────────────────────── */
+  /* ---------------------------------------------------------
+     3. ACTIVE DIGILOCKER SESSION STATE
+  --------------------------------------------------------- */
+
   if (digilockerSessionActive) {
     return (
       <div className="space-y-6 max-w-2xl mx-auto">
@@ -236,28 +217,32 @@ export function Step2AadhaarAuth({
           <div className="w-12 h-12 bg-blue-50 border border-blue-200 rounded-2xl mx-auto flex items-center justify-center">
             <RefreshCw className="w-6 h-6 text-blue-600 animate-spin" />
           </div>
+
           <h3 className="text-base font-semibold text-slate-900">
             Government DigiLocker Authentication In Progress
           </h3>
+
           <p className="text-xs text-slate-500 max-w-md mx-auto">
-            UIDAI has dispatched a one-time password to your Aadhaar-registered mobile and email.
+            UIDAI has dispatched a one-time password to your Aadhaar-registered
+            mobile and email.
           </p>
         </div>
 
         <div className="p-6 bg-slate-50/70 border border-blue-100 rounded-2xl space-y-5 shadow-xs">
-          {/* Step Guidance */}
           <div className="space-y-3">
             <div className="flex items-start gap-3">
               <div className="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
                 1
               </div>
+
               <div>
                 <p className="text-xs font-semibold text-slate-900">
                   Enter OTP on the Government Portal Window
                 </p>
+
                 <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">
-                  Switch to the opened Meri Pehchaan / DigiLocker window. Enter the OTP
-                  received on your mobile and click "Sign In".
+                  Switch to the opened Meri Pehchaan / DigiLocker window. Enter
+                  the OTP received on your mobile and click "Sign In".
                 </p>
               </div>
             </div>
@@ -266,19 +251,21 @@ export function Step2AadhaarAuth({
               <div className="w-7 h-7 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
                 2
               </div>
+
               <div>
                 <p className="text-xs font-semibold text-slate-900">
                   Automatic Verification Sync
                 </p>
+
                 <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">
-                  As soon as you complete authentication in that window, AquaPay will automatically
-                  detect it. You can also click "Check Verification Status" below.
+                  As soon as you complete authentication in that window,
+                  AquaPay will automatically detect it. You can also click
+                  "Check Verification Status" below.
                 </p>
               </div>
             </div>
           </div>
 
-          {/* Action Buttons */}
           <div className="flex flex-col sm:flex-row gap-3 pt-2">
             <button
               type="button"
@@ -310,7 +297,6 @@ export function Step2AadhaarAuth({
             </button>
           </div>
 
-          {/* Reset / restart session */}
           <div className="text-center pt-2 border-t border-slate-200">
             <button
               type="button"
@@ -325,24 +311,28 @@ export function Step2AadhaarAuth({
     );
   }
 
-  /* ─────────────────────────────────────────────────────────────
-     4. INITIAL FORM STATE (Consent -> Launch DigiLocker)
-  ────────────────────────────────────────────────────────────── */
+  /* ---------------------------------------------------------
+     4. INITIAL FORM STATE
+  --------------------------------------------------------- */
+
   return (
     <div className="space-y-6 max-w-2xl mx-auto">
-      {/* Step Header */}
       <div className="text-center space-y-1.5 mb-6">
         <div className="w-12 h-12 bg-slate-100 border border-slate-200 text-slate-700 rounded-2xl mx-auto flex items-center justify-center">
           <Smartphone className="w-6 h-6 text-blue-600" />
         </div>
-        <h3 className="text-base font-semibold text-slate-900">Aadhaar Identity Verification</h3>
+
+        <h3 className="text-base font-semibold text-slate-900">
+          Aadhaar Identity Verification
+        </h3>
+
         <p className="text-xs text-slate-500 max-w-md mx-auto">
-          Authenticate your Aadhaar identity via the official Government DigiLocker / UIDAI system.
+          Authenticate your Aadhaar identity via the official Government
+          DigiLocker / UIDAI system.
         </p>
       </div>
 
       <div className="bg-slate-50 border border-slate-200 p-6 rounded-2xl space-y-5">
-        {/* Explicit Consent Checkbox - Never auto-checked */}
         <label className="flex items-start gap-3 cursor-pointer p-4 bg-white border border-slate-200 rounded-xl hover:border-blue-300 transition-colors">
           <input
             type="checkbox"
@@ -353,11 +343,13 @@ export function Step2AadhaarAuth({
             }}
             className="mt-0.5 w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
           />
+
           <span className="text-xs text-slate-600 leading-relaxed">
-            I hereby give consent to verify my Aadhaar identity via the official DigiLocker / UIDAI
-            portal. I understand that UIDAI will send an authentication OTP to my Aadhaar-linked mobile
-            number and share my verified name and masked Aadhaar with AquaPay in compliance with the{" "}
-            <strong>Aadhaar Act, 2016</strong>.
+            I hereby give consent to verify my Aadhaar identity via the
+            official DigiLocker / UIDAI portal. I understand that UIDAI will
+            send an authentication OTP to my Aadhaar-linked mobile number and
+            share my verified name and masked Aadhaar with AquaPay in compliance
+            with the <strong>Aadhaar Act, 2016</strong>.
           </span>
         </label>
 
@@ -368,7 +360,6 @@ export function Step2AadhaarAuth({
           </p>
         )}
 
-        {/* Launch Button */}
         <button
           type="button"
           onClick={handleStartVerification}
@@ -389,13 +380,14 @@ export function Step2AadhaarAuth({
         </button>
       </div>
 
-      {/* Trust & Security Footnote */}
       <div className="flex items-start gap-2.5 text-xs text-slate-500 bg-white border border-slate-200 p-3.5 rounded-xl">
         <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+
         <span>
-          <strong>Why DigiLocker?</strong> Under RBI and UIDAI digital KYC regulations, Aadhaar OTP
-          must be entered on the authorized government portal. This protects you from sharing your raw
-          Aadhaar authentication code with any third party.
+          <strong>Why DigiLocker?</strong> Under RBI and UIDAI digital KYC
+          regulations, Aadhaar OTP must be entered on the authorized government
+          portal. This protects you from sharing your raw Aadhaar authentication
+          code with any third party.
         </span>
       </div>
     </div>

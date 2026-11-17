@@ -18,6 +18,8 @@ const MAX_LIMIT = 100;
 
 const DOCUMENT_URL_TTL_SECONDS = 5 * 60;
 
+const APPROVABLE_STATUSES = ["submitted", "under_review"];
+
 const MEDIA_FORMATS = {
   "image/jpeg": { resourceType: "image", format: "jpg" },
   "image/png": { resourceType: "image", format: "png" },
@@ -26,6 +28,27 @@ const MEDIA_FORMATS = {
   "video/quicktime": { resourceType: "video", format: "mov" },
   "video/webm": { resourceType: "video", format: "webm" },
 };
+
+function parsePositiveId(value, fieldName) {
+  const parsed = Number(value);
+
+  if (
+    value === undefined ||
+    value === null ||
+    String(value).trim() === "" ||
+    !Number.isSafeInteger(parsed) ||
+    parsed < 1
+  ) {
+    throw new ApiError(
+      400,
+      `Invalid ${fieldName}`,
+      [],
+      "VALIDATION_ERROR",
+    );
+  }
+
+  return parsed;
+}
 
 async function getKycApplications({ status, page, limit } = {}) {
   let statuses = DEFAULT_STATUSES;
@@ -101,22 +124,7 @@ async function getKycApplications({ status, page, limit } = {}) {
  * Fetch complete safe details of one KYC application.
  */
 async function getKycApplicationDetails(caseId) {
-  const parsedCaseId = Number(caseId);
-
-  if (
-    caseId === undefined ||
-    caseId === null ||
-    String(caseId).trim() === "" ||
-    !Number.isSafeInteger(parsedCaseId) ||
-    parsedCaseId < 1
-  ) {
-    throw new ApiError(
-      400,
-      "Invalid KYC case ID",
-      [],
-      "VALIDATION_ERROR",
-    );
-  }
+  const parsedCaseId = parsePositiveId(caseId, "KYC case ID");
 
   const application = await adminKycModel.findKycCaseById(parsedCaseId);
 
@@ -157,28 +165,8 @@ async function getKycApplicationDetails(caseId) {
  * Generate temporary secure access to an admin KYC document.
  */
 async function getKycDocumentAccess(caseId, assetId) {
-  const parsedCaseId = Number(caseId);
-  const parsedAssetId = Number(assetId);
-
-  if (
-    caseId === undefined ||
-    caseId === null ||
-    String(caseId).trim() === "" ||
-    !Number.isSafeInteger(parsedCaseId) ||
-    parsedCaseId < 1 ||
-    assetId === undefined ||
-    assetId === null ||
-    String(assetId).trim() === "" ||
-    !Number.isSafeInteger(parsedAssetId) ||
-    parsedAssetId < 1
-  ) {
-    throw new ApiError(
-      400,
-      "Invalid KYC case ID or document ID",
-      [],
-      "VALIDATION_ERROR",
-    );
-  }
+  const parsedCaseId = parsePositiveId(caseId, "KYC case ID");
+  const parsedAssetId = parsePositiveId(assetId, "document ID");
 
   // Verify that the document belongs to this KYC case.
   const asset = await adminKycModel.findMediaAssetForAdmin(
@@ -251,16 +239,114 @@ async function getKycDocumentAccess(caseId, assetId) {
   };
 }
 
+/**
+ * Approve a KYC application transactionally.
+ *
+ * The case update and status-history insert must either
+ * both succeed or both roll back.
+ */
+async function approveKycApplication(caseId, actorUserId) {
+  const parsedCaseId = parsePositiveId(caseId, "KYC case ID");
+  const parsedActorUserId = parsePositiveId(
+    actorUserId,
+    "admin user ID",
+  );
+
+  let connection;
+  let transactionStarted = false;
+
+  try {
+    connection = await adminKycModel.getConnection();
+
+    await connection.beginTransaction();
+    transactionStarted = true;
+
+    // Lock the case to prevent concurrent review decisions.
+    const application = await adminKycModel.findKycCaseForUpdate(
+      connection,
+      parsedCaseId,
+    );
+
+    if (!application) {
+      throw new ApiError(
+        404,
+        "KYC application not found",
+        [],
+        "NOT_FOUND",
+      );
+    }
+
+    if (!APPROVABLE_STATUSES.includes(application.status)) {
+      throw new ApiError(
+        409,
+        `KYC application cannot be approved because its current status is '${application.status}'`,
+        [],
+        "INVALID_KYC_STATE",
+      );
+    }
+
+    const oldStatus = application.status;
+
+    const updated = await adminKycModel.approveKycCase(
+      connection,
+      parsedCaseId,
+    );
+
+    if (!updated) {
+      throw new ApiError(
+        409,
+        "KYC application status changed. Please refresh and try again.",
+        [],
+        "INVALID_KYC_STATE",
+      );
+    }
+
+    await adminKycModel.insertStatusHistory(connection, {
+      caseId: parsedCaseId,
+      oldStatus,
+      newStatus: "approved",
+      actorUserId: parsedActorUserId,
+      reason: null,
+    });
+
+    await connection.commit();
+    transactionStarted = false;
+
+    return {
+      caseId: parsedCaseId,
+      previousStatus: oldStatus,
+      status: "approved",
+      message: "KYC application approved successfully",
+    };
+  } catch (error) {
+    if (connection && transactionStarted) {
+      try {
+        await connection.rollback();
+      } catch {
+        // Preserve the original error if rollback also fails.
+      }
+    }
+
+    throw error;
+  } finally {
+    if (connection) {
+      connection.release();
+    }
+  }
+}
+
 const adminKycService = {
   getKycApplications,
   getKycApplicationDetails,
   getKycDocumentAccess,
+  approveKycApplication,
 };
 
 export {
   getKycApplications,
   getKycApplicationDetails,
   getKycDocumentAccess,
+  approveKycApplication,
 };
 
 export default adminKycService;

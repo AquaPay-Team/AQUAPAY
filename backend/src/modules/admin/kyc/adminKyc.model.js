@@ -1,12 +1,8 @@
+
 import pool from "../../../config/db.js";
 
 /**
  * Fetch KYC applications with pagination and status filtering.
- *
- * @param {Object} options
- * @param {string[]} options.statuses
- * @param {number} options.limit
- * @param {number} options.offset
  */
 async function findKycApplications({ statuses, limit, offset }) {
   if (!Array.isArray(statuses) || statuses.length === 0) {
@@ -40,8 +36,6 @@ async function findKycApplications({ statuses, limit, offset }) {
 
 /**
  * Count KYC applications matching the selected statuses.
- *
- * @param {string[]} statuses
  */
 async function countKycApplications(statuses) {
   if (!Array.isArray(statuses) || statuses.length === 0) {
@@ -62,8 +56,6 @@ async function countKycApplications(statuses) {
 
 /**
  * Fetch one KYC application with applicant details.
- *
- * Only safe applicant and case fields are selected.
  */
 async function findKycCaseById(caseId) {
   const [rows] = await pool.execute(
@@ -116,7 +108,6 @@ async function findKycStepsByCaseId(caseId) {
 
 /**
  * Fetch Aadhaar and PAN verification summaries.
- *
  * Does not retrieve encrypted identity payloads.
  */
 async function findVerificationsByCaseId(caseId) {
@@ -140,7 +131,6 @@ async function findVerificationsByCaseId(caseId) {
 
 /**
  * Fetch safe bank account details.
- *
  * Never retrieve the encrypted account number or provider reference.
  */
 async function findBankDetailsByCaseId(caseId) {
@@ -163,7 +153,6 @@ async function findBankDetailsByCaseId(caseId) {
 
 /**
  * Fetch uploaded document metadata.
- *
  * Never expose storage_key or private storage URLs.
  */
 async function findMediaDetailsByCaseId(caseId) {
@@ -183,7 +172,6 @@ async function findMediaDetailsByCaseId(caseId) {
 
   return rows;
 }
-
 
 /**
  * Find one media asset for secure admin document access.
@@ -208,7 +196,6 @@ async function findMediaAssetForAdmin(caseId, assetId) {
   return rows[0] || null;
 }
 
-
 /**
  * Fetch agreement acceptance records.
  */
@@ -227,6 +214,66 @@ async function findAgreementsByCaseId(caseId) {
   return rows;
 }
 
+/**
+ * Get a dedicated MySQL connection for an admin review transaction.
+ */
+async function getConnection() {
+  return pool.getConnection();
+}
+
+/**
+ * Lock a KYC case while its review decision is being processed.
+ */
+async function findKycCaseForUpdate(connection, caseId) {
+  const [rows] = await connection.execute(
+    `SELECT id, status
+       FROM kyc_cases
+      WHERE id = ?
+      LIMIT 1
+      FOR UPDATE`,
+    [caseId],
+  );
+
+  return rows[0] || null;
+}
+
+/**
+ * Approve a KYC case.
+ * The caller must already have locked the case in a transaction.
+ */
+async function approveKycCase(connection, caseId) {
+  const [result] = await connection.execute(
+    `UPDATE kyc_cases
+        SET status = 'approved',
+            reviewed_at = CURRENT_TIMESTAMP,
+            rejection_reason = NULL,
+            updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+        AND status IN ('submitted', 'under_review')`,
+    [caseId],
+  );
+
+  return Number(result.affectedRows || 0) === 1;
+}
+
+/**
+ * Insert a KYC status-history record.
+ * Must use the same connection as the case update.
+ */
+async function insertStatusHistory(
+  connection,
+  { caseId, oldStatus, newStatus, actorUserId, reason },
+) {
+  const [result] = await connection.execute(
+    `INSERT INTO kyc_status_history
+       (case_id, old_status, new_status, actor_user_id, reason)
+     VALUES (?, ?, ?, ?, ?)`,
+    [caseId, oldStatus, newStatus, actorUserId, reason ?? null],
+  );
+
+  return result.insertId;
+}
+
 const adminKycModel = {
   findKycApplications,
   countKycApplications,
@@ -237,6 +284,10 @@ const adminKycModel = {
   findMediaDetailsByCaseId,
   findMediaAssetForAdmin,
   findAgreementsByCaseId,
+  getConnection,
+  findKycCaseForUpdate,
+  approveKycCase,
+  insertStatusHistory,
 };
 
 export {
@@ -249,6 +300,10 @@ export {
   findMediaDetailsByCaseId,
   findMediaAssetForAdmin,
   findAgreementsByCaseId,
+  getConnection,
+  findKycCaseForUpdate,
+  approveKycCase,
+  insertStatusHistory,
 };
 
 export default adminKycModel;

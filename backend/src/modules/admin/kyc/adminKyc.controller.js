@@ -69,16 +69,33 @@ async function getKycDocumentAccessController(req, res, next) {
   }
 }
 
+async function approveKycApplicationController(req, res, next) {
+  try {
+    const result = await adminKycService.approveKycApplication(
+      req.params.caseId,
+      req.user.id,
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
 const adminKycController = {
   getKycApplicationsController,
   getKycApplicationDetailsController,
   getKycDocumentAccessController,
+  approveKycApplicationController,
 };
 
 export {
   getKycApplicationsController,
   getKycApplicationDetailsController,
   getKycDocumentAccessController,
+  approveKycApplicationController,
 };
 
 export default adminKycController;

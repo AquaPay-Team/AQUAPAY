@@ -33,5 +33,12 @@ router.get(
   adminKycController.getKycDocumentAccessController,
 );
 
+router.patch(
+  "/:caseId/approve",
+  requireAuth,
+  requireAdmin,
+  adminKycController.approveKycApplicationController,
+);
+
 export { router };
 export default router;

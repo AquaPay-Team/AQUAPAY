@@ -9,10 +9,10 @@ import {
   Volume2,
   FileText,
   AlertCircle,
-  RefreshCw,
   Loader2
 } from "lucide-react";
 import { toast } from "sonner";
+import LiveVideoKycRecorder from "./LiveVideoKycRecorder";
 
 export function Step5MediaUploads({ 
   formData, 
@@ -26,7 +26,6 @@ export function Step5MediaUploads({
   const [activeTab, setActiveTab] = useState("consent"); // "consent" | "upload"
 
   const selfieInputRef = useRef(null);
-  const videoInputRef = useRef(null);
   const shopInputRef = useRef(null);
 
   const [dragActive, setDragActive] = useState({
@@ -317,79 +316,11 @@ export function Step5MediaUploads({
             </div>
           </div>
 
-          {/* 2. Video KYC upload */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-semibold text-slate-900">
-                Video KYC Upload *
-              </label>
-              <button
-                type="button"
-                onClick={() => setActiveTab("consent")}
-                className="text-xs text-blue-600 hover:text-blue-800 font-medium underline cursor-pointer"
-              >
-                View Consent Scripts
-              </button>
-            </div>
-            <input
-              type="file"
-              ref={videoInputRef}
-              accept="video/mp4,video/quicktime,video/webm"
-              className="hidden"
-              onChange={(e) => handleFileInputChange(e, "consent_video", "videoFile")}
-            />
-            <div
-              onDragOver={(e) => handleDrag(e, "video", true)}
-              onDragLeave={(e) => handleDrag(e, "video", false)}
-              onDrop={(e) => handleDrop(e, "consent_video", "videoFile", "video")}
-              className={`border-2 border-dashed rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 transition ${
-                dragActive.video
-                  ? "border-[#00c5ff] bg-cyan-50/20"
-                  : videoState.status === "uploaded"
-                  ? "border-emerald-400 bg-emerald-50/10"
-                  : videoState.status === "failed"
-                  ? "border-rose-400 bg-rose-50/10"
-                  : "border-slate-300 bg-white hover:border-slate-400"
-              }`}
-            >
-              <div className="flex items-center space-x-3.5 min-w-0">
-                {videoState.status === "uploading" ? (
-                  <Loader2 className="w-7 h-7 text-blue-600 animate-spin shrink-0" />
-                ) : videoState.status === "uploaded" ? (
-                  <CheckCircle2 className="w-7 h-7 text-emerald-600 shrink-0" />
-                ) : videoState.status === "failed" ? (
-                  <AlertCircle className="w-7 h-7 text-rose-500 shrink-0" />
-                ) : (
-                  <Upload className="w-7 h-7 text-[#0284c7] shrink-0 stroke-[1.8]" />
-                )}
-                <div className="text-left min-w-0">
-                  <span className="block text-sm font-medium text-slate-900 truncate">
-                    {videoState.status === "uploading"
-                      ? "Uploading video…"
-                      : videoState.status === "uploaded"
-                      ? (videoState.name || "Video KYC attached")
-                      : videoState.status === "failed"
-                      ? (videoState.error || "Video upload failed")
-                      : "Drag and drop KYC video here"}
-                  </span>
-                  <span className="block text-xs text-slate-400">
-                    {videoState.status === "uploaded"
-                      ? "Uploaded & Confirmed by Server ✓"
-                      : "MP4, WebM, MOV (max. 20 MB)"}
-                  </span>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => videoInputRef.current?.click()}
-                disabled={videoState.status === "uploading"}
-                className="bg-[#0a1945] hover:bg-[#13286b] active:scale-[0.99] text-white text-xs font-semibold px-5 py-2 rounded-xl shadow-xs transition shrink-0 cursor-pointer self-start sm:self-auto disabled:opacity-50"
-              >
-                {videoState.status === "uploaded" ? "Change File" : videoState.status === "failed" ? "Retry" : "Browse Files"}
-              </button>
-            </div>
-          </div>
+          {/* 2. Live Video KYC: gallery selection is intentionally disabled */}
+          <LiveVideoKycRecorder
+            uploadState={videoState}
+            onUpload={onFileUpload}
+          />
 
           {/* 3. Shop / Business Location Photo */}
           <div>

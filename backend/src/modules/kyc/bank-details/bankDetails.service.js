@@ -117,18 +117,14 @@ async function verifyBankAccountWithIdto(bankDetails) {
 
   if (!response.ok || result?.status !== "success") {
     console.error("[AquaPay KYC] IDTO bank verification failed", {
-      httpStatus: response.status,
-      providerStatus:
-        typeof result?.status === "string" ? result.status : undefined,
-      providerErrorCode:
-        typeof result?.error_code === "string"
-          ? result.error_code
-          : undefined,
-      providerMessage:
-        typeof result?.message === "string"
-          ? result.message.slice(0, 200)
-          : undefined,
-    });
+  httpStatus: response.status,
+  providerStatus:
+    typeof result?.status === "string" ? result.status : undefined,
+  providerErrorCode:
+    typeof result?.error_code === "string"
+      ? result.error_code
+      : undefined,
+});
 
     throw serviceUnavailable();
   }
@@ -141,16 +137,11 @@ async function verifyBankAccountWithIdto(bankDetails) {
     throw serviceUnavailable();
   }
 
-  console.log("[IDTO bank verification successful]", {
-  providerReference: result.tranx_id,
-  accountHolderName: result.data.account_holder_name,
-});
-
-return {
+  return {
   accountHolderName: result.data.account_holder_name,
   bankName,
   providerReference: result.tranx_id,
-};
+  };
 }
 
 function serviceUnavailable() {

@@ -93,7 +93,7 @@ export function Step7ReviewSubmit({
 
             <p>
               <span className="text-slate-500">Business Type:</span>{" "}
-              {formData.businessType || "Retail Merchant"}
+              {formData.businessType || "Sole Proprietorship"}
             </p>
 
             <p>

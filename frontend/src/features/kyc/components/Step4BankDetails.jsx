@@ -29,15 +29,13 @@ export function Step4BankDetails({ formData, onChange, errors = {}, isVerified =
           </label>
           <input
             type="text"
-            disabled={isVerified}
-            maxLength={18}
             value={formData.accountNumber || ""}
             onChange={(e) => handleAccountChange("accountNumber", e)}
-            placeholder="9 to 18-digit account number"
-            className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 font-mono tracking-wider focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 transition disabled:bg-slate-50 disabled:text-slate-600"
+            placeholder="Enter account number"
+            className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 font-mono tracking-wider focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 transition"
           />
           {errors.accountNumber && (
-            <p className="text-xs text-rose-500 mt-1 font-medium">{errors.accountNumber}</p>
+            <p className="text-xs text-rose-500 mt-1">{errors.accountNumber}</p>
           )}
         </div>
 
@@ -48,15 +46,13 @@ export function Step4BankDetails({ formData, onChange, errors = {}, isVerified =
           </label>
           <input
             type="text"
-            disabled={isVerified}
-            maxLength={18}
             value={formData.confirmAccountNumber || ""}
             onChange={(e) => handleAccountChange("confirmAccountNumber", e)}
             placeholder="Re-enter account number"
-            className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 font-mono tracking-wider focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 transition disabled:bg-slate-50 disabled:text-slate-600"
+            className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 font-mono tracking-wider focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 transition"
           />
           {errors.confirmAccountNumber && (
-            <p className="text-xs text-rose-500 mt-1 font-medium">{errors.confirmAccountNumber}</p>
+            <p className="text-xs text-rose-500 mt-1">{errors.confirmAccountNumber}</p>
           )}
         </div>
 
@@ -67,15 +63,14 @@ export function Step4BankDetails({ formData, onChange, errors = {}, isVerified =
           </label>
           <input
             type="text"
-            disabled={isVerified}
             maxLength={11}
             value={formData.ifscCode || ""}
             onChange={handleIfscChange}
-            placeholder="e.g. SBIN0001234 (11 characters)"
-            className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 uppercase font-mono tracking-wider focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 transition disabled:bg-slate-50 disabled:text-slate-600"
+            placeholder="e.g. SBIN0001234"
+            className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 uppercase font-mono tracking-wider focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 transition"
           />
           {errors.ifscCode && (
-            <p className="text-xs text-rose-500 mt-1 font-medium">{errors.ifscCode}</p>
+            <p className="text-xs text-rose-500 mt-1">{errors.ifscCode}</p>
           )}
         </div>
       </div>

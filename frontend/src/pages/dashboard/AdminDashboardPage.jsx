@@ -1,15 +1,16 @@
-import React, { useEffect, useRef } from 'react';
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useAdminDashboard } from '../../features/admin/hooks/useAdminDashboard';
 import { AdminSidebar } from '../../features/admin/components/AdminSidebar';
 import { AdminHeader } from '../../features/admin/components/AdminHeader';
 import { DashboardOverview } from '../../features/admin/components/DashboardOverview';
 import { AdminUserTable } from '../../features/admin/components/AdminUserTable';
+import { KycComplianceQueue } from '../../features/admin/components/KycComplianceQueue';
 
 import { CommandSearchModal } from '../../features/admin/modals/CommandSearchModal';
 import { ActionModal } from '../../features/admin/modals/ActionModal';
 import { AddAgentModal } from '../../features/admin/modals/AddAgentModal';
-import UserProfile from '../user/UserProfile';
+import { ResetPasswordModal } from '../../features/admin/modals/ResetPasswordModal';
 
 export default function AdminDashboardPage() {
   const {
@@ -23,11 +24,9 @@ export default function AdminDashboardPage() {
     openNavCategory,
     toggleCategory,
     getCurrentRoleTitle,
-    permittedRoles,
-    selectedRoleId,
-    setSelectedRoleId,
 
     // Real Data & Stats
+    users,
     filteredMembers,
     isLoadingUsers,
     stats,
@@ -55,48 +54,32 @@ export default function AdminDashboardPage() {
     handleExportCSV,
   } = useAdminDashboard();
 
+  const [resetPasswordUser, setResetPasswordUser] = useState(null);
   const location = useLocation();
-  const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const requestedRoleId = searchParams.get('roleId') || '';
-  const targetUserMatch = location.pathname.match(/^\/admin\/users\/(\d+)$/);
-  const isProfileRoute = location.pathname === '/admin/profile' || Boolean(targetUserMatch);
-  const isDirectoryRoute = location.pathname === '/admin/users';
-  const selectedRole = permittedRoles.find((role) => String(role.id) === String(selectedRoleId));
-  const directoryRoleId = selectedRole ? String(selectedRole.id) : '';
-  const previousDirectoryRef = useRef({ pathname: location.pathname, roleId: directoryRoleId });
 
-  // Keep the selected role in the URL so direct links and refreshes retain the directory.
+  // Sync route with active dashboard tab & modals
   useEffect(() => {
-    if (location.pathname === '/admin/users/create') {
-      navigate('/admin/users', { replace: true });
-      return;
-    }
+    const params = new URLSearchParams(location.search);
+    const roleParam = params.get('role');
 
-    if (location.pathname === '/admin/users') {
+    if (location.pathname.includes('/admin/users/create')) {
       setActiveTab('all-users');
-      setSelectedRoleId(requestedRoleId);
-      if (requestedRoleId) loadUsers(requestedRoleId);
+      setAddAgentModalOpen(true);
+    } else if (location.pathname.includes('/admin/users')) {
+      if (roleParam) {
+        setActiveTab(roleParam);
+      } else {
+        setActiveTab('all-users');
+      }
     } else if (location.pathname.includes('/admin/kyc')) {
-      setActiveTab('all-users');
+      setActiveTab('kyc');
     } else if (location.pathname.includes('/admin/dashboard')) {
       setActiveTab('dashboard');
-      setSelectedRoleId('');
-      loadUsers();
-    } else if (isProfileRoute) {
-      setActiveTab('profile');
     }
-  }, [location.pathname, location.search, requestedRoleId, isProfileRoute, navigate, setActiveTab, setSelectedRoleId, loadUsers]);
-
-  useEffect(() => {
-    const selectionChanged = previousDirectoryRef.current.pathname !== location.pathname ||
-      previousDirectoryRef.current.roleId !== directoryRoleId;
-    if (!isDirectoryRoute || !directoryRoleId || selectionChanged) setAddAgentModalOpen(false);
-    previousDirectoryRef.current = { pathname: location.pathname, roleId: directoryRoleId };
-  }, [isDirectoryRoute, location.pathname, directoryRoleId, setAddAgentModalOpen]);
+  }, [location.pathname, location.search, setActiveTab, setAddAgentModalOpen]);
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] flex font-sans text-slate-800 antialiased selection:bg-blue-600 selection:text-white">
+    <div className="min-h-screen bg-[#f8fafc] flex font-sans text-slate-800 antialiased">
       {/* Admin Sidebar Navigation */}
       <AdminSidebar
         activeTab={activeTab}
@@ -107,12 +90,13 @@ export default function AdminDashboardPage() {
         setMobileSidebarOpen={setMobileSidebarOpen}
         openNavCategory={openNavCategory}
         toggleCategory={toggleCategory}
+        onOpenCreateModal={() => setAddAgentModalOpen(true)}
       />
 
       {/* Main Content Area */}
       <div
         className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${
-          sidebarCollapsed ? 'md:ml-20' : 'md:ml-72'
+          sidebarCollapsed ? 'md:ml-20' : 'md:ml-64'
         }`}
       >
         {/* Top Header */}
@@ -121,17 +105,23 @@ export default function AdminDashboardPage() {
           setSidebarCollapsed={setSidebarCollapsed}
           setMobileSidebarOpen={setMobileSidebarOpen}
           setShowCommandModal={setShowCommandModal}
+          loadUsers={loadUsers}
+          isLoadingUsers={isLoadingUsers}
         />
 
         {/* Dynamic Main Workspace Views - Backend-Backed Only */}
         <main className="p-4 md:p-6 lg:p-8 flex-1">
-          {isProfileRoute ? (
-            <UserProfile targetUserId={targetUserMatch?.[1]} />
-          ) : activeTab === 'dashboard' ? (
+          {activeTab === 'dashboard' ? (
             <DashboardOverview
               stats={stats}
+              setActiveTab={setActiveTab}
+              setAddAgentModalOpen={setAddAgentModalOpen}
               loadUsers={loadUsers}
               isLoadingUsers={isLoadingUsers}
+            />
+          ) : activeTab === 'kyc' ? (
+            <KycComplianceQueue
+              onSelectUser={(user) => setActionModalUser(user)}
             />
           ) : (
             <AdminUserTable
@@ -140,12 +130,12 @@ export default function AdminDashboardPage() {
               setMemberSearch={setMemberSearch}
               statusFilter={statusFilter}
               setStatusFilter={setStatusFilter}
-              filteredMembers={directoryRoleId ? filteredMembers : []}
+              filteredMembers={filteredMembers}
               handleExportCSV={handleExportCSV}
               setAddAgentModalOpen={setAddAgentModalOpen}
               setActionModalUser={setActionModalUser}
-              isLoadingUsers={Boolean(directoryRoleId) && isLoadingUsers}
-              selectedRoleId={directoryRoleId}
+              onResetPasswordUser={(user) => setResetPasswordUser(user)}
+              isLoadingUsers={isLoadingUsers}
             />
           )}
         </main>
@@ -167,12 +157,18 @@ export default function AdminDashboardPage() {
         handleUpdateMemberDetails={handleUpdateMemberDetails}
       />
 
+      {/* Reset User Password Modal (POST /api/users/:id/reset-password) */}
+      <ResetPasswordModal
+        user={resetPasswordUser}
+        onClose={() => setResetPasswordUser(null)}
+        onSuccess={loadUsers}
+      />
+
       {/* Add New Agent Modal */}
       <AddAgentModal
         addAgentModalOpen={addAgentModalOpen}
         setAddAgentModalOpen={setAddAgentModalOpen}
         handleOnboardAgent={handleOnboardAgent}
-        selectedRole={selectedRole?.slug || ""}
       />
     </div>
   );

@@ -78,6 +78,7 @@ export default function AdminLoginPage() {
       const redirectPath = location.state?.from?.pathname || "/admin/dashboard";
       navigate(redirectPath, { replace: true });
     } catch (err) {
+      console.error("Admin login error:", err);
       const parsed = parseApiError(err);
       // Ensure specific unauthorized message is highlighted
       if (err.message && err.message.includes("not authorized to access the Admin Panel")) {
@@ -231,7 +232,7 @@ export default function AdminLoginPage() {
         {/* Switch to User Login */}
         <div className="mt-4 text-center border-t border-slate-100 pt-3">
           <Link
-            to="/login"
+            to="/login/user"
             className="text-xs text-slate-500 hover:text-slate-800 transition-colors"
           >
             Looking for User Portal? <span className="text-blue-600 font-semibold hover:underline">User Login</span>

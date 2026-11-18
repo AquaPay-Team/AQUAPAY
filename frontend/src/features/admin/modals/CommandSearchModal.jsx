@@ -1,29 +1,14 @@
-import React from "react";
-import { Search, X, ChevronRight, Users, ShieldCheck, FileText, LayoutDashboard } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import React from 'react';
+import { Search, X, ChevronRight } from 'lucide-react';
 
 export function CommandSearchModal({
   showCommandModal,
   setShowCommandModal,
   cmdSearchQuery,
   setCmdSearchQuery,
-  setActiveTab,
+  setActiveTab
 }) {
-  const navigate = useNavigate();
   if (!showCommandModal) return null;
-
-  const quickNav = [
-    { label: "Dashboard Overview", tab: "dashboard", icon: LayoutDashboard, desc: "Network metrics & operational stats" },
-    { label: "Role Directory", path: "/admin/users", icon: Users, desc: "Choose a permitted role from the sidebar" },
-    { label: "KYC Compliance Queue", tab: "kyc", icon: ShieldCheck, desc: "UIDAI Aadhaar & PAN verification audit" },
-    { label: "Audit & Ledger Reports", tab: "reports", icon: FileText, desc: "System transaction logs & exports" },
-  ];
-
-  const filtered = quickNav.filter(
-    (item) =>
-      item.label.toLowerCase().includes(cmdSearchQuery.toLowerCase()) ||
-      item.desc.toLowerCase().includes(cmdSearchQuery.toLowerCase())
-  );
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-start justify-center pt-20 p-4">
@@ -33,64 +18,47 @@ export function CommandSearchModal({
           <input
             type="text"
             autoFocus
-          placeholder="Search menus and reports..."
+            placeholder="Search menus, users by ID or mobile, or reports..."
             value={cmdSearchQuery}
             onChange={(e) => setCmdSearchQuery(e.target.value)}
             className="w-full text-sm outline-none text-slate-800 placeholder-slate-400"
           />
-          <kbd className="hidden sm:inline-block px-1.5 py-0.5 text-[10px] font-mono text-slate-400 bg-slate-100 border border-slate-200 rounded">
-            ESC
-          </kbd>
           <button
             onClick={() => setShowCommandModal(false)}
-            className="text-slate-400 hover:text-slate-600 transition p-1 cursor-pointer"
+            className="text-slate-400 hover:text-slate-600 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
-
         <div className="p-3 max-h-80 overflow-y-auto divide-y divide-slate-100 text-xs">
           <div className="pb-2">
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-2">
               Quick View Navigation
             </span>
             <div className="mt-1 space-y-1">
-              {filtered.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <button
-                    key={item.tab}
-                    onClick={() => {
-                      if (item.path) navigate(item.path);
-                      else if (item.tab) setActiveTab(item.tab);
-                      setShowCommandModal(false);
-                    }}
-                    className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-slate-50 text-slate-700 font-medium flex items-center justify-between transition-colors cursor-pointer group"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-600 group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors">
-                        <Icon className="w-4 h-4 text-black" />
-                      </div>
-                      <div>
-                        <div className="font-semibold text-slate-900 text-xs">{item.label}</div>
-                        <div className="text-[11px] text-slate-400">{item.desc}</div>
-                      </div>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-slate-600 group-hover:translate-x-0.5 transition-all" />
-                  </button>
-                );
-              })}
+              {[
+                { label: 'Dashboard Overview', tab: 'dashboard' },
+                { label: 'All Users Directory', tab: 'all-users' },
+                { label: 'Retailer Management', tab: 'retailer' },
+                { label: 'Distributor Network', tab: 'distributor' },
+                { label: 'Sub Admin Directory', tab: 'sub-admin' }
+              ].map((item) => (
+                <button
+                  key={item.tab}
+                  onClick={() => {
+                    setActiveTab(item.tab);
+                    setShowCommandModal(false);
+                  }}
+                  className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-slate-700 font-medium flex items-center justify-between transition-colors"
+                >
+                  <span>{item.label}</span>
+                  <ChevronRight className="w-4 h-4 text-slate-400" />
+                </button>
+              ))}
             </div>
           </div>
-        </div>
-
-        <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-100 text-[11px] text-slate-400 flex items-center justify-between">
-          <span>Tip: Press <kbd className="px-1 py-0.5 bg-white border border-slate-200 rounded text-[10px]">Ctrl</kbd> + <kbd className="px-1 py-0.5 bg-white border border-slate-200 rounded text-[10px]">K</kbd> anywhere to open</span>
-          <span>AquaPay Admin Console</span>
         </div>
       </div>
     </div>
   );
 }
-
-export default CommandSearchModal;

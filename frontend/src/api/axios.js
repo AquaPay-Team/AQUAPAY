@@ -48,9 +48,9 @@ api.interceptors.response.use(
       if (typeof window !== "undefined") {
         const path = window.location.pathname;
         if (path.startsWith("/admin")) {
-          window.location.href = "/login?session=expired";
+          window.location.href = "/login/admin?session=expired";
         } else if (!path.includes("/login")) {
-          window.location.href = "/login?session=expired";
+          window.location.href = "/login/user?session=expired";
         }
       }
     }

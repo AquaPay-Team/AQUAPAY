@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 
 // Auth Pages
 import LoginPage from "../pages/auth/LoginPage";
+import AdminLoginPage from "../pages/admin/AdminLoginPage";
 import ForgotPasswordPage from "../pages/auth/ForgotPasswordPage";
 
 // Route Guards
@@ -27,12 +28,12 @@ export function AppRoutes() {
   return (
     <Routes>
       {/* 1. Public Authentication Entry Points */}
-      <Route path="/login" element={<LoginPage />} />
+      <Route path="/login/admin" element={<AdminLoginPage />} />
+      <Route path="/login/user" element={<LoginPage />} />
 
       {/* Backward-Compatible Login Aliases */}
-      <Route path="/login/admin" element={<Navigate to="/login" replace />} />
-      <Route path="/login/user" element={<Navigate to="/login" replace />} />
-      <Route path="/admin/login" element={<Navigate to="/login" replace />} />
+      <Route path="/admin/login" element={<Navigate to="/login/admin" replace />} />
+      <Route path="/login" element={<Navigate to="/login/user" replace />} />
 
       {/* Password Recovery Routes */}
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
@@ -51,23 +52,14 @@ export function AppRoutes() {
           <Route index element={<Navigate to="/user/dashboard" replace />} />
           <Route path="dashboard" element={<UserDashboard />} />
           <Route path="team" element={<UserTeam />} />
-          <Route path="team/create" element={<Navigate to="/user/team" replace />} />
-          <Route path="team/:id" element={<UserProfile />} />
+          <Route path="team/create" element={<UserTeam />} />
+          <Route path="profile" element={<UserProfile />} />
+          <Route path="settings" element={<UserSettings />} />
           <Route path="*" element={<Navigate to="/user/dashboard" replace />} />
         </Route>
 
         {/* /dashboard redirect to /user/dashboard for standard user navigation */}
         <Route path="/dashboard" element={<Navigate to="/user/dashboard" replace />} />
-      </Route>
-
-      {/* Account profile and password settings remain available before KYC completion. */}
-      <Route element={<UserProtectedRoute requireKyc={false} />}>
-        <Route path="/user/profile" element={<UserLayout />}>
-          <Route index element={<UserProfile />} />
-        </Route>
-        <Route path="/user/settings" element={<UserLayout />}>
-          <Route index element={<UserSettings />} />
-        </Route>
       </Route>
 
       {/* 4. Admin Protected Routes (/admin/*) */}
@@ -77,18 +69,18 @@ export function AppRoutes() {
           <Route path="dashboard" element={<ExistingAdminDashboard />} />
           <Route path="users" element={<ExistingAdminDashboard />} />
           <Route path="users/create" element={<ExistingAdminDashboard />} />
-          <Route path="users/:id" element={<UserProfile />} />
+          <Route path="users/:id" element={<ExistingAdminDashboard />} />
           <Route path="kyc" element={<ExistingAdminDashboard />} />
           <Route path="reports" element={<ExistingAdminDashboard />} />
-          <Route path="profile" element={<UserProfile />} />
+          <Route path="profile" element={<ExistingAdminDashboard />} />
           <Route path="settings" element={<ExistingAdminDashboard />} />
           <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
         </Route>
       </Route>
 
       {/* Default Fallback */}
-      <Route path="/" element={<Navigate to="/login" replace />} />
-      <Route path="*" element={<Navigate to="/login" replace />} />
+      <Route path="/" element={<Navigate to="/login/user" replace />} />
+      <Route path="*" element={<Navigate to="/login/user" replace />} />
     </Routes>
   );
 }

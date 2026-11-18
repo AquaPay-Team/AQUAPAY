@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { CreditCard, CheckCircle2, AlertCircle, RefreshCw, ShieldCheck } from "lucide-react";
+import { CreditCard, CheckCircle2, AlertCircle, RefreshCw } from "lucide-react";
 
 export function Step3PanVerification({
   formData,
@@ -7,11 +7,8 @@ export function Step3PanVerification({
   panVerified,
   panLoading,
   onVerifyPan,
-  panError: externalError,
 }) {
   const [panError, setPanError] = useState("");
-  // Explicit unchecked PAN consent checkbox as required by compliance
-  const [panConsent, setPanConsent] = useState(false);
 
   const panRegex = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
   const currentPan = String(formData.panNumber || "").trim().toUpperCase();
@@ -20,6 +17,7 @@ export function Step3PanVerification({
     const val = e.target.value.toUpperCase().slice(0, 10);
     onChange("panNumber", val);
 
+    // Instant validation
     if (val.length === 0) {
       setPanError("");
     } else if (val.length < 10) {
@@ -40,15 +38,9 @@ export function Step3PanVerification({
       setPanError("Invalid PAN format. Must be 5 letters, 4 digits, and 1 letter (e.g. ABCDE1234F)");
       return;
     }
-    if (!panConsent) {
-      setPanError("Please check the consent checkbox to verify your PAN with the Income Tax Department.");
-      return;
-    }
     setPanError("");
     onVerifyPan();
   };
-
-  const displayError = panError || externalError;
 
   return (
     <div className="space-y-6 max-w-2xl mx-auto">
@@ -77,7 +69,7 @@ export function Step3PanVerification({
               onChange={handlePanChange}
               placeholder="ABCDE1234F"
               className={`flex-1 bg-white border rounded-xl px-4 py-2.5 text-base uppercase tracking-widest font-mono text-slate-900 focus:outline-none transition placeholder:tracking-normal placeholder:font-sans placeholder:text-sm ${
-                displayError
+                panError
                   ? "border-rose-400 bg-rose-50/20 focus:border-rose-500 focus:ring-1 focus:ring-rose-500"
                   : panVerified
                   ? "border-emerald-300 bg-emerald-50/20 text-slate-700"
@@ -87,7 +79,7 @@ export function Step3PanVerification({
             <button
               type="button"
               onClick={handleVerifyClick}
-              disabled={panLoading || panVerified || currentPan.length !== 10 || !panConsent}
+              disabled={panLoading || panVerified || currentPan.length !== 10}
               className="bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white px-5 py-2.5 rounded-xl text-xs font-medium transition disabled:opacity-40 flex items-center gap-2 cursor-pointer shadow-xs whitespace-nowrap"
             >
               {panLoading && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
@@ -95,36 +87,18 @@ export function Step3PanVerification({
             </button>
           </div>
 
-          {/* Explicit Consent Checkbox (Required before verification) */}
-          {!panVerified && (
-            <label className="flex items-start gap-2.5 mt-3 p-3 bg-white border border-slate-200 rounded-xl cursor-pointer hover:border-blue-300 transition-colors">
-              <input
-                type="checkbox"
-                checked={panConsent}
-                onChange={(e) => {
-                  setPanConsent(e.target.checked);
-                  if (e.target.checked && panError.includes("consent")) setPanError("");
-                }}
-                className="mt-0.5 w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-              />
-              <span className="text-[11px] text-slate-600 leading-relaxed">
-                I hereby provide explicit consent to AquaPay to verify my Permanent Account Number (PAN) details with the official Income Tax Department database for KYC compliance.
-              </span>
-            </label>
-          )}
-
           {/* Instant Inline Error / Feedback */}
-          {displayError && (
-            <p className="text-xs text-rose-500 mt-2 flex items-center gap-1 font-medium">
+          {panError && (
+            <p className="text-xs text-rose-500 mt-1.5 flex items-center gap-1 font-medium">
               <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-              {displayError}
+              {panError}
             </p>
           )}
 
-          {!displayError && currentPan.length === 10 && panRegex.test(currentPan) && !panVerified && panConsent && (
-            <p className="text-xs text-emerald-600 mt-2 flex items-center gap-1 font-medium">
+          {!panError && currentPan.length === 10 && panRegex.test(currentPan) && !panVerified && (
+            <p className="text-xs text-emerald-600 mt-1.5 flex items-center gap-1 font-medium">
               <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-              Valid PAN format and consent provided. Click 'Verify PAN' to authenticate.
+              Valid PAN format. Click 'Verify PAN' to authenticate against the tax database.
             </p>
           )}
         </div>
@@ -134,7 +108,7 @@ export function Step3PanVerification({
           <div className="p-5 bg-emerald-50/80 border border-emerald-300 rounded-2xl space-y-3.5 shadow-xs">
             <div className="flex items-center gap-2.5 text-emerald-900 font-semibold text-sm">
               <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-              <span>PAN Records Verified via Income Tax Database</span>
+              <span>PAN Records Verified via NSDL / Income Tax Database</span>
             </div>
             <div className="text-xs text-slate-700 grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-3 border-t border-emerald-200/70">
               <div>
@@ -146,7 +120,7 @@ export function Step3PanVerification({
               <div>
                 <span className="text-slate-500 block text-[11px] mb-0.5">Masked PAN:</span>
                 <span className="font-mono font-semibold text-slate-900 text-sm">
-                  {formData.panMasked || (currentPan ? `••••••${currentPan.slice(-4)}` : "••••••••••")}
+                  {formData.panMasked || `••••••${currentPan.slice(-4) || "XXXX"}`}
                 </span>
               </div>
               <div>
@@ -158,8 +132,7 @@ export function Step3PanVerification({
               </div>
             </div>
             <div className="pt-2 text-[11px] text-emerald-800 font-medium border-t border-emerald-100 flex items-center gap-1.5">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-              <span>Official legal name matching completed against UIDAI Aadhaar identity.</span>
+              <span>✓ Official legal name matching completed against UIDAI Aadhaar identity.</span>
             </div>
           </div>
         )}
@@ -169,7 +142,7 @@ export function Step3PanVerification({
           <div className="text-xs text-slate-600 bg-white p-3.5 rounded-xl border border-slate-200 flex items-start gap-2.5 shadow-xs">
             <AlertCircle className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
             <span>
-              Enter your 10-character PAN number, provide consent, and click 'Verify PAN'. Cardholder name must match your legal identity records.
+              Enter your 10-character PAN number and click 'Verify PAN'. Cardholder name must match your legal business registration.
             </span>
           </div>
         )}

@@ -40,10 +40,16 @@ export const authenticateWithMe = async ({ identifier, password }) => {
 
   const { accessToken, user: loginUserPayload } = loginRes.data.data;
 
-  // Role-based routing requires an authoritative profile from the server.
-  const meRes = await getCurrentUser(accessToken);
-  const verifiedUser = meRes?.data || loginUserPayload;
-  if (!verifiedUser?.id) throw new Error("Could not verify the authenticated account");
+  // Retrieve fresh user and role info directly from backend
+  let verifiedUser = loginUserPayload;
+  try {
+    const meRes = await getCurrentUser(accessToken);
+    if (meRes?.data) {
+      verifiedUser = meRes.data;
+    }
+  } catch (err) {
+    console.warn("Could not fetch /auth/me after login, using login payload:", err?.message);
+  }
 
   return {
     accessToken,
@@ -69,20 +75,10 @@ export const resetPassword = async ({ token, otp, password }) => {
   return response.data;
 };
 
-export const changePassword = async ({ currentPassword, newPassword, confirmPassword }) => {
-  const response = await api.post("/auth/change-password", {
-    currentPassword,
-    newPassword,
-    confirmPassword,
-  });
-  return response.data;
-};
-
 export default {
   loginUser,
   getCurrentUser,
   authenticateWithMe,
   forgotPassword,
   resetPassword,
-  changePassword,
 };

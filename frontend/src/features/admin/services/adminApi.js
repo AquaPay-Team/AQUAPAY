@@ -61,11 +61,6 @@ export const fetchBackendUsers = async (params = {}) => {
   return response.data;
 };
 
-export const fetchBackendDescendantRoles = async () => {
-  const response = await api.get("/users/roles/descendants");
-  return response.data;
-};
-
 export const fetchBackendUserById = async (id) => {
   const response = await api.get(`/users/${id}`);
   return response.data;
@@ -81,8 +76,23 @@ export const updateBackendUser = async (id, userData) => {
   return response.data;
 };
 
-export const resetBackendUserPassword = async (id, { newPassword, confirmPassword }) => {
-  const response = await api.post(`/users/${id}/reset-password`, { newPassword, confirmPassword });
+export const resetSubordinatePassword = async (userId, { newPassword, confirmPassword }) => {
+  const response = await api.post(`/users/${userId}/reset-password`, {
+    newPassword,
+    confirmPassword,
+  });
+  return response.data;
+};
+
+export const fetchDescendantRoles = async () => {
+  const response = await api.get("/users/roles/descendants");
+  return response.data;
+};
+
+export const fetchUsersByKycStatus = async (kycStatus) => {
+  const response = await api.get("/users", {
+    params: kycStatus && kycStatus !== "all" ? { kycStatus } : {},
+  });
   return response.data;
 };
 
@@ -92,9 +102,10 @@ export default {
   adminLogout,
   isAdminUser,
   fetchBackendUsers,
-  fetchBackendDescendantRoles,
   fetchBackendUserById,
   createBackendUser,
   updateBackendUser,
-  resetBackendUserPassword,
+  resetSubordinatePassword,
+  fetchDescendantRoles,
+  fetchUsersByKycStatus,
 };

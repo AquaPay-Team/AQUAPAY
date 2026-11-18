@@ -3,9 +3,9 @@
  * Maps directly to backend role hierarchy:
  * 1: AD (Admin)
  * 2: SA (Sub Admin)
- * 3: NSM (NSM)
+ * 3: NSM (National Sales Manager)
  * 4: SH (State Head)
- * 5: CNF (CNF / CHF)
+ * 5: CNF (CNF / ASM / CHF)
  * 6: MD (Master Distributor)
  * 7: DT (Distributor)
  * 8: RT (Retailer)
@@ -20,7 +20,84 @@ export const ROLE_NAVIGATION = {
       path: "/admin/dashboard",
       icon: "LayoutDashboard",
     },
-    { id: "admin-roles", isDynamicRoles: true },
+    {
+      id: "admin-users",
+      label: "User Management",
+      icon: "Users",
+      children: [
+        {
+          id: "admin-all-users",
+          label: "All Users",
+          roleSlug: "all",
+          tab: "all-users",
+          path: "/admin/users",
+          icon: "Users",
+        },
+        {
+          id: "admin-role-sa",
+          label: "Sub Admin",
+          roleSlug: "sa",
+          tab: "sub-admin",
+          path: "/admin/users?role=sa",
+          icon: "ShieldAlert",
+        },
+        {
+          id: "admin-role-nsm",
+          label: "National Sales Manager",
+          roleSlug: "nsm",
+          tab: "nsm",
+          path: "/admin/users?role=nsm",
+          icon: "Award",
+        },
+        {
+          id: "admin-role-sh",
+          label: "State Head",
+          roleSlug: "sh",
+          tab: "sh",
+          path: "/admin/users?role=sh",
+          icon: "MapPin",
+        },
+        {
+          id: "admin-role-cnf",
+          label: "CNF / ASM",
+          roleSlug: "cnf",
+          tab: "cnf-asm",
+          path: "/admin/users?role=cnf",
+          icon: "Building",
+        },
+        {
+          id: "admin-role-md",
+          label: "Master Distributor",
+          roleSlug: "md",
+          tab: "master-distributor",
+          path: "/admin/users?role=md",
+          icon: "Layers",
+        },
+        {
+          id: "admin-role-dt",
+          label: "Distributor",
+          roleSlug: "dt",
+          tab: "distributor",
+          path: "/admin/users?role=dt",
+          icon: "Briefcase",
+        },
+        {
+          id: "admin-role-rt",
+          label: "Retailer",
+          roleSlug: "rt",
+          tab: "retailer",
+          path: "/admin/users?role=rt",
+          icon: "ShoppingBag",
+        },
+        {
+          id: "admin-create-user",
+          label: "Create User",
+          tab: "create-user",
+          path: "/admin/users/create",
+          icon: "UserPlus",
+        },
+      ],
+    },
     {
       id: "admin-kyc",
       label: "KYC Management",
@@ -34,6 +111,12 @@ export const ROLE_NAVIGATION = {
       icon: "BarChart3",
     },
     {
+      id: "admin-profile",
+      label: "My Profile",
+      path: "/admin/profile",
+      icon: "User",
+    },
+    {
       id: "admin-settings",
       label: "Settings",
       path: "/admin/settings",
@@ -41,7 +124,7 @@ export const ROLE_NAVIGATION = {
     },
   ],
 
-  // Sub Admin Navigation (Level 1)
+  // Sub Admin Navigation (Level 2) - sees NSM, SH, CNF, MD, DT, RT
   SA: [
     {
       id: "sa-dashboard",
@@ -57,13 +140,49 @@ export const ROLE_NAVIGATION = {
       children: [
         {
           id: "sa-all-agents",
-          label: "My Agents",
+          label: "All Downline Agents",
           path: "/user/team",
           icon: "Users",
         },
         {
+          id: "sa-role-nsm",
+          label: "National Sales Manager",
+          path: "/user/team?role=nsm",
+          icon: "Award",
+        },
+        {
+          id: "sa-role-sh",
+          label: "State Head",
+          path: "/user/team?role=sh",
+          icon: "MapPin",
+        },
+        {
+          id: "sa-role-cnf",
+          label: "CNF / ASM",
+          path: "/user/team?role=cnf",
+          icon: "Building",
+        },
+        {
+          id: "sa-role-md",
+          label: "Master Distributor",
+          path: "/user/team?role=md",
+          icon: "Layers",
+        },
+        {
+          id: "sa-role-dt",
+          label: "Distributor",
+          path: "/user/team?role=dt",
+          icon: "Briefcase",
+        },
+        {
+          id: "sa-role-rt",
+          label: "Retailer",
+          path: "/user/team?role=rt",
+          icon: "ShoppingBag",
+        },
+        {
           id: "sa-create-agent",
-          label: "Create Agent",
+          label: "Onboard Agent",
           path: "/user/team/create",
           icon: "UserPlus",
           permission: "canCreateUsers",
@@ -90,7 +209,7 @@ export const ROLE_NAVIGATION = {
     },
   ],
 
-  // NSM Navigation (Level 2)
+  // NSM Navigation (Level 3) - sees SH, CNF, MD, DT, RT
   NSM: [
     {
       id: "nsm-dashboard",
@@ -106,9 +225,39 @@ export const ROLE_NAVIGATION = {
       children: [
         {
           id: "nsm-all-agents",
-          label: "My Team",
+          label: "All State Teams",
           path: "/user/team",
           icon: "Users",
+        },
+        {
+          id: "nsm-role-sh",
+          label: "State Head",
+          path: "/user/team?role=sh",
+          icon: "MapPin",
+        },
+        {
+          id: "nsm-role-cnf",
+          label: "CNF / ASM",
+          path: "/user/team?role=cnf",
+          icon: "Building",
+        },
+        {
+          id: "nsm-role-md",
+          label: "Master Distributor",
+          path: "/user/team?role=md",
+          icon: "Layers",
+        },
+        {
+          id: "nsm-role-dt",
+          label: "Distributor",
+          path: "/user/team?role=dt",
+          icon: "Briefcase",
+        },
+        {
+          id: "nsm-role-rt",
+          label: "Retailer",
+          path: "/user/team?role=rt",
+          icon: "ShoppingBag",
         },
         {
           id: "nsm-create-agent",
@@ -139,7 +288,7 @@ export const ROLE_NAVIGATION = {
     },
   ],
 
-  // State Head Navigation (Level 3)
+  // State Head Navigation (Level 4) - only sees CNF, MD, DT, RT
   SH: [
     {
       id: "sh-dashboard",
@@ -155,9 +304,33 @@ export const ROLE_NAVIGATION = {
       children: [
         {
           id: "sh-all-agents",
-          label: "State Team",
+          label: "All State Agents",
           path: "/user/team",
           icon: "Users",
+        },
+        {
+          id: "sh-role-cnf",
+          label: "CNF / ASM",
+          path: "/user/team?role=cnf",
+          icon: "Building",
+        },
+        {
+          id: "sh-role-md",
+          label: "Master Distributor",
+          path: "/user/team?role=md",
+          icon: "Layers",
+        },
+        {
+          id: "sh-role-dt",
+          label: "Distributor",
+          path: "/user/team?role=dt",
+          icon: "Briefcase",
+        },
+        {
+          id: "sh-role-rt",
+          label: "Retailer",
+          path: "/user/team?role=rt",
+          icon: "ShoppingBag",
         },
         {
           id: "sh-create-agent",
@@ -188,7 +361,7 @@ export const ROLE_NAVIGATION = {
     },
   ],
 
-  // CNF / CHF Navigation (Level 4)
+  // CNF / ASM Navigation (Level 5) - only sees MD, DT, RT
   CNF: [
     {
       id: "cnf-dashboard",
@@ -204,9 +377,27 @@ export const ROLE_NAVIGATION = {
       children: [
         {
           id: "cnf-all-agents",
-          label: "Territory Agents",
+          label: "All Territory Agents",
           path: "/user/team",
           icon: "Users",
+        },
+        {
+          id: "cnf-role-md",
+          label: "Master Distributor",
+          path: "/user/team?role=md",
+          icon: "Layers",
+        },
+        {
+          id: "cnf-role-dt",
+          label: "Distributor",
+          path: "/user/team?role=dt",
+          icon: "Briefcase",
+        },
+        {
+          id: "cnf-role-rt",
+          label: "Retailer",
+          path: "/user/team?role=rt",
+          icon: "ShoppingBag",
         },
         {
           id: "cnf-create-agent",
@@ -237,7 +428,7 @@ export const ROLE_NAVIGATION = {
     },
   ],
 
-  // Master Distributor Navigation (Level 5)
+  // Master Distributor Navigation (Level 6) - only sees DT, RT
   MD: [
     {
       id: "md-dashboard",
@@ -247,19 +438,31 @@ export const ROLE_NAVIGATION = {
     },
     {
       id: "md-team",
-      label: "My Distributors",
+      label: "Distribution Network",
       path: "/user/team",
       icon: "Users",
       children: [
         {
-          id: "md-dist-list",
-          label: "Distributors List",
+          id: "md-all-agents",
+          label: "All Downline Agents",
           path: "/user/team",
           icon: "Users",
         },
         {
-          id: "md-create-dist",
-          label: "Create Distributor",
+          id: "md-role-dt",
+          label: "Distributor",
+          path: "/user/team?role=dt",
+          icon: "Briefcase",
+        },
+        {
+          id: "md-role-rt",
+          label: "Retailer",
+          path: "/user/team?role=rt",
+          icon: "ShoppingBag",
+        },
+        {
+          id: "md-create-agent",
+          label: "Onboard Agent",
           path: "/user/team/create",
           icon: "UserPlus",
           permission: "canCreateUsers",
@@ -286,7 +489,7 @@ export const ROLE_NAVIGATION = {
     },
   ],
 
-  // Distributor Navigation (Level 6)
+  // Distributor Navigation (Level 7) - only sees Retailers (RT)
   DT: [
     {
       id: "dt-dashboard",
@@ -296,19 +499,25 @@ export const ROLE_NAVIGATION = {
     },
     {
       id: "dt-team",
-      label: "My Retailers",
+      label: "Retail Network",
       path: "/user/team",
       icon: "Users",
       children: [
         {
-          id: "dt-retailer-list",
-          label: "Retailers List",
+          id: "dt-all-retailers",
+          label: "All Retailers",
           path: "/user/team",
           icon: "Users",
         },
         {
+          id: "dt-role-rt",
+          label: "Retailer",
+          path: "/user/team?role=rt",
+          icon: "ShoppingBag",
+        },
+        {
           id: "dt-create-retailer",
-          label: "Create Retailer",
+          label: "Onboard Retailer",
           path: "/user/team/create",
           icon: "UserPlus",
           permission: "canCreateUsers",
@@ -335,7 +544,7 @@ export const ROLE_NAVIGATION = {
     },
   ],
 
-  // Retailer Navigation (Level 7) - Dedicated Merchant Terminal matching user UI
+  // Retailer Navigation (Level 8) - Dedicated Merchant Terminal
   RT: [
     {
       id: "rt-dashboard",
@@ -343,7 +552,6 @@ export const ROLE_NAVIGATION = {
       path: "/user/dashboard",
       icon: "LayoutDashboard",
     },
-    { id: "rt-roles", isDynamicRoles: true },
     {
       id: "rt-fund",
       label: "Fund",
@@ -450,6 +658,18 @@ export const ROLE_NAVIGATION = {
       icon: "Landmark",
     },
     {
+      id: "rt-kyc",
+      label: "My KYC Verification",
+      path: "/user/kyc",
+      icon: "ShieldCheck",
+    },
+    {
+      id: "rt-profile",
+      label: "My Profile",
+      path: "/user/profile",
+      icon: "User",
+    },
+    {
       id: "rt-settings",
       label: "Settings",
       path: "/user/settings",
@@ -487,33 +707,15 @@ export function getRoleNavigation(userOrRole) {
     slug = String(userOrRole).trim().toUpperCase();
   }
 
-  // Handle aliases like 'ADMIN' -> 'AD', 'RETAILER' -> 'RT'
+  // Handle aliases
   if (slug === "ADMIN" || slug === "SUPER ADMIN") slug = "AD";
   if (slug === "SUB ADMIN") slug = "SA";
+  if (slug === "NATIONAL SALES MANAGER") slug = "NSM";
   if (slug === "STATE HEAD") slug = "SH";
-  if (slug === "CHF") slug = "CNF";
+  if (slug === "CHF" || slug === "ASM") slug = "CNF";
   if (slug === "MASTER DISTRIBUTOR") slug = "MD";
   if (slug === "DISTRIBUTOR") slug = "DT";
   if (slug === "RETAILER") slug = "RT";
-
-  if (slug !== "AD") {
-    const items = [
-      { id: `${slug.toLowerCase()}-dashboard`, label: "Dashboard", path: "/user/dashboard", icon: "LayoutDashboard" },
-      { id: `${slug.toLowerCase()}-roles`, isDynamicRoles: true },
-    ];
-
-    if (slug === "RT") {
-      return [
-        ...items,
-        ...ROLE_NAVIGATION.RT.filter((item) => item.id.startsWith("rt-") && item.id !== "rt-dashboard" && item.id !== "rt-roles"),
-      ];
-    }
-
-    return [
-      ...items,
-      { id: `${slug.toLowerCase()}-settings`, label: "Settings", path: "/user/settings", icon: "Settings" },
-    ];
-  }
 
   return ROLE_NAVIGATION[slug] || ROLE_NAVIGATION.RT;
 }

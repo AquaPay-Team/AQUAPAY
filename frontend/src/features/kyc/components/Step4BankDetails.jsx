@@ -1,7 +1,10 @@
-import React from "react";
-import { Info, ShieldCheck } from "lucide-react";
+import React, { useState } from "react";
+import { Info, ShieldCheck, Eye, EyeOff } from "lucide-react";
 
 export function Step4BankDetails({ formData, onChange, errors = {}, isVerified = false }) {
+  const [showAccountNumber, setShowAccountNumber] = useState(false);
+  const [showConfirmAccountNumber, setShowConfirmAccountNumber] = useState(false);
+
   const handleIfscChange = (e) => {
     const val = e.target.value.toUpperCase().slice(0, 11);
     onChange("ifscCode", val);
@@ -27,13 +30,24 @@ export function Step4BankDetails({ formData, onChange, errors = {}, isVerified =
           <label className="block text-xs font-medium text-slate-700 mb-1.5">
             Bank Account Number <span className="text-rose-500">*</span>
           </label>
-          <input
-            type="text"
-            value={formData.accountNumber || ""}
-            onChange={(e) => handleAccountChange("accountNumber", e)}
-            placeholder="Enter account number"
-            className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 font-mono tracking-wider focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 transition"
-          />
+          <div className="relative">
+            <input
+              type={showAccountNumber ? "text" : "password"}
+              value={formData.accountNumber || ""}
+              onChange={(e) => handleAccountChange("accountNumber", e)}
+              placeholder="Enter account number"
+              className="w-full bg-white border border-slate-300 rounded-xl pl-3.5 pr-11 py-2.5 text-sm text-slate-900 font-mono tracking-wider focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 transition"
+            />
+            <button
+              type="button"
+              onClick={() => setShowAccountNumber((prev) => !prev)}
+              tabIndex={-1}
+              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition cursor-pointer p-1"
+              title={showAccountNumber ? "Hide Account Number" : "Show Account Number"}
+            >
+              {showAccountNumber ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
           {errors.accountNumber && (
             <p className="text-xs text-rose-500 mt-1">{errors.accountNumber}</p>
           )}
@@ -44,13 +58,24 @@ export function Step4BankDetails({ formData, onChange, errors = {}, isVerified =
           <label className="block text-xs font-medium text-slate-700 mb-1.5">
             Confirm Account Number <span className="text-rose-500">*</span>
           </label>
-          <input
-            type="text"
-            value={formData.confirmAccountNumber || ""}
-            onChange={(e) => handleAccountChange("confirmAccountNumber", e)}
-            placeholder="Re-enter account number"
-            className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 font-mono tracking-wider focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 transition"
-          />
+          <div className="relative">
+            <input
+              type={showConfirmAccountNumber ? "text" : "password"}
+              value={formData.confirmAccountNumber || ""}
+              onChange={(e) => handleAccountChange("confirmAccountNumber", e)}
+              placeholder="Re-enter account number"
+              className="w-full bg-white border border-slate-300 rounded-xl pl-3.5 pr-11 py-2.5 text-sm text-slate-900 font-mono tracking-wider focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 transition"
+            />
+            <button
+              type="button"
+              onClick={() => setShowConfirmAccountNumber((prev) => !prev)}
+              tabIndex={-1}
+              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition cursor-pointer p-1"
+              title={showConfirmAccountNumber ? "Hide Account Number" : "Show Account Number"}
+            >
+              {showConfirmAccountNumber ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
           {errors.confirmAccountNumber && (
             <p className="text-xs text-rose-500 mt-1">{errors.confirmAccountNumber}</p>
           )}

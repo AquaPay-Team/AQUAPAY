@@ -8,6 +8,7 @@ const DEVELOPMENT_ONLY_PROVIDER_NAMES = Object.freeze([
   DEVELOPMENT_UNVERIFIED_PROVIDER_NAME,
   "idto_pan_detailed_v2_mock",
 ]);
+
 const ATTEMPT_TTL_MINUTES = 10;
 const SESSION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -23,6 +24,7 @@ function getAuthorizationSessionReference(authorizationSessionId) {
   ) {
     return "";
   }
+
   const fingerprint = crypto.createHash("sha256").update(authorizationSessionId).digest("hex");
   return `aquapay-digilocker:${fingerprint}`;
 }
@@ -171,14 +173,26 @@ function createDigilockerModel({ dbPool = pool, env = process.env } = {}) {
         [kycCase.id, config.stepNumber],
       );
 
+      // Expire pending sessions when their authorization expires
+      // OR when they exceed the 10-minute verification attempt TTL.
       await connection.execute(
         `UPDATE kyc_digilocker_sessions
-            SET status = 'expired', current_stage = 'expired', failure_code = 'AUTHORIZATION_SESSION_EXPIRED',
-                reference_key_ciphertext = NULL, reference_key_iv = NULL,
-                reference_key_authentication_tag = NULL, reference_key_version = NULL
-          WHERE verification_id = ? AND status = 'pending' AND state_expires_at <= CURRENT_TIMESTAMP(3)`,
+            SET status = 'expired',
+                current_stage = 'expired',
+                failure_code = 'AUTHORIZATION_SESSION_EXPIRED',
+                reference_key_ciphertext = NULL,
+                reference_key_iv = NULL,
+                reference_key_authentication_tag = NULL,
+                reference_key_version = NULL
+          WHERE verification_id = ?
+            AND status = 'pending'
+            AND (
+              state_expires_at <= CURRENT_TIMESTAMP(3)
+              OR created_at <= CURRENT_TIMESTAMP(3) - INTERVAL ${ATTEMPT_TTL_MINUTES} MINUTE
+            )`,
         [verificationId],
       );
+
       await connection.execute(
         `UPDATE kyc_digilocker_sessions
             SET status = 'expired', current_stage = 'expired', failure_code = 'CALLBACK_PROCESSING_EXPIRED',
@@ -188,6 +202,7 @@ function createDigilockerModel({ dbPool = pool, env = process.env } = {}) {
             AND consumed_at <= CURRENT_TIMESTAMP(3) - INTERVAL ${ATTEMPT_TTL_MINUTES} MINUTE`,
         [verificationId],
       );
+
       await connection.execute(
         `INSERT INTO kyc_digilocker_sessions
           (session_uuid, user_id, case_id, verification_id, verification_type, provider,
@@ -464,6 +479,7 @@ function createDigilockerModel({ dbPool = pool, env = process.env } = {}) {
           expectedSessionReference,
         ],
       );
+
       await connection.execute(
         `UPDATE kyc_steps
             SET status = 'failed',
@@ -496,67 +512,69 @@ function createDigilockerModel({ dbPool = pool, env = process.env } = {}) {
       connection.release();
     }
   }
-async function getVerifiedAadhaarName(userId) {
-  if (!userId) {
-    throw new Error("INVALID_USER_ID");
+
+  async function getVerifiedAadhaarName(userId) {
+    if (!userId) {
+      throw new Error("INVALID_USER_ID");
+    }
+
+    // Find the user's KYC case. Reject missing or ambiguous cases.
+    const [cases] = await dbPool.execute(
+      `SELECT id
+         FROM kyc_cases
+        WHERE user_id = ?
+        ORDER BY id ASC
+        LIMIT 2`,
+      [userId],
+    );
+
+    if (cases.length === 0) {
+      throw new Error("KYC_CASE_NOT_FOUND");
+    }
+
+    if (cases.length > 1) {
+      throw new Error("KYC_CASE_AMBIGUOUS");
+    }
+
+    const caseId = cases[0].id;
+
+    // Retrieve the verified Aadhaar name only when Step 2 is completed.
+    const [verifications] = await dbPool.execute(
+      `SELECT v.id, v.verified_name
+         FROM kyc_verifications v
+         INNER JOIN kyc_steps s
+           ON s.case_id = v.case_id
+          AND s.step_number = 2
+        WHERE v.case_id = ?
+          AND v.verification_type = 'aadhaar'
+          AND v.status = 'verified'
+          AND s.status = 'completed'
+        ORDER BY v.id ASC
+        LIMIT 2`,
+      [caseId],
+    );
+
+    if (verifications.length === 0) {
+      throw new Error("AADHAAR_VERIFICATION_NOT_COMPLETED");
+    }
+
+    if (verifications.length > 1) {
+      throw new Error("AADHAAR_VERIFICATION_AMBIGUOUS");
+    }
+
+    const verifiedName = verifications[0].verified_name;
+
+    if (
+      typeof verifiedName !== "string" ||
+      !verifiedName.trim() ||
+      verifiedName.length > 100
+    ) {
+      throw new Error("AADHAAR_VERIFIED_NAME_UNAVAILABLE");
+    }
+
+    return verifiedName;
   }
 
-  // Find the user's KYC case. Reject missing or ambiguous cases.
-  const [cases] = await dbPool.execute(
-    `SELECT id
-       FROM kyc_cases
-      WHERE user_id = ?
-      ORDER BY id ASC
-      LIMIT 2`,
-    [userId],
-  );
-
-  if (cases.length === 0) {
-    throw new Error("KYC_CASE_NOT_FOUND");
-  }
-
-  if (cases.length > 1) {
-    throw new Error("KYC_CASE_AMBIGUOUS");
-  }
-
-  const caseId = cases[0].id;
-
-  // Retrieve the verified Aadhaar name only when Step 2 is completed.
-  const [verifications] = await dbPool.execute(
-    `SELECT v.id, v.verified_name
-       FROM kyc_verifications v
-       INNER JOIN kyc_steps s
-         ON s.case_id = v.case_id
-        AND s.step_number = 2
-      WHERE v.case_id = ?
-        AND v.verification_type = 'aadhaar'
-        AND v.status = 'verified'
-        AND s.status = 'completed'
-      ORDER BY v.id ASC
-      LIMIT 2`,
-    [caseId],
-  );
-
-  if (verifications.length === 0) {
-    throw new Error("AADHAAR_VERIFICATION_NOT_COMPLETED");
-  }
-
-  if (verifications.length > 1) {
-    throw new Error("AADHAAR_VERIFICATION_AMBIGUOUS");
-  }
-
-  const verifiedName = verifications[0].verified_name;
-
-  if (
-    typeof verifiedName !== "string" ||
-    !verifiedName.trim() ||
-    verifiedName.length > 100
-  ) {
-    throw new Error("AADHAAR_VERIFIED_NAME_UNAVAILABLE");
-  }
-
-  return verifiedName;
-}
   async function assertNoDevelopmentUnverifiedRecords() {
     if (env.NODE_ENV !== "production") return true;
     const [rows] = await dbPool.execute(

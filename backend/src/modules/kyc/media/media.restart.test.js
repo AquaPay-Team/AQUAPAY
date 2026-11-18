@@ -98,14 +98,14 @@ function setupMockDatabase({
       // Reset Steps 5 and 7.
       if (query.startsWith("UPDATE kyc_steps")) {
         calls.push("reset_steps");
-        return [{ affectedRows: 2 }];
+        return [{ affectedRows: 3 }];
       }
 
       // Count completed steps after reset.
       if (
         query.includes("COUNT(*) AS completed_count")
       ) {
-        return [[{ completed_count: 5 }]];
+        return [[{ completed_count: 4 }]];
       }
 
       // Update KYC progress.
@@ -164,7 +164,7 @@ test("rejected KYC restarts from Step 5", async () => {
   assert.equal(result.status, "pending");
   assert.equal(result.previousStatus, "rejected");
   assert.equal(result.currentStep, 5);
-  assert.equal(result.stepsCompleted, 5);
+  assert.equal(result.stepsCompleted, 4);
   assert.equal(result.invalidatedMediaCount, 3);
 
   assert.deepEqual(result.requiredMedia, [

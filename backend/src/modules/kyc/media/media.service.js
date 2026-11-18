@@ -561,8 +561,8 @@ async function restartRejectedKyc(userId) {
       }
     }
 
-    // Ensure Step 5 and Step 7 records exist.
-    for (const stepNumber of [5, 7]) {
+    // Ensure Step 5 ,6 and Step 7 records exist.
+    for (const stepNumber of [5, 6, 7]) {
       const step =
         await mediaModel.findStepByCaseIdAndNumber(
           connection,

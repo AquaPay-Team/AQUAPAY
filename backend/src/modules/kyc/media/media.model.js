@@ -187,19 +187,21 @@ async function updateCompletedStepsCount(connection, caseId) {
  */
 async function resetKycProgressFromStep5(connection, caseId) {
   // Reset media-upload and final-submission steps.
-  const [stepResult] = await connection.execute(
-    `UPDATE kyc_steps
-        SET status = 'pending',
-            completed_at = NULL,
-            failure_code = NULL,
-            updated_at = CURRENT_TIMESTAMP
-      WHERE case_id = ?
-        AND step_number IN (5, 7)`,
-    [caseId],
-  );
+  // Reset media upload, agreement acceptance,
+// and final submission steps.
+const [stepResult] = await connection.execute(
+  `UPDATE kyc_steps
+      SET status = 'pending',
+          completed_at = NULL,
+          failure_code = NULL,
+          updated_at = CURRENT_TIMESTAMP
+    WHERE case_id = ?
+      AND step_number IN (5, 6, 7)`,
+  [caseId],
+);
 
-  // Keep Step 6 unchanged until its repeat requirement
-  // is confirmed. Calculate the completed count from DB.
+// Steps 1-4 remain unchanged.
+// Calculate completed steps count from DB.
   const [rows] = await connection.execute(
     `SELECT COUNT(*) AS completed_count
        FROM kyc_steps

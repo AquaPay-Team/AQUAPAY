@@ -1014,68 +1014,18 @@ export function KycVerificationPage() {
         toast.error("Please click 'Verify PAN' to authenticate your PAN with the tax database.");
         return;
       }
-      setCompletedSteps((prev) => Array.from(new Set([...prev, 3])));
-      toast.success("PAN verified successfully.");
-      setCurrentStep(4);
+      setCompletedSteps((prev) => Array.from(new Set([...prev, 3, 4])));
+      toast.success("PAN verified successfully. Step 4 skipped.");
+      setCurrentStep(5);
       window.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
 
-    // STEP 4 VALIDATION
+    // STEP 4 (Bank Details - Skipped for now)
     if (currentStep === 4) {
-      if (completedSteps.includes(4)) {
-        setCurrentStep(5);
-        window.scrollTo({ top: 0, behavior: "smooth" });
-        return;
-      }
-      const cleanAcc = String(formData.accountNumber || "").replace(/\D/g, "");
-      const cleanConfirmAcc = String(formData.confirmAccountNumber || "").replace(/\D/g, "");
-      if (!cleanAcc || cleanAcc.length < 9 || cleanAcc.length > 18) {
-        toast.error("Please enter a valid bank account number (9 to 18 digits).");
-        return;
-      }
-      if (cleanAcc !== cleanConfirmAcc) {
-        toast.error("Account numbers do not match. Please verify.");
-        return;
-      }
-      const cleanIfsc = String(formData.ifscCode || "").trim().toUpperCase();
-      if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(cleanIfsc)) {
-        toast.error("Please enter a valid 11-character IFSC code (e.g. SBIN0001234).");
-        return;
-      }
-      setIsSavingStep(true);
-      try {
-        const res = await saveBankDetails({
-          ifscCode: cleanIfsc,
-          accountNumber: cleanAcc,
-        });
-        const verifiedHolder = res?.data?.accountHolderName;
-        const verifiedBank = res?.data?.bankName;
-
-        setFormData((prev) => ({
-          ...prev,
-          accountNumber: cleanAcc,
-          confirmAccountNumber: cleanAcc,
-          ifscCode: cleanIfsc,
-          bankName: verifiedBank || prev.bankName,
-          ...(verifiedHolder ? { accountHolderName: verifiedHolder } : {}),
-        }));
-
-        if (verifiedHolder) {
-          toast.success(`Bank verified via penny-drop: ${verifiedHolder} (${verifiedBank || "Verified"})`);
-        } else {
-          toast.success("Bank details saved successfully.");
-        }
-        setCompletedSteps((prev) => Array.from(new Set([...prev, 4])));
-        setCurrentStep(5);
-        window.scrollTo({ top: 0, behavior: "smooth" });
-      } catch (err) {
-        const parsed = parseApiError(err);
-        toast.error(parsed.message || "Bank account verification failed with IDTO banking network.");
-        return;
-      } finally {
-        setIsSavingStep(false);
-      }
+      setCompletedSteps((prev) => Array.from(new Set([...prev, 4])));
+      setCurrentStep(5);
+      window.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
 
@@ -1151,7 +1101,7 @@ export function KycVerificationPage() {
     }
 
     const precedingDone = steps
-      .filter((s) => s.id < stepId)
+      .filter((s) => s.id < stepId && s.id !== 4)
       .every((s) => completedSteps.includes(s.id));
 
     if (!precedingDone && stepId > 1) {
@@ -1332,7 +1282,15 @@ export function KycVerificationPage() {
             )}
 
             {currentStep === 4 && (
-              <Step4BankDetails formData={formData} onChange={handleChange} />
+              <Step4BankDetails
+                formData={formData}
+                onChange={handleChange}
+                onSkip={() => {
+                  setCompletedSteps((prev) => Array.from(new Set([...prev, 4])));
+                  setCurrentStep(5);
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }}
+              />
             )}
 
             {currentStep === 5 && (
@@ -1378,6 +1336,19 @@ export function KycVerificationPage() {
               </button>
 
               <div className="flex items-center space-x-3">
+                {currentStep === 4 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCompletedSteps((prev) => Array.from(new Set([...prev, 4])));
+                      setCurrentStep(5);
+                      window.scrollTo({ top: 0, behavior: "smooth" });
+                    }}
+                    className="text-xs text-slate-500 hover:text-slate-800 px-3 py-2 cursor-pointer font-medium"
+                  >
+                    Skip Step 4 →
+                  </button>
+                )}
                 {currentStep < 7 ? (
                   <button
                     type="button"

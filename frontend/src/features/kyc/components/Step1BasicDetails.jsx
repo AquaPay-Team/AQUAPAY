@@ -23,7 +23,7 @@ import {
  * 3. Business Constitution / Type is selectable (Sole Proprietorship, Private Limited Company, Partnership / LLP).
  * 4. Operating Commercial Address (shopAddress) can be confirmed or edited if different.
  */
-export function Step1BasicDetails({ formData = {}, onChange, errors = {} }) {
+export function Step1BasicDetails({ formData = {}, onChange, errors = {}, isAadhaarVerified = false }) {
   const currentUser = (() => {
     try {
       return JSON.parse(localStorage.getItem("user") || "{}");
@@ -67,10 +67,17 @@ export function Step1BasicDetails({ formData = {}, onChange, errors = {} }) {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 pt-1 text-xs">
           {/* Full Name */}
           <div className={`bg-white border rounded-xl p-3 ${errors.fullName ? "border-rose-400 bg-rose-50/20" : "border-slate-200/80"}`}>
-            <span className="text-slate-400 block text-[11px] mb-1 flex items-center gap-1">
-              <User className="w-3 h-3 text-slate-400" /> Full Legal Name
-            </span>
-            <span className="font-semibold text-slate-900 text-sm">{fullName}</span>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-slate-400 text-[11px] flex items-center gap-1">
+                <User className="w-3 h-3 text-slate-400" /> Full Legal Name
+              </span>
+              {isAadhaarVerified && (
+                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Aadhaar Verified
+                </span>
+              )}
+            </div>
+            <span className="font-semibold text-slate-900 text-sm tracking-wide">{fullName}</span>
             {errors.fullName && (
               <p className="text-[11px] text-rose-500 mt-1 font-medium flex items-center gap-1">
                 <AlertCircle className="w-3 h-3 shrink-0" />

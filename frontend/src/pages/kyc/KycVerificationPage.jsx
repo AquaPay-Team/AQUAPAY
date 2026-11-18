@@ -96,6 +96,28 @@ export function KycVerificationPage() {
   const [aadhaarVerifiedData, setAadhaarVerifiedData] = useState({});
   const [aadhaarPollInterval, setAadhaarPollInterval] = useState(null);
 
+  // Unified Verification & Name-Matching States
+  const [verificationState, setVerificationState] = useState({
+    aadhaar: {
+      status: storedUser?.kyc?.completedSteps?.includes(2) ? "verified" : "pending",
+      holderName: storedUser?.name || null,
+      maskedNumber: null,
+      verifiedAt: null,
+    },
+    pan: {
+      status: storedUser?.kyc?.completedSteps?.includes(3) ? "verified" : "pending",
+      holderName: storedUser?.name ? storedUser.name.toUpperCase() : null,
+      panNumber: null,
+      maskedNumber: null,
+      verifiedAt: null,
+    },
+    nameMatch: {
+      status: storedUser?.kyc?.completedSteps?.includes(3) ? "verified" : "pending",
+      message: null,
+    },
+  });
+  const [panErrorMessage, setPanErrorMessage] = useState("");
+
   // Legacy / other states
   const [otpSent, setOtpSent] = useState(false);
   const [otpValue, setOtpValue] = useState(["", "", "", "", "", ""]);
@@ -252,6 +274,16 @@ export function KycVerificationPage() {
       last4,
     });
 
+    setVerificationState((prev) => ({
+      ...prev,
+      aadhaar: {
+        status: "verified",
+        holderName: finalName || "Verified User",
+        maskedNumber: formattedMasked,
+        verifiedAt: new Date().toISOString(),
+      },
+    }));
+
     return finalName;
   }, [storedUser?.id, storedUser?.name, formData.aadhaarNumber]);
 
@@ -294,6 +326,10 @@ export function KycVerificationPage() {
       if (statusUpper === "FAILED") {
         stopAadhaarPolling();
         setSessionStatus("failed");
+        setVerificationState((prev) => ({
+          ...prev,
+          aadhaar: { ...prev.aadhaar, status: "failed" },
+        }));
         setAadhaarErrorMessage("UIDAI authentication failed. Please restart the session.");
         toast.error("Aadhaar authentication failed. Please try again.");
         return;
@@ -302,6 +338,10 @@ export function KycVerificationPage() {
       if (statusUpper === "EXPIRED" || statusRes?.data?.stage === "expired") {
         stopAadhaarPolling();
         setSessionStatus("expired");
+        setVerificationState((prev) => ({
+          ...prev,
+          aadhaar: { ...prev.aadhaar, status: "expired" },
+        }));
         setAadhaarErrorMessage("DigiLocker session has expired. Please restart the verification.");
         toast.error("Aadhaar session expired. Please restart.");
         return;
@@ -422,6 +462,21 @@ export function KycVerificationPage() {
 
           if (Array.isArray(kycData.completedSteps)) {
             setCompletedSteps(kycData.completedSteps);
+            if (kycData.completedSteps.includes(2)) {
+              setAadhaarVerified(true);
+              setVerificationState((prev) => ({
+                ...prev,
+                aadhaar: { ...prev.aadhaar, status: "verified" },
+              }));
+            }
+            if (kycData.completedSteps.includes(3)) {
+              setPanVerified(true);
+              setVerificationState((prev) => ({
+                ...prev,
+                pan: { ...prev.pan, status: "verified" },
+                nameMatch: { status: "verified" },
+              }));
+            }
             if (kycData.completedSteps.includes(4)) {
               try {
                 const bankRes = await getBankDetails();
@@ -639,14 +694,12 @@ export function KycVerificationPage() {
   };
 
   const handleTriggerOtp = async () => {
-    const cleanAadhaar = String(formData.aadhaarNumber || "").replace(/\D/g, "");
-    if (cleanAadhaar.length !== 12) {
-      toast.error("Please enter a valid 12-digit Aadhaar number before requesting OTP.");
-      return;
-    }
-
     setIsInitiatingDigilocker(true);
     setAadhaarErrorMessage("");
+    setVerificationState((prev) => ({
+      ...prev,
+      aadhaar: { ...prev.aadhaar, status: "processing" },
+    }));
     try {
       toast.info("Connecting to UIDAI verification gateway...");
       const res = await initiateAadhaarVerification(true);
@@ -756,27 +809,107 @@ export function KycVerificationPage() {
       return;
     }
     setPanLoading(true);
+    setPanErrorMessage("");
     try {
       // Real backend PAN verification against Income Tax Department (IDTO)
       const res = await verifyPanDetails({ panNumber: cleanPan, consent: true });
       const verifiedName = res?.data?.verifiedName || res?.data?.full_name;
       const maskedId = res?.data?.maskedIdentifier;
+      const aadhaarVerifiedName = verificationState?.aadhaar?.holderName || formData.fullName;
+
+      // Authoritative match confirmation from backend
       setPanVerified(true);
+      setVerificationState((prev) => ({
+        ...prev,
+        pan: {
+          status: "verified",
+          holderName: verifiedName,
+          panNumber: cleanPan,
+          maskedNumber: maskedId || `XXXXXX${cleanPan.slice(-4)}`,
+          verifiedAt: new Date().toISOString(),
+        },
+        nameMatch: {
+          status: "verified",
+          message:
+            "Your Aadhaar and PAN details have been successfully verified. Your registered legal name has been updated using your Aadhaar-verified name.",
+        },
+      }));
+
+      // Automatically update Full Legal Name using the exact Aadhaar-verified name
+      const finalLegalName = aadhaarVerifiedName || verifiedName;
       setFormData((prev) => ({
         ...prev,
+        fullName: finalLegalName,
         panNumber: cleanPan,
-        ...(verifiedName ? { panName: verifiedName } : {}),
-        panMasked: maskedId || `••••••${cleanPan.slice(-4)}`,
+        panName: verifiedName || finalLegalName,
+        panMasked: maskedId || `XXXXXX${cleanPan.slice(-4)}`,
       }));
-      if (verifiedName) {
-        toast.success(`PAN verified with Income Tax Dept: ${verifiedName}`);
-      } else {
-        toast.success("PAN verified successfully against tax database.");
+
+      // Update stored user profile in localStorage and dispatch reactive update event
+      try {
+        const stored = JSON.parse(localStorage.getItem("user") || "{}");
+        stored.name = finalLegalName;
+        localStorage.setItem("user", JSON.stringify(stored));
+        window.dispatchEvent(new CustomEvent("aquapay:user_updated", { detail: stored }));
+      } catch (e) {
+        console.error("Failed to update user in localStorage", e);
       }
+
+      setCompletedSteps((prev) => Array.from(new Set([...prev, 3])));
+      toast.success(
+        "Your Aadhaar and PAN details have been successfully verified. Your registered legal name has been updated using your Aadhaar-verified name.",
+        { duration: 6000 }
+      );
     } catch (err) {
       const parsed = parseApiError(err);
+      const isMismatch =
+        err?.response?.data?.code === "PAN_NAME_MISMATCH" ||
+        err?.response?.status === 422 ||
+        parsed?.message?.toLowerCase().includes("does not match");
+
       setPanVerified(false);
-      toast.error(parsed.message || "PAN verification failed with tax database. Please verify PAN number.");
+      if (isMismatch) {
+        setVerificationState((prev) => ({
+          ...prev,
+          pan: {
+            ...prev.pan,
+            status: "mismatch",
+            holderName:
+              err?.response?.data?.data?.panName ||
+              err?.response?.data?.panName ||
+              "Mismatch",
+          },
+          nameMatch: {
+            status: "mismatch",
+            message:
+              "The name on your Aadhaar and PAN records does not match. Please check your identity documents or contact support.",
+          },
+        }));
+        setPanErrorMessage(
+          "The name on your Aadhaar and PAN records does not match. Please check your identity documents or contact support."
+        );
+        toast.error(
+          "The name on your Aadhaar and PAN records does not match. Please check your identity documents or contact support."
+        );
+      } else {
+        setVerificationState((prev) => ({
+          ...prev,
+          pan: {
+            ...prev.pan,
+            status: "failed",
+          },
+          nameMatch: {
+            status: "pending",
+            message: null,
+          },
+        }));
+        setPanErrorMessage(
+          parsed.message || "PAN verification failed with tax database. Please verify your PAN number."
+        );
+        toast.error(
+          parsed.message || "PAN verification failed with tax database. Please verify your PAN number."
+        );
+      }
     } finally {
       setPanLoading(false);
     }
@@ -852,11 +985,12 @@ export function KycVerificationPage() {
 
     // STEP 2 VALIDATION (Aadhaar)
     if (currentStep === 2) {
-      if (!aadhaarVerified) {
+      const isAadhaarDone = aadhaarVerified || verificationState.aadhaar.status === "verified";
+      if (!isAadhaarDone) {
         if (otpSent) {
-          toast.error("Please complete the OTP verification in the DigiLocker window and click 'Check Verification Status'.");
+          toast.error("Please complete authentication in the DigiLocker window and click 'Check Verification Status'.");
         } else {
-          toast.error("Please verify your Aadhaar identity via DigiLocker before proceeding to Step 3.");
+          toast.error("Please click 'Verify Aadhaar with DigiLocker' to authenticate your Aadhaar identity before proceeding.");
         }
         return;
       }
@@ -875,7 +1009,12 @@ export function KycVerificationPage() {
         toast.error("Invalid PAN format. Must be 5 uppercase letters, 4 digits, and 1 letter (e.g. ABCDE1234F).");
         return;
       }
-      if (!panVerified) {
+      if (verificationState.nameMatch.status === "mismatch") {
+        toast.error("Cannot proceed: The name on your Aadhaar and PAN records does not match. Please check your identity documents or contact support.");
+        return;
+      }
+      const isPanDone = panVerified || verificationState.pan.status === "verified";
+      if (!isPanDone) {
         toast.error("Please click 'Verify PAN' to authenticate your PAN with the tax database.");
         return;
       }
@@ -1126,6 +1265,7 @@ export function KycVerificationPage() {
                 formData={formData}
                 onChange={handleChange}
                 errors={step1Errors}
+                isAadhaarVerified={completedSteps.includes(2) || verificationState.aadhaar.status === "verified"}
               />
             )}
 
@@ -1163,9 +1303,14 @@ export function KycVerificationPage() {
                   setOtpSent(false);
                   setSessionStatus("idle");
                   setAadhaarErrorMessage("");
+                  setVerificationState((prev) => ({
+                    ...prev,
+                    aadhaar: { ...prev.aadhaar, status: "pending" },
+                  }));
                 }}
                 sessionStatus={sessionStatus}
                 aadhaarErrorMessage={aadhaarErrorMessage}
+                verificationState={verificationState}
               />
             )}
 
@@ -1176,6 +1321,17 @@ export function KycVerificationPage() {
                 panVerified={panVerified}
                 panLoading={panLoading}
                 onVerifyPan={handleVerifyPan}
+                verificationState={verificationState}
+                panError={panErrorMessage}
+                onRetryPan={() => {
+                  setPanVerified(false);
+                  setPanErrorMessage("");
+                  setVerificationState((prev) => ({
+                    ...prev,
+                    pan: { ...prev.pan, status: "pending" },
+                    nameMatch: { status: "pending", message: null },
+                  }));
+                }}
               />
             )}
 

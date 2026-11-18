@@ -105,6 +105,19 @@ async function findMediaByIdAndCaseId(connection, assetId, caseId) {
 
   return rows[0] || null;
 }
+
+async function invalidatePreviousMedia(connection, caseId) {
+  const [result] = await connection.execute(
+    `UPDATE media_assets
+        SET status = 'rejected'
+      WHERE case_id = ?
+        AND status IN ('uploaded', 'verified')`,
+    [caseId],
+  );
+
+  return Number(result.affectedRows || 0);
+}
+
 async function hasAllRequiredMedia(connection, caseId) {
   const [rows] = await connection.execute(
     `SELECT COUNT(DISTINCT asset_type) AS uploaded_count
@@ -165,15 +178,103 @@ async function updateCompletedStepsCount(connection, caseId) {
   return stepsCompleted;
 }
 
+/**
+ * Reset KYC progress for a rejected application's
+ * media re-upload attempt.
+ *
+ * Must run inside a transaction after locking the case.
+ * Steps 1–4 remain unchanged.
+ */
+async function resetKycProgressFromStep5(connection, caseId) {
+  // Reset media-upload and final-submission steps.
+  const [stepResult] = await connection.execute(
+    `UPDATE kyc_steps
+        SET status = 'pending',
+            completed_at = NULL,
+            failure_code = NULL,
+            updated_at = CURRENT_TIMESTAMP
+      WHERE case_id = ?
+        AND step_number IN (5, 7)`,
+    [caseId],
+  );
+
+  // Keep Step 6 unchanged until its repeat requirement
+  // is confirmed. Calculate the completed count from DB.
+  const [rows] = await connection.execute(
+    `SELECT COUNT(*) AS completed_count
+       FROM kyc_steps
+      WHERE case_id = ?
+        AND status = 'completed'`,
+    [caseId],
+  );
+
+  const completedCount = Number(rows[0]?.completed_count || 0);
+
+  const [caseResult] = await connection.execute(
+    `UPDATE kyc_cases
+        SET current_step = 5,
+            steps_completed = ?,
+            updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+        AND status = 'rejected'`,
+    [completedCount, caseId],
+  );
+
+  if (Number(caseResult.affectedRows || 0) !== 1) {
+    throw new Error("Unable to reset rejected KYC progress");
+  }
+
+  return {
+    currentStep: 5,
+    stepsCompleted: completedCount,
+    stepRowsAffected: Number(stepResult.affectedRows || 0),
+  };
+}
+
+async function reopenRejectedKycCase(connection, caseId) {
+  const [result] = await connection.execute(
+    `UPDATE kyc_cases
+        SET status = 'pending',
+            current_step = 5,
+            updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+        AND status = 'rejected'`,
+    [caseId],
+  );
+
+  return Number(result.affectedRows || 0) === 1;
+}
+
+
+async function insertRestartStatusHistory(connection, caseId, actorUserId) {
+  const [result] = await connection.execute(
+    `INSERT INTO kyc_status_history
+       (case_id, old_status, new_status, actor_user_id, reason)
+     VALUES (?, 'rejected', 'pending', ?, ?)`,
+    [
+      caseId,
+      actorUserId,
+      "Merchant restarted KYC from Step 5 after rejection",
+    ],
+  );
+
+  return result.insertId;
+}
+
+
 export {
   getConnection,
   insertMediaAsset,
   findMediaByCaseId,
   findMediaByIdAndCaseId,
   countUploadedAssetTypes,
+  invalidatePreviousMedia,
   hasAllRequiredMedia,
   completeStep5,
   updateCompletedStepsCount,
+  resetKycProgressFromStep5,
+  reopenRejectedKycCase,
+  insertRestartStatusHistory,
   findCasesByUserIdForUpdate,
   findStepByCaseIdAndNumber,
 };

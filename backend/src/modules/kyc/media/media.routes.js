@@ -14,5 +14,11 @@ router.post(
   controller.uploadKycMedia,
 );
 
-export { router };
+router.post(
+  "/media/restart",
+  requireAuth,
+  controller.restartRejectedKycController,
+);
+
+export{ router };
 export default router;

@@ -1,4 +1,7 @@
-import { uploadMedia } from "./media.service.js";
+import {
+  uploadMedia,
+  restartRejectedKyc,
+} from "./media.service.js";
 import asyncHandler from "../../../utils/asyncHandler.js";
 import ApiResponse from "../../../utils/ApiResponse.js";
 import ApiError from "../../../utils/ApiError.js";
@@ -27,5 +30,37 @@ const uploadKycMedia = asyncHandler(async (req, res) => {
     );
 });
 
-export { uploadKycMedia };
-export default { uploadKycMedia };
+const restartRejectedKycController = asyncHandler(
+  async (req, res) => {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      throw new ApiError(
+        httpStatus.UNAUTHORIZED,
+        "Authentication required",
+        [],
+        "UNAUTHORIZED",
+      );
+    }
+
+    const data = await restartRejectedKyc(userId);
+
+    return res.status(httpStatus.OK).json(
+      new ApiResponse(
+        httpStatus.OK,
+        data,
+        "KYC restarted successfully",
+      ),
+    );
+  },
+);
+
+export {
+  uploadKycMedia,
+  restartRejectedKycController,
+};
+
+export default {
+  uploadKycMedia,
+  restartRejectedKycController,
+};

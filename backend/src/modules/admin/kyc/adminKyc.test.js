@@ -1,4 +1,3 @@
-
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import adminKycModel from "./adminKyc.model.js";
@@ -6,6 +5,7 @@ import {
   getKycApplications,
   getKycDocumentAccess,
   approveKycApplication,
+  rejectKycApplication,
 } from "./adminKyc.service.js";
 import getCloudinary from "../../../config/cloudinary.js";
 
@@ -629,3 +629,272 @@ test("adminKyc.service: rolls back approval when status history insertion fails"
     "release",
   ]);
 });
+
+function mockRejectionDependencies(
+  t,
+  {
+    application = { id: 14, status: "submitted" },
+    updateResult = true,
+    historyError = null,
+  } = {},
+) {
+  const originalMethods = {
+    getConnection: adminKycModel.getConnection,
+    findKycCaseForUpdate: adminKycModel.findKycCaseForUpdate,
+    rejectKycCase: adminKycModel.rejectKycCase,
+    insertStatusHistory: adminKycModel.insertStatusHistory,
+  };
+
+  const events = [];
+
+  const connection = {
+    beginTransaction: async () => {
+      events.push("begin");
+    },
+    commit: async () => {
+      events.push("commit");
+    },
+    rollback: async () => {
+      events.push("rollback");
+    },
+    release: () => {
+      events.push("release");
+    },
+  };
+
+  adminKycModel.getConnection = async () => {
+    events.push("getConnection");
+    return connection;
+  };
+
+  adminKycModel.findKycCaseForUpdate = async (conn, caseId) => {
+    assert.equal(conn, connection);
+    events.push(["findKycCaseForUpdate", caseId]);
+    return application;
+  };
+
+  adminKycModel.rejectKycCase = async (
+    conn,
+    caseId,
+    rejectionReason,
+  ) => {
+    assert.equal(conn, connection);
+
+    events.push([
+      "rejectKycCase",
+      caseId,
+      rejectionReason,
+    ]);
+
+    return updateResult;
+  };
+
+  adminKycModel.insertStatusHistory = async (conn, details) => {
+    assert.equal(conn, connection);
+
+    events.push(["insertStatusHistory", details]);
+
+    if (historyError) {
+      throw historyError;
+    }
+
+    return 125;
+  };
+
+  t.after(() => {
+    Object.assign(adminKycModel, originalMethods);
+  });
+
+  return { events, connection };
+}
+
+test(
+  "adminKyc.service: rejects a submitted application transactionally",
+  async (t) => {
+    const { events } = mockRejectionDependencies(t);
+
+    const result = await rejectKycApplication(
+      14,
+      5,
+      "  Video KYC recording is unclear  ",
+    );
+
+    assert.deepEqual(result, {
+      caseId: 14,
+      previousStatus: "submitted",
+      status: "rejected",
+      message: "KYC application rejected successfully",
+    });
+
+    assert.deepEqual(events, [
+      "getConnection",
+      "begin",
+      ["findKycCaseForUpdate", 14],
+      ["rejectKycCase", 14, "Video KYC recording is unclear"],
+      [
+        "insertStatusHistory",
+        {
+          caseId: 14,
+          oldStatus: "submitted",
+          newStatus: "rejected",
+          actorUserId: 5,
+          reason: "Video KYC recording is unclear",
+        },
+      ],
+      "commit",
+      "release",
+    ]);
+  },
+);
+
+test(
+  "adminKyc.service: rejects an under_review application",
+  async (t) => {
+    mockRejectionDependencies(t, {
+      application: { id: 14, status: "under_review" },
+    });
+
+    const result = await rejectKycApplication(
+      14,
+      5,
+      "New media verification required",
+    );
+
+    assert.equal(result.previousStatus, "under_review");
+    assert.equal(result.status, "rejected");
+  },
+);
+
+test(
+  "adminKyc.service: requires a valid rejection reason",
+  async () => {
+    const invalidReasons = [
+      undefined,
+      null,
+      "",
+      "   ",
+      123,
+      {},
+      "A".repeat(501),
+    ];
+
+    for (const reason of invalidReasons) {
+      await assert.rejects(
+        rejectKycApplication(14, 5, reason),
+        (error) => assertApiError(
+          error,
+          400,
+          "VALIDATION_ERROR",
+        ),
+      );
+    }
+  },
+);
+
+test(
+  "adminKyc.service: returns 404 when rejection case does not exist",
+  async (t) => {
+    const { events } = mockRejectionDependencies(t, {
+      application: null,
+    });
+
+    await assert.rejects(
+      rejectKycApplication(999, 5, "Invalid video"),
+      (error) => assertApiError(error, 404, "NOT_FOUND"),
+    );
+
+    assert.ok(events.includes("rollback"));
+    assert.ok(!events.includes("commit"));
+  },
+);
+
+test(
+  "adminKyc.service: prevents duplicate rejection",
+  async (t) => {
+    const { events } = mockRejectionDependencies(t, {
+      application: { id: 14, status: "rejected" },
+    });
+
+    await assert.rejects(
+      rejectKycApplication(14, 5, "Invalid video"),
+      (error) => assertApiError(
+        error,
+        409,
+        "INVALID_KYC_STATE",
+      ),
+    );
+
+    assert.ok(events.includes("rollback"));
+    assert.ok(!events.includes("commit"));
+  },
+);
+
+test(
+  "adminKyc.service: prevents rejection of approved KYC",
+  async (t) => {
+    const { events } = mockRejectionDependencies(t, {
+      application: { id: 14, status: "approved" },
+    });
+
+    await assert.rejects(
+      rejectKycApplication(14, 5, "Invalid video"),
+      (error) => assertApiError(
+        error,
+        409,
+        "INVALID_KYC_STATE",
+      ),
+    );
+
+    assert.ok(events.includes("rollback"));
+    assert.ok(!events.includes("commit"));
+  },
+);
+
+test(
+  "adminKyc.service: rejects a failed status update",
+  async (t) => {
+    const { events } = mockRejectionDependencies(t, {
+      updateResult: false,
+    });
+
+    await assert.rejects(
+      rejectKycApplication(14, 5, "Invalid video"),
+      (error) => assertApiError(
+        error,
+        409,
+        "INVALID_KYC_STATE",
+      ),
+    );
+
+    assert.ok(events.includes("rollback"));
+    assert.ok(!events.includes("commit"));
+    assert.equal(
+      events.some(
+        (event) =>
+          Array.isArray(event) &&
+          event[0] === "insertStatusHistory",
+      ),
+      false,
+    );
+  },
+);
+
+test(
+  "adminKyc.service: rolls back rejection when history insertion fails",
+  async (t) => {
+    const { events } = mockRejectionDependencies(t, {
+      historyError: new Error(
+        "Simulated rejection history failure",
+      ),
+    });
+
+    await assert.rejects(
+      rejectKycApplication(14, 5, "Invalid video"),
+      /Simulated rejection history failure/,
+    );
+
+    assert.ok(events.includes("rollback"));
+    assert.ok(events.includes("release"));
+    assert.ok(!events.includes("commit"));
+  },
+);

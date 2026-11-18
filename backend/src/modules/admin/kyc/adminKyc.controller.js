@@ -69,6 +69,10 @@ async function getKycDocumentAccessController(req, res, next) {
   }
 }
 
+/**
+ * PATCH /api/admin/kyc/:caseId/approve
+ * Approve a submitted or under-review KYC application.
+ */
 async function approveKycApplicationController(req, res, next) {
   try {
     const result = await adminKycService.approveKycApplication(
@@ -84,11 +88,39 @@ async function approveKycApplicationController(req, res, next) {
     return next(error);
   }
 }
+
+/**
+ * PATCH /api/admin/kyc/:caseId/reject
+ * Reject a submitted or under-review KYC application.
+ *
+ * Expected request body:
+ * {
+ *   "rejectionReason": "Reason for rejecting the KYC application"
+ * }
+ */
+async function rejectKycApplicationController(req, res, next) {
+  try {
+    const result = await adminKycService.rejectKycApplication(
+      req.params.caseId,
+      req.user.id,
+      req.body?.rejectionReason,
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
 const adminKycController = {
   getKycApplicationsController,
   getKycApplicationDetailsController,
   getKycDocumentAccessController,
   approveKycApplicationController,
+  rejectKycApplicationController,
 };
 
 export {
@@ -96,6 +128,7 @@ export {
   getKycApplicationDetailsController,
   getKycDocumentAccessController,
   approveKycApplicationController,
+  rejectKycApplicationController,
 };
 
 export default adminKycController;

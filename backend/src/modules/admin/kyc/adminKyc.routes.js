@@ -33,11 +33,20 @@ router.get(
   adminKycController.getKycDocumentAccessController,
 );
 
+// Approve a submitted or under-review KYC application
 router.patch(
   "/:caseId/approve",
   requireAuth,
   requireAdmin,
   adminKycController.approveKycApplicationController,
+);
+
+// Reject a submitted or under-review KYC application
+router.patch(
+  "/:caseId/reject",
+  requireAuth,
+  requireAdmin,
+  adminKycController.rejectKycApplicationController,
 );
 
 export { router };

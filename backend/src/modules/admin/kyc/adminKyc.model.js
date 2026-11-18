@@ -256,6 +256,28 @@ async function approveKycCase(connection, caseId) {
   return Number(result.affectedRows || 0) === 1;
 }
 
+
+/**
+ * Reject a KYC application.
+ *
+ * Must be called inside a database transaction
+ * after locking the KYC case.
+ */
+async function rejectKycCase(connection, caseId, rejectionReason) {
+  const [result] = await connection.execute(
+    `UPDATE kyc_cases
+        SET status = 'rejected',
+            rejection_reason = ?,
+            reviewed_at = CURRENT_TIMESTAMP,
+            updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+        AND status IN ('submitted', 'under_review')`,
+    [rejectionReason, caseId],
+  );
+
+  return Number(result.affectedRows || 0) === 1;
+}
+
 /**
  * Insert a KYC status-history record.
  * Must use the same connection as the case update.
@@ -287,6 +309,7 @@ const adminKycModel = {
   getConnection,
   findKycCaseForUpdate,
   approveKycCase,
+  rejectKycCase,
   insertStatusHistory,
 };
 
@@ -303,6 +326,7 @@ export {
   getConnection,
   findKycCaseForUpdate,
   approveKycCase,
+  rejectKycCase,
   insertStatusHistory,
 };
 

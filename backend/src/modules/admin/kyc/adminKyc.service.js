@@ -20,6 +20,9 @@ const DOCUMENT_URL_TTL_SECONDS = 5 * 60;
 
 const APPROVABLE_STATUSES = ["submitted", "under_review"];
 
+const REJECTABLE_STATUSES = ["submitted", "under_review"];
+const MAX_REJECTION_REASON_LENGTH = 500;
+
 const MEDIA_FORMATS = {
   "image/jpeg": { resourceType: "image", format: "jpg" },
   "image/png": { resourceType: "image", format: "png" },
@@ -335,11 +338,141 @@ async function approveKycApplication(caseId, actorUserId) {
   }
 }
 
+
+/**
+ * Reject a KYC application transactionally.
+ *
+ * The rejection and status-history record must either
+ * both succeed or both roll back.
+ */
+async function rejectKycApplication(caseId, actorUserId, rejectionReason) {
+  const parsedCaseId = parsePositiveId(caseId, "KYC case ID");
+  const parsedActorUserId = parsePositiveId(
+    actorUserId,
+    "admin user ID",
+  );
+
+  // Validate the rejection reason before opening a DB transaction.
+  if (typeof rejectionReason !== "string") {
+    throw new ApiError(
+      400,
+      "Rejection reason is required",
+      [],
+      "VALIDATION_ERROR",
+    );
+  }
+
+  const normalizedReason = rejectionReason.trim();
+
+  if (!normalizedReason) {
+    throw new ApiError(
+      400,
+      "Rejection reason cannot be empty",
+      [],
+      "VALIDATION_ERROR",
+    );
+  }
+
+  if (normalizedReason.length > MAX_REJECTION_REASON_LENGTH) {
+    throw new ApiError(
+      400,
+      `Rejection reason must not exceed ${MAX_REJECTION_REASON_LENGTH} characters`,
+      [],
+      "VALIDATION_ERROR",
+    );
+  }
+
+  let connection;
+  let transactionStarted = false;
+
+  try {
+    connection = await adminKycModel.getConnection();
+
+    await connection.beginTransaction();
+    transactionStarted = true;
+
+    // Lock the KYC case to prevent concurrent admin decisions.
+    const application = await adminKycModel.findKycCaseForUpdate(
+      connection,
+      parsedCaseId,
+    );
+
+    if (!application) {
+      throw new ApiError(
+        404,
+        "KYC application not found",
+        [],
+        "NOT_FOUND",
+      );
+    }
+
+    if (!REJECTABLE_STATUSES.includes(application.status)) {
+      throw new ApiError(
+        409,
+        `KYC application cannot be rejected because its current status is '${application.status}'`,
+        [],
+        "INVALID_KYC_STATE",
+      );
+    }
+
+    const oldStatus = application.status;
+
+    const updated = await adminKycModel.rejectKycCase(
+      connection,
+      parsedCaseId,
+      normalizedReason,
+    );
+
+    if (!updated) {
+      throw new ApiError(
+        409,
+        "KYC application status changed. Please refresh and try again.",
+        [],
+        "INVALID_KYC_STATE",
+      );
+    }
+
+    // Record the rejection in the audit trail.
+    await adminKycModel.insertStatusHistory(connection, {
+      caseId: parsedCaseId,
+      oldStatus,
+      newStatus: "rejected",
+      actorUserId: parsedActorUserId,
+      reason: normalizedReason,
+    });
+
+    await connection.commit();
+    transactionStarted = false;
+
+    return {
+      caseId: parsedCaseId,
+      previousStatus: oldStatus,
+      status: "rejected",
+      message: "KYC application rejected successfully",
+    };
+  } catch (error) {
+    if (connection && transactionStarted) {
+      try {
+        await connection.rollback();
+      } catch {
+        // Preserve the original error if rollback also fails.
+      }
+    }
+
+    throw error;
+  } finally {
+    if (connection) {
+      connection.release();
+    }
+  }
+}
+
 const adminKycService = {
   getKycApplications,
   getKycApplicationDetails,
   getKycDocumentAccess,
   approveKycApplication,
+  rejectKycApplication
 };
 
 export {
@@ -347,6 +480,7 @@ export {
   getKycApplicationDetails,
   getKycDocumentAccess,
   approveKycApplication,
+  rejectKycApplication
 };
 
 export default adminKycService;

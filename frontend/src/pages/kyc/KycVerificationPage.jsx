@@ -114,12 +114,6 @@ export function KycVerificationPage() {
     shopAddress: storedUser?.address || "",
     address: storedUser?.address || "",
 
-    aadhaarNumber: "",
-    panNumber: "",
-    panName: storedUser?.name ? storedUser.name.toUpperCase() : "",
-    panMasked: "",
-
-    accountHolderName: storedUser?.name || "",
     accountNumber: "",
     confirmAccountNumber: "",
     ifscCode: "",
@@ -222,10 +216,6 @@ export function KycVerificationPage() {
         ? {
             fullName: finalName,
             panName: finalName.toUpperCase(),
-            accountHolderName:
-              !prev.accountHolderName || prev.accountHolderName === storedUser?.name
-                ? finalName
-                : prev.accountHolderName,
           }
         : {}),
       aadhaarNumber: last4,
@@ -407,7 +397,6 @@ export function KycVerificationPage() {
                 if (bankRes?.data) {
                   setFormData((prev) => ({
                     ...prev,
-                    accountHolderName: bankRes.data.accountHolderName || prev.accountHolderName,
                     bankName: bankRes.data.bankName || prev.bankName,
                     ifscCode: bankRes.data.ifscCode || prev.ifscCode,
                     accountNumber: `••••••••${bankRes.data.accountNumberLast4 || "XXXX"}`,
@@ -702,6 +691,7 @@ export function KycVerificationPage() {
       setPanVerified(true);
       setFormData((prev) => ({
         ...prev,
+        panNumber: cleanPan,
         ...(verifiedName ? { panName: verifiedName } : {}),
         panMasked: maskedId,
       }));
@@ -855,8 +845,16 @@ export function KycVerificationPage() {
           ifscCode: cleanIfsc,
           accountNumber: cleanAcc,
         });
-        const bankName = res?.data?.bankName;
-        toast.success(`Bank details saved successfully (${bankName || cleanIfsc})`);
+
+        const bankName = res?.data?.bankName || "";
+
+        setFormData((prev) => ({
+          ...prev,
+          bankName,
+          ifscCode: cleanIfsc,
+        }));
+
+toast.success("Bank details saved successfully.");
         setCompletedSteps((prev) => Array.from(new Set([...prev, 4])));
         setCurrentStep(5);
         window.scrollTo({ top: 0, behavior: "smooth" });

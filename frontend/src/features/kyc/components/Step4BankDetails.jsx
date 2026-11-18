@@ -1,9 +1,7 @@
 import React from "react";
-import { Building2, Info, AlertCircle, ShieldCheck } from "lucide-react";
+import { Info, ShieldCheck } from "lucide-react";
 
 export function Step4BankDetails({ formData, onChange, errors = {}, isVerified = false }) {
-  const ifscRegex = /^[A-Z]{4}0[A-Z0-9]{6}$/;
-
   const handleIfscChange = (e) => {
     const val = e.target.value.toUpperCase().slice(0, 11);
     onChange("ifscCode", val);
@@ -24,15 +22,6 @@ export function Step4BankDetails({ formData, onChange, errors = {}, isVerified =
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3">
-          <label className="block text-xs font-medium text-slate-500 mb-1">Beneficiary / Account Holder</label>
-          <p className="text-sm font-semibold text-slate-800">{formData.accountHolderName || "Returned by bank verification"}</p>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3">
-          <label className="block text-xs font-medium text-slate-500 mb-1">Bank Name</label>
-          <p className="text-sm font-semibold text-slate-800">{formData.bankName || "Looked up from the IFSC code during verification"}</p>
-        </div>
-
         {/* Account Number */}
         <div>
           <label className="block text-xs font-medium text-slate-700 mb-1.5">
@@ -89,7 +78,6 @@ export function Step4BankDetails({ formData, onChange, errors = {}, isVerified =
             <p className="text-xs text-rose-500 mt-1 font-medium">{errors.ifscCode}</p>
           )}
         </div>
-
       </div>
 
       {isVerified ? (
@@ -103,7 +91,7 @@ export function Step4BankDetails({ formData, onChange, errors = {}, isVerified =
         <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex items-start gap-3 text-xs text-slate-600">
           <Info className="w-4 h-4 shrink-0 text-slate-400 mt-0.5" />
           <span>
-            Bank Account Notice: Your IFSC code will be validated against the Reserve Bank of India bank directory. Beneficiary name must match your legal business or proprietor registration.
+            Bank Account Notice: Your IFSC code and account details will be verified before settlements are enabled. Please ensure the account belongs to your business or proprietor.
           </span>
         </div>
       )}

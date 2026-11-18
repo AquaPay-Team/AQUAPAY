@@ -8,10 +8,8 @@ import {
   Send,
   ChevronRight,
   ChevronLeft,
-  ShieldCheck,
   RefreshCw,
   Smartphone,
-  Lock,
   FileSignature,
   Loader2,
 } from "lucide-react";
@@ -42,7 +40,6 @@ import {
   initiateAadhaarVerification,
   getAadhaarVerificationStatus,
   verifyPanDetails,
-  initiatePanVerification,
   saveBankDetails,
   getBankDetails,
   uploadKycMedia,
@@ -52,6 +49,8 @@ import {
 
 export function KycVerificationPage() {
   const navigate = useNavigate();
+  const popupWindowRef = useRef(null);
+  const pollIntervalRef = useRef(null);
 
   const storedUser = (() => {
     try {
@@ -84,53 +83,41 @@ export function KycVerificationPage() {
   const [step1OtpError, setStep1OtpError] = useState("");
 
   // Step 2 (Aadhaar / DigiLocker) states
-  const popupWindowRef = useRef(null);
-  const pollIntervalRef = useRef(null);
   const [digilockerSessionId, setDigilockerSessionId] = useState(null);
-  const [digilockerSessionActive, setDigilockerSessionActive] = useState(false);
-  const [sessionStatus, setSessionStatus] = useState("idle"); // "idle" | "in_progress" | "verified" | "failed" | "expired"
+  const [otpSent, setOtpSent] = useState(false);
+  const [sessionStatus, setSessionStatus] = useState("idle"); // "idle" | "pending" | "processing" | "verified" | "failed" | "expired"
   const [aadhaarErrorMessage, setAadhaarErrorMessage] = useState("");
   const [isInitiatingDigilocker, setIsInitiatingDigilocker] = useState(false);
   const [isCheckingAadhaarStatus, setIsCheckingAadhaarStatus] = useState(false);
   const [aadhaarVerified, setAadhaarVerified] = useState(false);
   const [aadhaarVerifiedData, setAadhaarVerifiedData] = useState({});
-  const [aadhaarPollInterval, setAadhaarPollInterval] = useState(null);
 
-  // Legacy / other states
-  const [otpSent, setOtpSent] = useState(false);
-  const [otpValue, setOtpValue] = useState(["", "", "", "", "", ""]);
-  const [otpTimer, setOtpTimer] = useState(30);
-  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
+  // Step 3 (PAN) states
   const [panVerified, setPanVerified] = useState(false);
   const [panLoading, setPanLoading] = useState(false);
+  const [panError, setPanError] = useState("");
+
+  // Step 5 (Media Uploads) granular tracking
+  const [uploadStates, setUploadStates] = useState({
+    selfie: { status: "idle", name: "", error: null },
+    video: { status: "idle", name: "", error: null },
+    shop: { status: "idle", name: "", error: null },
+  });
+
   const [savedDraftTime, setSavedDraftTime] = useState("Just now");
 
   const [formData, setFormData] = useState({
     fullName: storedUser?.name || "",
-    dob: "",
     phone: storedUser?.mobile?.replace(/^\+91/, "") || "",
     email: storedUser?.email || "",
     businessType: "Sole Proprietorship",
     shopAddress: storedUser?.address || "",
     address: storedUser?.address || "",
-    city: storedUser?.city || "",
-    state: storedUser?.state || "",
-    pincode: storedUser?.pincode || "",
 
-    aadhaarNumber: "",
-    aadhaarOtp: "",
-    aadhaarMasked: "",
-
-    panNumber: "",
-    panName: storedUser?.name ? storedUser.name.toUpperCase() : "",
-    panMasked: "",
-
-    accountHolderName: storedUser?.name || "",
     accountNumber: "",
     confirmAccountNumber: "",
     ifscCode: "",
     bankName: "",
-    accountType: "Current",
 
     selfieFile: null,
     videoFile: null,
@@ -261,11 +248,7 @@ export function KycVerificationPage() {
       clearInterval(pollIntervalRef.current);
       pollIntervalRef.current = null;
     }
-    if (aadhaarPollInterval) {
-      clearInterval(aadhaarPollInterval);
-      setAadhaarPollInterval(null);
-    }
-  }, [aadhaarPollInterval]);
+  }, []);
 
   // Check Aadhaar Verification Status from backend
   const handleCheckAadhaarStatus = useCallback(async () => {
@@ -368,7 +351,6 @@ export function KycVerificationPage() {
 
   // Fetch KYC status on mount & enforce Admin exemption
   useEffect(() => {
-    // Admin accounts are exempt from merchant KYC onboarding
     if (storedUser && isAdminRole(storedUser)) {
       toast.info("Admin accounts are exempt from KYC verification.");
       navigate("/admin/dashboard", { replace: true });
@@ -377,38 +359,11 @@ export function KycVerificationPage() {
 
     async function fetchStatus() {
       try {
-        // Sync fresh profile details
-        try {
-          const userRes = await getCurrentUser();
-          const liveUser = userRes?.data;
-          if (liveUser) {
-            setFormData((prev) => ({
-              ...prev,
-              fullName: prev.fullName || liveUser.name || "",
-              phone: prev.phone || (liveUser.mobile ? String(liveUser.mobile).replace(/^\+?91/, "") : ""),
-              email: prev.email || liveUser.email || "",
-              shopAddress: prev.shopAddress || liveUser.address || "",
-              address: prev.address || liveUser.address || "",
-              city: prev.city || liveUser.city || "",
-              state: prev.state || liveUser.state || "",
-              pincode: prev.pincode || liveUser.pincode || "",
-            }));
-          }
-        } catch {
-          // Ignore
-        }
-
         const res = await getKycStatus();
         if (res?.data) {
           const kycData = res.data;
 
           if (kycData.hasCase === false) {
-            if (storedUser && isAdminRole(storedUser)) {
-              navigate("/admin/dashboard", { replace: true });
-              return;
-            }
-            // Normal user has no KYC case yet — backend will auto-create on first step save.
-            // Stay on the page; Step 1 save will trigger case creation.
             return;
           }
 
@@ -422,6 +377,20 @@ export function KycVerificationPage() {
 
           if (Array.isArray(kycData.completedSteps)) {
             setCompletedSteps(kycData.completedSteps);
+
+            // Step 2 Aadhaar restoration
+            if (kycData.completedSteps.includes(2)) {
+              setAadhaarVerified(true);
+              setSessionStatus("verified");
+              syncAadhaarVerifiedName();
+            }
+
+            // Step 3 PAN restoration
+            if (kycData.completedSteps.includes(3)) {
+              setPanVerified(true);
+            }
+
+            // Step 4 Bank details restoration
             if (kycData.completedSteps.includes(4)) {
               try {
                 const bankRes = await getBankDetails();
@@ -430,13 +399,22 @@ export function KycVerificationPage() {
                     ...prev,
                     bankName: bankRes.data.bankName || prev.bankName,
                     ifscCode: bankRes.data.ifscCode || prev.ifscCode,
-                    accountNumber: `••••••••${bankRes.data.accountNumberLast4 || "7890"}`,
-                    confirmAccountNumber: `••••••••${bankRes.data.accountNumberLast4 || "7890"}`,
+                    accountNumber: `••••••••${bankRes.data.accountNumberLast4 || "XXXX"}`,
+                    confirmAccountNumber: `••••••••${bankRes.data.accountNumberLast4 || "XXXX"}`,
                   }));
                 }
               } catch {
                 // Ignore bank details fetch error
               }
+            }
+
+            // Step 5 Media restoration
+            if (kycData.completedSteps.includes(5)) {
+              setUploadStates({
+                selfie: { status: "uploaded", name: "Signatory Photo", error: null },
+                video: { status: "uploaded", name: "Consent Video Clip", error: null },
+                shop: { status: "uploaded", name: "Commercial Premise Photo", error: null },
+              });
             }
           }
 
@@ -454,55 +432,7 @@ export function KycVerificationPage() {
       }
     }
     fetchStatus();
-  }, [navigate]);
-
-  // Aadhaar OTP countdown (legacy – kept for compatibility)
-  useEffect(() => {
-    let interval = null;
-    if (otpSent && otpTimer > 0) {
-      interval = setInterval(() => setOtpTimer((t) => t - 1), 1000);
-    } else if (otpTimer === 0) {
-      clearInterval(interval);
-    }
-    return () => clearInterval(interval);
-  }, [otpSent, otpTimer]);
-
-  // Step 2: Check for existing active or verified Aadhaar session on mount / step change
-  useEffect(() => {
-    if (currentStep === 2 && !aadhaarVerified) {
-      async function checkActiveSession() {
-        try {
-          const statusRes = await getAadhaarVerificationStatus();
-          const statusUpper = String(statusRes?.data?.status || "").toUpperCase();
-          const sessId = statusRes?.data?.sessionId;
-          if (sessId) setDigilockerSessionId(sessId);
-
-          if (statusUpper === "VERIFIED") {
-            setAadhaarVerified(true);
-            setCompletedSteps((prev) => Array.from(new Set([...prev, 2])));
-            const verifiedName = statusRes.data?.verifiedName;
-            const maskedId = statusRes.data?.maskedIdentifier;
-            setAadhaarVerifiedData({ verifiedName, maskedIdentifier: maskedId });
-            if (verifiedName) {
-              setFormData((prev) => ({
-                ...prev,
-                fullName: verifiedName,
-                panName: verifiedName.toUpperCase(),
-              }));
-            }
-          } else if (
-            statusUpper === "PENDING" ||
-            statusRes?.data?.stage === "authorization_pending"
-          ) {
-            setOtpSent(true);
-          }
-        } catch {
-          // Ignore lookup errors
-        }
-      }
-      checkActiveSession();
-    }
-  }, [currentStep, aadhaarVerified]);
+  }, [navigate, syncAadhaarVerifiedName]);
 
   // Step 1 OTP countdown
   useEffect(() => {
@@ -513,7 +443,7 @@ export function KycVerificationPage() {
     return () => clearInterval(interval);
   }, [step1OtpPhase, step1OtpTimer]);
 
-  // Step 1: Request OTP from backend (dev mode → prints OTP to backend console)
+  // Step 1: Request OTP
   const handleRequestStep1Otp = async () => {
     setIsRequestingStep1Otp(true);
     setStep1OtpError("");
@@ -537,7 +467,7 @@ export function KycVerificationPage() {
     }
   };
 
-  // Step 1: Verify OTP → marks step as 'completed' in backend DB → allows Aadhaar to proceed
+  // Step 1: Verify OTP
   const handleVerifyStep1Otp = async () => {
     const otp = step1OtpValue.join("");
     if (otp.length !== 6) {
@@ -562,25 +492,8 @@ export function KycVerificationPage() {
     }
   };
 
-
-
   const handleChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
-
-    // Instant inline validation for Date of Birth
-    if (field === "dob") {
-      if (!value) {
-        setStep1Errors((prev) => ({ ...prev, dob: "Date of Birth is required." }));
-        return;
-      }
-      const selectedDate = new Date(value);
-      const today = new Date();
-      today.setHours(23, 59, 59, 999);
-      if (selectedDate > today) {
-        setStep1Errors((prev) => ({ ...prev, dob: "Date of Birth cannot be in the future." }));
-        return;
-      }
-    }
 
     if (step1Errors[field]) {
       setStep1Errors((prev) => {
@@ -595,56 +508,31 @@ export function KycVerificationPage() {
   const validateStep1 = () => {
     const errors = {};
 
-    // 1. Full Legal Name (from form or stored profile)
-    const name = (formData.fullName || storedUser?.name || "").trim();
-    if (!name || name.length < 2) {
+    if (!formData.fullName || formData.fullName.trim().length < 2) {
       errors.fullName = "Full Legal Name is required (minimum 2 characters).";
     }
 
-    // 2. Mobile Phone (from form or stored profile)
-    const rawPhone = formData.phone || storedUser?.mobile || "";
-    let cleanPhone = String(rawPhone).replace(/\D/g, "");
-    if (cleanPhone.length === 12 && cleanPhone.startsWith("91")) {
-      cleanPhone = cleanPhone.slice(2);
-    } else if (cleanPhone.length === 11 && cleanPhone.startsWith("0")) {
-      cleanPhone = cleanPhone.slice(1);
-    }
+    const cleanPhone = String(formData.phone || "").replace(/\D/g, "");
     if (!cleanPhone || cleanPhone.length !== 10) {
       errors.phone = "Please enter a valid 10-digit mobile number.";
     }
 
-    // 3. Email (from form or stored profile)
-    const emailTrimmed = String(formData.email || storedUser?.email || "").trim();
+    const emailTrimmed = String(formData.email || "").trim();
     if (!emailTrimmed || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrimmed)) {
       errors.email = "Please enter a valid email address.";
     }
 
-    // 4. Operating Commercial Address
-    const shopAddr = (formData.shopAddress || formData.address || storedUser?.address || "").trim();
+    const shopAddr = (formData.shopAddress || formData.address || "").trim();
     if (!shopAddr || shopAddr.length < 3) {
       errors.shopAddress = "Operating Commercial Address is required.";
     }
 
-    // 5. Business Constitution / Type
-    const VALID_TYPES = ["Sole Proprietorship", "Private Limited Company", "Partnership / LLP"];
-    const businessType = formData.businessType || "Sole Proprietorship";
-    if (!VALID_TYPES.includes(businessType)) {
-      errors.businessType = "Please select a valid Business Constitution / Type.";
-    }
-
-    // Note: Date of Birth (DOB) is completely removed per user instructions
-
     setStep1Errors(errors);
-    return errors;
+    return Object.keys(errors).length === 0;
   };
 
+  // Step 2: Trigger Aadhaar DigiLocker Verification
   const handleTriggerOtp = async () => {
-    const cleanAadhaar = String(formData.aadhaarNumber || "").replace(/\D/g, "");
-    if (cleanAadhaar.length !== 12) {
-      toast.error("Please enter a valid 12-digit Aadhaar number before requesting OTP.");
-      return;
-    }
-
     setIsInitiatingDigilocker(true);
     setAadhaarErrorMessage("");
     try {
@@ -658,15 +546,14 @@ export function KycVerificationPage() {
       }
 
       setOtpSent(true);
-      setSessionStatus("in_progress");
-      setOtpTimer(60);
+      setSessionStatus("pending");
       setAadhaarVerified(false);
-      setOtpValue(["", "", "", "", "", ""]);
 
       if (authUrl) {
-        // Open official UIDAI portal popup so UIDAI delivers OTP to the user's mobile
-        popupWindowRef.current = window.open(authUrl, "_blank", "width=520,height=680,location=no,status=no");
-        toast.success("UIDAI OTP dispatched! Check your Aadhaar-linked mobile for the OTP code.", { duration: 6000 });
+        // Securely open popup window and store ref
+        const popup = window.open(authUrl, "_blank", "width=520,height=680,location=no,status=no");
+        popupWindowRef.current = popup;
+        toast.success("DigiLocker window opened. Please complete OTP authentication on the official portal.", { duration: 6000 });
 
         // Auto-poll in background
         if (sessId) {
@@ -679,29 +566,29 @@ export function KycVerificationPage() {
                 stopAadhaarPolling();
                 setAadhaarVerified(true);
                 setSessionStatus("verified");
-                const verifiedName = statusRes.data.verifiedName;
-                const maskedId = statusRes.data.maskedIdentifier;
-                setAadhaarVerifiedData({ verifiedName, maskedIdentifier: maskedId });
-                if (verifiedName) {
-                  setFormData((prev) => ({
-                    ...prev,
-                    fullName: verifiedName,
-                    panName: verifiedName.toUpperCase(),
-                  }));
-                }
+                const verifiedName = await syncAadhaarVerifiedName(
+                  statusRes.data?.verifiedName,
+                  statusRes.data?.maskedIdentifier
+                );
                 setCompletedSteps((prev) => Array.from(new Set([...prev, 2])));
                 toast.success(`Aadhaar e-KYC verified with UIDAI: ${verifiedName || "Verified"}`);
+              } else if (statusUpper === "FAILED") {
+                stopAadhaarPolling();
+                setSessionStatus("failed");
+              } else if (statusUpper === "EXPIRED") {
+                stopAadhaarPolling();
+                setSessionStatus("expired");
               }
             } catch {
               // Silently poll
             }
-          }, 3000);
+          }, 3500);
 
           pollIntervalRef.current = interval;
-          setAadhaarPollInterval(interval);
+          // Auto-terminate polling after 10-minute session TTL
           setTimeout(() => {
             stopAadhaarPolling();
-          }, 180000);
+          }, 600000);
         }
       } else {
         toast.info("Aadhaar OTP requested. Please enter the OTP received on your mobile.");
@@ -715,39 +602,51 @@ export function KycVerificationPage() {
         parsed?.message?.toLowerCase().includes("session is already");
 
       if (isAlreadyInProgress) {
-        // Active session already running! Transition directly to OTP entry
         setOtpSent(true);
-        setOtpTimer(60);
+        setSessionStatus("pending");
         setAadhaarVerified(false);
-        setOtpValue(["", "", "", "", "", ""]);
-        toast.info("A verification session is already active. Please enter the OTP sent to your registered mobile.");
+        toast.info("A verification session is already active. Please authenticate in the government window or check status.");
 
         try {
           const statusRes = await getAadhaarVerificationStatus();
           const sessId = statusRes?.data?.sessionId;
-          if (sessId) {
-            setDigilockerSessionId(sessId);
-          }
+          if (sessId) setDigilockerSessionId(sessId);
           const statusUpper = String(statusRes?.data?.status || "").toUpperCase();
           if (statusUpper === "VERIFIED") {
             setAadhaarVerified(true);
-            const verifiedName = statusRes.data.verifiedName;
-            const maskedId = statusRes.data.maskedIdentifier;
-            setAadhaarVerifiedData({ verifiedName, maskedIdentifier: maskedId });
+            setSessionStatus("verified");
+            const verifiedName = await syncAadhaarVerifiedName(
+              statusRes.data?.verifiedName,
+              statusRes.data?.maskedIdentifier
+            );
             setCompletedSteps((prev) => Array.from(new Set([...prev, 2])));
             toast.success(`Aadhaar already verified: ${verifiedName || "Verified"}`);
           }
-        } catch {
-          // ignore
-        }
+        } catch {}
       } else {
-        toast.error(parsed.message || "Failed to initiate UIDAI Aadhaar session. Please try again.");
+        setSessionStatus("failed");
+        setAadhaarErrorMessage(parsed.message || "Failed to initiate UIDAI session.");
+        toast.error(parsed.message || "Failed to initiate UIDAI Aadhaar session.");
       }
     } finally {
       setIsInitiatingDigilocker(false);
     }
   };
 
+  const handleResetAadhaarSession = async () => {
+    stopAadhaarPolling();
+    setOtpSent(false);
+    setDigilockerSessionId(null);
+    setAadhaarVerified(false);
+    setSessionStatus("idle");
+    setAadhaarErrorMessage("");
+    try {
+      await getAadhaarVerificationStatus();
+    } catch {}
+    toast.info("Session reset. You can now request a new Aadhaar verification.");
+  };
+
+  // Step 3: PAN Verification
   const handleVerifyPan = async () => {
     const panRegex = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
     const cleanPan = String(formData.panNumber || "").trim().toUpperCase();
@@ -756,94 +655,125 @@ export function KycVerificationPage() {
       return;
     }
     setPanLoading(true);
+    setPanError("");
+
     try {
-      // Real backend PAN verification against Income Tax Department (IDTO)
       const res = await verifyPanDetails({ panNumber: cleanPan, consent: true });
-      const verifiedName = res?.data?.verifiedName || res?.data?.full_name;
-      const maskedId = res?.data?.maskedIdentifier;
+      const data = res?.data || {};
+
+      // Requirement: Reject development_unverified as real verification success
+      if (data.status === "development_unverified" || data.verificationStatus === "development_unverified") {
+        setPanVerified(false);
+        const msg = "PAN returned development_unverified from mock provider; this result cannot be accepted as real compliance verification.";
+        setPanError(msg);
+        toast.warning(msg);
+        return;
+      }
+
+      // Check if backend confirmed verification
+      const isVerified =
+        data.status === "VERIFIED" ||
+        data.status === "verified" ||
+        data.verificationStatus === "COMPLETED" ||
+        data.verified === true ||
+        Boolean(data.verifiedName || data.full_name);
+
+      if (!isVerified) {
+        setPanVerified(false);
+        const msg = data.message || "PAN verification could not be confirmed by the tax database.";
+        setPanError(msg);
+        toast.error(msg);
+        return;
+      }
+
+      const verifiedName = data.verifiedName || data.full_name;
+      const maskedId = data.maskedIdentifier || `••••••${cleanPan.slice(-4)}`;
       setPanVerified(true);
       setFormData((prev) => ({
         ...prev,
         panNumber: cleanPan,
         ...(verifiedName ? { panName: verifiedName } : {}),
-        panMasked: maskedId || `••••••${cleanPan.slice(-4)}`,
+        panMasked: maskedId,
       }));
-      if (verifiedName) {
-        toast.success(`PAN verified with Income Tax Dept: ${verifiedName}`);
-      } else {
-        toast.success("PAN verified successfully against tax database.");
-      }
+      toast.success(`PAN verified with Income Tax Dept: ${verifiedName || "Verified"}`);
     } catch (err) {
       const parsed = parseApiError(err);
       setPanVerified(false);
-      toast.error(parsed.message || "PAN verification failed with tax database. Please verify PAN number.");
+      setPanError(parsed.message || "PAN verification failed with tax database.");
+      toast.error(parsed.message || "PAN verification failed.");
     } finally {
       setPanLoading(false);
     }
   };
 
+  // Step 5: Granular Media Upload
   const handleFileUpload = async (file, assetType, fieldName) => {
-    handleChange(fieldName, file);
+    const stateKey = assetType === "selfie" ? "selfie" : assetType === "consent_video" ? "video" : "shop";
+
+    setUploadStates((prev) => ({
+      ...prev,
+      [stateKey]: { status: "uploading", name: file.name, error: null },
+    }));
+
     try {
-      toast.loading(`Uploading ${file.name}...`, { id: assetType });
       await uploadKycMedia(file, assetType);
-      toast.success(`${file.name} uploaded successfully`, { id: assetType });
+      // ONLY mark as uploaded upon backend confirmation
+      setUploadStates((prev) => ({
+        ...prev,
+        [stateKey]: { status: "uploaded", name: file.name, error: null },
+      }));
+      setFormData((prev) => ({ ...prev, [fieldName]: file }));
+      toast.success(`${file.name} uploaded successfully.`);
     } catch (err) {
       const parsed = parseApiError(err);
-      toast.error(parsed.message || `Failed to upload ${file.name}. Please ensure format is JPG, PNG, or MP4/WebM under 20MB.`, { id: assetType });
+      const errMsg = parsed.message || `Failed to upload ${file.name}.`;
+      setUploadStates((prev) => ({
+        ...prev,
+        [stateKey]: { status: "failed", name: file.name, error: errMsg },
+      }));
+      toast.error(errMsg);
     }
   };
 
-  // Step transition with validation
+  // Step navigation with validation
   const handleNextStep = async () => {
     // STEP 1 VALIDATION
     if (currentStep === 1) {
-      const errors = validateStep1();
-      if (Object.keys(errors).length > 0) {
-        const firstMsg = Object.values(errors)[0];
-        toast.error(firstMsg || "Please fill in all required fields accurately before proceeding.");
+      const isValid = validateStep1();
+      if (!isValid) {
+        toast.error("Please fill in all required fields accurately before proceeding.");
         return;
       }
 
       setIsSavingStep(true);
       try {
-        const businessType = formData.businessType || "Sole Proprietorship";
-        const shopAddress = (formData.shopAddress || formData.address || storedUser?.address || "").trim();
-
         await saveBasicDetails({
-          businessType,
-          shopAddress,
+          businessType: formData.businessType,
+          shopAddress: formData.shopAddress || formData.address,
         });
 
-        setCompletedSteps((prev) => Array.from(new Set([...prev, 1])));
         toast.success("Basic details saved. Please verify your identity with the OTP below.");
-        // ── Show Step 1 OTP sub-phase instead of jumping straight to Step 2 ──
         setStep1OtpPhase(true);
         setStep1OtpValue(["", "", "", "", "", ""]);
         setStep1OtpError("");
         window.scrollTo({ top: 0, behavior: "smooth" });
-        // Auto-request OTP immediately after save
+
         try {
           await requestBasicDetailsOtp();
           setStep1OtpTimer(60);
-          toast.info("OTP requested. Check the backend console for the code (development mode).");
+          toast.info("A verification code has been requested.");
         } catch (otpErr) {
           const parsedOtp = parseApiError(otpErr);
           if (parsedOtp.type !== "RATE_LIMIT") {
-            toast.error(parsedOtp.message || "Failed to auto-request OTP. Click 'Resend OTP' to try again.");
+            toast.error(parsedOtp.message || "Failed to auto-request OTP.");
           }
         }
       } catch (err) {
         const parsed = parseApiError(err);
-
-        // Populate field-specific inline errors from backend response
         if (parsed.fieldErrors && Object.keys(parsed.fieldErrors).length > 0) {
           setStep1Errors((prev) => ({ ...prev, ...parsed.fieldErrors }));
         }
-
-        // Display specific error message instead of generic maintenance toast
         toast.error(parsed.message || "Failed to save Basic Details. Please verify your data.");
-        return;
       } finally {
         setIsSavingStep(false);
       }
@@ -886,7 +816,7 @@ export function KycVerificationPage() {
       return;
     }
 
-    // STEP 4 VALIDATION
+    // STEP 4 VALIDATION (Bank Details)
     if (currentStep === 4) {
       if (completedSteps.includes(4)) {
         setCurrentStep(5);
@@ -894,50 +824,43 @@ export function KycVerificationPage() {
         return;
       }
       const cleanAcc = String(formData.accountNumber || "").replace(/\D/g, "");
-      const cleanConfirmAcc = String(formData.confirmAccountNumber || "").replace(/\D/g, "");
+      const cleanConfirm = String(formData.confirmAccountNumber || "").replace(/\D/g, "");
       if (!cleanAcc || cleanAcc.length < 9 || cleanAcc.length > 18) {
-        toast.error("Please enter a valid bank account number (9 to 18 digits).");
+        toast.error("Bank account number must be between 9 and 18 digits.");
         return;
       }
-      if (cleanAcc !== cleanConfirmAcc) {
+      if (cleanAcc !== cleanConfirm) {
         toast.error("Account numbers do not match. Please verify.");
         return;
       }
       const cleanIfsc = String(formData.ifscCode || "").trim().toUpperCase();
       if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(cleanIfsc)) {
-        toast.error("Please enter a valid 11-character IFSC code (e.g. SBIN0001234).");
+        toast.error("Invalid IFSC code format. Must follow standard 11-character format (e.g. SBIN0001234).");
         return;
       }
+
       setIsSavingStep(true);
       try {
         const res = await saveBankDetails({
           ifscCode: cleanIfsc,
           accountNumber: cleanAcc,
         });
-        const verifiedHolder = res?.data?.accountHolderName;
-        const verifiedBank = res?.data?.bankName;
+
+        const bankName = res?.data?.bankName || "";
 
         setFormData((prev) => ({
           ...prev,
-          accountNumber: cleanAcc,
-          confirmAccountNumber: cleanAcc,
+          bankName,
           ifscCode: cleanIfsc,
-          bankName: verifiedBank || prev.bankName,
-          ...(verifiedHolder ? { accountHolderName: verifiedHolder } : {}),
         }));
 
-        if (verifiedHolder) {
-          toast.success(`Bank verified via penny-drop: ${verifiedHolder} (${verifiedBank || "Verified"})`);
-        } else {
-          toast.success("Bank details saved successfully.");
-        }
+toast.success("Bank details saved successfully.");
         setCompletedSteps((prev) => Array.from(new Set([...prev, 4])));
         setCurrentStep(5);
         window.scrollTo({ top: 0, behavior: "smooth" });
       } catch (err) {
         const parsed = parseApiError(err);
-        toast.error(parsed.message || "Bank account verification failed with IDTO banking network.");
-        return;
+        toast.error(parsed.message || "Bank details verification failed.");
       } finally {
         setIsSavingStep(false);
       }
@@ -947,23 +870,23 @@ export function KycVerificationPage() {
     // STEP 5 VALIDATION (Media Uploads)
     if (currentStep === 5) {
       const missing = [];
-      if (!formData.videoFile) missing.push("1. Consent Video Clip");
-      if (!formData.selfieFile) missing.push("2. Signatory Photo (Selfie)");
-      if (!formData.shopPhotoFile) missing.push("3. Commercial Premise Photo");
+      if (uploadStates.selfie.status !== "uploaded") missing.push("Signatory Photo (Selfie)");
+      if (uploadStates.video.status !== "uploaded") missing.push("Consent Video Clip");
+      if (uploadStates.shop.status !== "uploaded") missing.push("Commercial Premise Photo");
 
       if (missing.length > 0) {
-        toast.error(`Please attach all 3 verification documents: missing ${missing.join(", ")}`);
+        toast.error(`Please complete all 3 required media uploads: missing ${missing.join(", ")}`);
         return;
       }
 
       setCompletedSteps((prev) => Array.from(new Set([...prev, 5])));
-      toast.success("All 3 verification documents uploaded successfully.");
+      toast.success("All 3 verification documents confirmed by server.");
       setCurrentStep(6);
       window.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
 
-    // STEP 6 VALIDATION
+    // STEP 6 VALIDATION (Agreement)
     if (currentStep === 6) {
       if (!formData.agreedTerms) {
         toast.error("Please review and accept the merchant agreement before proceeding.");
@@ -978,17 +901,7 @@ export function KycVerificationPage() {
         window.scrollTo({ top: 0, behavior: "smooth" });
       } catch (err) {
         const parsed = parseApiError(err);
-        if (parsed.type === "NOT_FOUND" || err.response?.status === 404) {
-          if (storedUser && isAdminRole(storedUser)) {
-            toast.info("Admin accounts are exempt from KYC. Redirecting to Admin Dashboard.");
-            navigate("/admin/dashboard", { replace: true });
-            return;
-          }
-          toast.error("KYC application not found. Please complete Step 1 first or contact support.");
-        } else {
-          toast.error(parsed.message || "Failed to submit agreement.");
-        }
-        return;
+        toast.error(parsed.message || "Failed to submit agreement.");
       } finally {
         setIsSavingStep(false);
       }
@@ -1060,7 +973,8 @@ export function KycVerificationPage() {
   const handleLogout = () => {
     localStorage.removeItem("accessToken");
     localStorage.removeItem("user");
-    navigate("/login/user");
+    localStorage.removeItem("adminUser");
+    navigate("/login");
   };
 
   if (isSubmitted) {
@@ -1158,14 +1072,9 @@ export function KycVerificationPage() {
                 isCheckingStatus={isCheckingAadhaarStatus}
                 aadhaarVerified={aadhaarVerified}
                 verifiedData={aadhaarVerifiedData}
-                onResetSession={() => {
-                  stopAadhaarPolling();
-                  setOtpSent(false);
-                  setSessionStatus("idle");
-                  setAadhaarErrorMessage("");
-                }}
                 sessionStatus={sessionStatus}
-                aadhaarErrorMessage={aadhaarErrorMessage}
+                errorMessage={aadhaarErrorMessage}
+                onResetSession={handleResetAadhaarSession}
               />
             )}
 
@@ -1176,11 +1085,16 @@ export function KycVerificationPage() {
                 panVerified={panVerified}
                 panLoading={panLoading}
                 onVerifyPan={handleVerifyPan}
+                panError={panError}
               />
             )}
 
             {currentStep === 4 && (
-              <Step4BankDetails formData={formData} onChange={handleChange} />
+              <Step4BankDetails
+                formData={formData}
+                onChange={handleChange}
+                isVerified={completedSteps.includes(4)}
+              />
             )}
 
             {currentStep === 5 && (
@@ -1190,13 +1104,14 @@ export function KycVerificationPage() {
                 onNext={handleNextStep}
                 onPrev={handlePrevStep}
                 isSavingStep={isSavingStep}
+                uploadStates={uploadStates}
               />
             )}
 
             {currentStep === 6 && (
-              <Step6Agreements
-                formData={formData}
-                onChange={handleChange}
+              <Step6Agreements 
+                formData={formData} 
+                onChange={handleChange} 
                 onNext={handleNextStep}
                 isSavingStep={isSavingStep}
               />
@@ -1212,7 +1127,7 @@ export function KycVerificationPage() {
             )}
           </div>
 
-          {/* Stepper Footer Controls – hidden during Step 1 OTP phase (the OTP card handles its own submission) */}
+          {/* Stepper Footer Controls */}
           {!isSubmitted && currentStep !== 5 && currentStep !== 6 && !step1OtpPhase && (
             <div className="px-6 py-4 bg-slate-50/80 border-t border-slate-200 flex items-center justify-between">
               <button

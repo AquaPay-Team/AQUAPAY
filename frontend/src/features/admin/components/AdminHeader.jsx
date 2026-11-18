@@ -1,31 +1,25 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Menu,
   Search,
-  LogOut,
   CreditCard,
   Bell,
-  User,
   CheckCircle2,
-  Users,
-  ShieldCheck,
 } from 'lucide-react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import { getCurrentUser } from "../../../api/auth.api";
 
 export function AdminHeader({
   sidebarCollapsed,
   setSidebarCollapsed,
   setMobileSidebarOpen,
   setShowCommandModal,
-  loadUsers,
-  isLoadingUsers
 }) {
   const navigate = useNavigate();
   const [notificationOpen, setNotificationOpen] = useState(false);
-  const [userMenuOpen, setUserMenuOpen] = useState(false);
 
-  const currentUser = (() => {
+  const [currentUser, setCurrentUser] = useState(() => {
     try {
       return JSON.parse(
         localStorage.getItem("adminUser") ||
@@ -35,10 +29,21 @@ export function AdminHeader({
     } catch {
       return {};
     }
-  })();
+  });
+
+  useEffect(() => {
+    let active = true;
+    getCurrentUser().then((response) => {
+      const fresh = response?.data || response;
+      if (!active || !fresh?.id) return;
+      setCurrentUser(fresh);
+      localStorage.setItem("user", JSON.stringify(fresh));
+      localStorage.setItem("adminUser", JSON.stringify(fresh));
+    }).catch(() => {});
+    return () => { active = false; };
+  }, []);
 
   const adminName = currentUser.name || "Administrator";
-  const adminRole = currentUser.role_name || (currentUser.role_id === 1 ? "Super Admin" : "Admin");
   const initials =
     adminName
       .split(" ")
@@ -47,16 +52,8 @@ export function AdminHeader({
       .slice(0, 2)
       .toUpperCase() || "AD";
 
-  const handleLogout = () => {
-    localStorage.removeItem("accessToken");
-    localStorage.removeItem("user");
-    localStorage.removeItem("adminUser");
-    toast.info("Signed out successfully from Admin Console");
-    navigate("/login/admin", { replace: true });
-  };
-
   return (
-    <header className="h-16 bg-white border-b border-slate-200 sticky top-0 z-30 px-4 md:px-6 flex items-center justify-between shadow-2xs relative">
+    <header className="h-[68px] bg-white border-b border-slate-200 sticky top-0 z-30 px-4 md:px-6 flex items-center justify-between shadow-2xs relative">
       {/* Left: Sidebar Toggle & Search Bar */}
       <div className="flex items-center gap-4">
         <button
@@ -80,7 +77,7 @@ export function AdminHeader({
           className="relative hidden sm:flex items-center gap-2 pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs w-64 md:w-80 text-slate-400 hover:border-slate-300 hover:bg-white transition-all cursor-pointer text-left"
         >
           <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <span>Search...</span>
+          <span>Search users, menus, reports...</span>
           <kbd className="ml-auto text-[10px] font-semibold bg-white border border-slate-200 text-slate-400 px-1.5 py-0.5 rounded">
             Ctrl K
           </kbd>
@@ -89,13 +86,13 @@ export function AdminHeader({
 
       {/* Right: Wallet Balance, Notifications & User Avatar */}
       <div className="flex items-center gap-3">
-        {/* Balance / Wallet Pill (Exact Match to Image 1 & 2) */}
+        {/* Balance / Wallet Pill */}
         <div
           onClick={() => toast.info("Super Admin Core Settlement & Reserve Account")}
-          className="flex items-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 font-semibold px-3 py-1.5 rounded-xl text-xs transition shadow-2xs cursor-pointer"
+          className="flex items-center gap-2 border border-blue-600 bg-white hover:bg-blue-50/50 text-blue-600 font-bold px-3.5 py-2 rounded-xl text-xs transition shadow-2xs cursor-pointer"
           title="Admin Settlement Balance"
         >
-          <CreditCard className="w-3.5 h-3.5 text-slate-700" />
+          <CreditCard className="w-4 h-4 text-black" />
           <span>₹ 0.00</span>
         </div>
 
@@ -104,7 +101,6 @@ export function AdminHeader({
           <button
             onClick={() => {
               setNotificationOpen(!notificationOpen);
-              setUserMenuOpen(false);
             }}
             className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors relative cursor-pointer"
             title="Notifications"
@@ -151,53 +147,15 @@ export function AdminHeader({
         {/* User Profile Dropdown */}
         <div className="relative">
           <button
-            onClick={() => {
-              setUserMenuOpen(!userMenuOpen);
-              setNotificationOpen(false);
-            }}
+            onClick={() => navigate("/admin/profile")}
+            aria-label="Open my profile"
             className="flex items-center gap-2 p-1 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
           >
-            <div className="w-8 h-8 rounded-full bg-sky-100 border border-sky-200 text-[#0284c7] font-bold flex items-center justify-center text-xs overflow-hidden shadow-2xs">
+            <div className="w-8 h-8 rounded-full bg-blue-100 border border-blue-200 text-blue-700 font-bold flex items-center justify-center text-xs overflow-hidden shadow-2xs">
               {initials}
             </div>
           </button>
 
-          {/* User Profile Dropdown Menu */}
-          {userMenuOpen && (
-            <div className="absolute right-0 top-12 w-56 bg-white rounded-2xl shadow-xl border border-slate-200 p-2 z-50 animate-in fade-in zoom-in-95 text-xs">
-              <div className="px-3 py-2 border-b border-slate-100 mb-1">
-                <span className="font-bold text-slate-900 block truncate">
-                  {adminName}
-                </span>
-                <span className="text-[10px] text-blue-600 font-semibold uppercase">
-                  {adminRole} Terminal
-                </span>
-              </div>
-              <Link
-                to="/admin/users"
-                onClick={() => setUserMenuOpen(false)}
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors"
-              >
-                <Users className="w-4 h-4 text-slate-400" />
-                <span>User Directory</span>
-              </Link>
-              <Link
-                to="/admin/kyc"
-                onClick={() => setUserMenuOpen(false)}
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors"
-              >
-                <ShieldCheck className="w-4 h-4 text-emerald-500" />
-                <span>KYC Verification Queue</span>
-              </Link>
-              <button
-                onClick={handleLogout}
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-rose-600 hover:bg-rose-50 transition-colors mt-1 cursor-pointer"
-              >
-                <LogOut className="w-4 h-4" />
-                <span>Sign Out</span>
-              </button>
-            </div>
-          )}
         </div>
       </div>
     </header>

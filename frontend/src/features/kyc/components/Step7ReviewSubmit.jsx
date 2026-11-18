@@ -8,14 +8,33 @@ import {
 } from "lucide-react";
 
 export function Step7ReviewSubmit({
-  formData,
-  onEditStep,
-  onSubmitKyc,
-  isSubmitting,
+  formData = {},
+  verificationState = null,
+  onEditStep = () => {},
+  onSubmitKyc = () => {},
+  isSubmitting = false,
 }) {
-  // Mask sensitive Aadhaar
-  const cleanAadhaar = String(formData.aadhaarNumber || "").replace(/\D/g, "");
+  const currentUser = (() => {
+    try {
+      return JSON.parse(localStorage.getItem("user") || "{}");
+    } catch {
+      return {};
+    }
+  })();
+  const userId = currentUser?.id;
 
+  const storedAadhaarLast4 =
+    (userId && localStorage.getItem(`aquapay_aadhaar_last4_${userId}`)) ||
+    localStorage.getItem("aquapay_aadhaar_last4") ||
+    "";
+
+  const storedPan =
+    (userId && localStorage.getItem(`aquapay_pan_${userId}`)) ||
+    localStorage.getItem("aquapay_pan") ||
+    "";
+
+  // Mask sensitive Aadhaar, ensuring the last four numbers are unmasked
+  const cleanAadhaar = String(formData.aadhaarNumber || "").replace(/\D/g, "");
   let maskedAadhaar = "•••• •••• ••••";
 
   if (
@@ -23,7 +42,6 @@ export function Step7ReviewSubmit({
     formData.aadhaarMasked !== "•••• •••• ••••"
   ) {
     const match = String(formData.aadhaarMasked).match(/(\d{4})$/);
-
     if (match) {
       maskedAadhaar = `•••• •••• ${match[1]}`;
     } else {
@@ -31,15 +49,33 @@ export function Step7ReviewSubmit({
     }
   } else if (cleanAadhaar.length >= 4) {
     maskedAadhaar = `•••• •••• ${cleanAadhaar.slice(-4)}`;
+  } else if (verificationState?.aadhaar?.maskedNumber) {
+    const match = String(verificationState.aadhaar.maskedNumber).match(/(\d{4})$/);
+    if (match) {
+      maskedAadhaar = `•••• •••• ${match[1]}`;
+    } else {
+      maskedAadhaar = verificationState.aadhaar.maskedNumber;
+    }
+  } else if (storedAadhaarLast4 && storedAadhaarLast4.length >= 4) {
+    maskedAadhaar = `•••• •••• ${storedAadhaarLast4.slice(-4)}`;
   }
 
-  // Mask sensitive PAN
-  const cleanPan = String(formData.panNumber || "").trim().toUpperCase();
+  // Mask sensitive PAN, ensuring the last four characters are unmasked
+  const cleanPan = String(
+    formData.panNumber ||
+    verificationState?.pan?.panNumber ||
+    storedPan ||
+    ""
+  ).trim().toUpperCase();
 
-  const maskedPan =
-    cleanPan.length === 10
-      ? `••••••${cleanPan.slice(-4)}`
-      : formData.panMasked || "—";
+  let maskedPan = "—";
+  if (cleanPan.length >= 4) {
+    maskedPan = `••••••${cleanPan.slice(-4)}`;
+  } else if (formData.panMasked) {
+    maskedPan = formData.panMasked;
+  } else if (verificationState?.pan?.maskedNumber) {
+    maskedPan = verificationState.pan.maskedNumber;
+  }
 
   const operatingAddress =
     formData.shopAddress || formData.address || "—";

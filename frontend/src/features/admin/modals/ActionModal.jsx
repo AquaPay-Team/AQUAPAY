@@ -16,14 +16,54 @@ export function ActionModal({
     setIsLoading(true);
 
     const payload = {};
-    if (form.name?.value?.trim()) payload.name = form.name.value.trim();
-    if (form.email?.value?.trim()) payload.email = form.email.value.trim();
-    if (form.mobile?.value?.trim()) payload.mobile = form.mobile.value.trim();
-    if (form.shopname?.value?.trim()) payload.shopname = form.shopname.value.trim();
-    if (form.city?.value?.trim()) payload.city = form.city.value.trim();
-    if (form.state?.value?.trim()) payload.state = form.state.value.trim();
-    if (form.pincode?.value?.trim()) payload.pincode = form.pincode.value.trim();
-    if (form.address?.value?.trim()) payload.address = form.address.value.trim();
+    const newName = form.name?.value?.trim();
+    const newEmail = form.email?.value?.trim();
+    const newMobile = form.mobile?.value?.trim();
+    const newShopname = form.shopname?.value?.trim();
+    const newCity = form.city?.value?.trim();
+    const newState = form.state?.value?.trim();
+    const newPincode = form.pincode?.value?.trim();
+    const newAddress = form.address?.value?.trim();
+
+    if (newName && newName !== actionModalUser.name) {
+      payload.name = newName;
+    }
+
+    // Only include email if it is different from the current email.
+    // The backend rejects requests where email is unchanged.
+    if (newEmail && newEmail.toLowerCase() !== String(actionModalUser.email || '').trim().toLowerCase()) {
+      payload.email = newEmail;
+    }
+
+    if (newMobile && newMobile !== String(actionModalUser.mobile || '').trim()) {
+      payload.mobile = newMobile;
+    }
+
+    if (newShopname !== undefined && newShopname !== (actionModalUser.shopname || '')) {
+      payload.shopname = newShopname;
+    }
+
+    if (newCity !== undefined && newCity !== (actionModalUser.city || '')) {
+      payload.city = newCity;
+    }
+
+    if (newState !== undefined && newState !== (actionModalUser.state || '')) {
+      payload.state = newState;
+    }
+
+    if (newPincode !== undefined && newPincode !== (actionModalUser.pincode || '')) {
+      payload.pincode = newPincode;
+    }
+
+    if (newAddress !== undefined && newAddress !== (actionModalUser.address || '')) {
+      payload.address = newAddress;
+    }
+
+    if (Object.keys(payload).length === 0) {
+      setIsLoading(false);
+      setActionModalUser(null);
+      return;
+    }
 
     await handleUpdateMemberDetails(actionModalUser.id, payload);
     setIsLoading(false);

@@ -244,11 +244,14 @@ export function KycVerificationPage() {
     }
 
     const formattedMasked = `•••• •••• ${last4}`;
-    if (userId && last4) {
-      try {
+    try {
+      if (userId && last4) {
         localStorage.setItem(`aquapay_aadhaar_last4_${userId}`, last4);
-      } catch {}
-    }
+      }
+      if (last4) {
+        localStorage.setItem("aquapay_aadhaar_last4", last4);
+      }
+    } catch {}
 
     setFormData((prev) => ({
       ...prev,
@@ -442,6 +445,34 @@ export function KycVerificationPage() {
         } catch {
           // Ignore
         }
+
+        try {
+          const uid = storedUser?.id;
+          const cachedAadhaarLast4 =
+            (uid && localStorage.getItem(`aquapay_aadhaar_last4_${uid}`)) ||
+            localStorage.getItem("aquapay_aadhaar_last4");
+          const cachedPan =
+            (uid && localStorage.getItem(`aquapay_pan_${uid}`)) ||
+            localStorage.getItem("aquapay_pan");
+
+          if (cachedAadhaarLast4 || cachedPan) {
+            setFormData((prev) => ({
+              ...prev,
+              ...(cachedAadhaarLast4
+                ? {
+                    aadhaarNumber: prev.aadhaarNumber || cachedAadhaarLast4,
+                    aadhaarMasked: prev.aadhaarMasked || `•••• •••• ${cachedAadhaarLast4}`,
+                  }
+                : {}),
+              ...(cachedPan
+                ? {
+                    panNumber: prev.panNumber || cachedPan,
+                    panMasked: prev.panMasked || `••••••${cachedPan.slice(-4)}`,
+                  }
+                : {}),
+            }));
+          }
+        } catch {}
 
         const res = await getKycStatus();
         if (res?.data) {
@@ -849,12 +880,19 @@ export function KycVerificationPage() {
 
       // Automatically update Full Legal Name using the exact Aadhaar-verified name
       const finalLegalName = aadhaarVerifiedName || verifiedName;
+      try {
+        const uid = storedUser?.id;
+        if (uid) {
+          localStorage.setItem(`aquapay_pan_${uid}`, cleanPan);
+        }
+        localStorage.setItem("aquapay_pan", cleanPan);
+      } catch {}
       setFormData((prev) => ({
         ...prev,
         fullName: finalLegalName,
         panNumber: cleanPan,
         panName: verifiedName || finalLegalName,
-        panMasked: maskedId || `XXXXXX${cleanPan.slice(-4)}`,
+        panMasked: maskedId || `••••••${cleanPan.slice(-4)}`,
       }));
 
       // Update stored user profile in localStorage and dispatch reactive update event
@@ -1361,6 +1399,7 @@ export function KycVerificationPage() {
             {currentStep === 7 && (
               <Step7ReviewSubmit
                 formData={formData}
+                verificationState={verificationState}
                 onEditStep={(stepId) => handleSelectStep(stepId)}
                 onSubmitKyc={handleSubmitApplication}
                 isSubmitting={isSubmitting}

@@ -320,6 +320,7 @@ export function Step5MediaUploads({
           <LiveVideoKycRecorder
             uploadState={videoState}
             onUpload={onFileUpload}
+            onRetake={() => onFileUpload(null, "consent_video", "videoFile")}
           />
 
           {/* 3. Shop / Business Location Photo */}

@@ -41,7 +41,7 @@ function formatDuration(seconds) {
   return `${minutes}:${remainingSeconds}`;
 }
 
-export default function LiveVideoKycRecorder({ uploadState = {}, onUpload }) {
+export default function LiveVideoKycRecorder({ uploadState = {}, onUpload, onRetake }) {
   const [phase, setPhase] = useState("idle");
   const [previewUrl, setPreviewUrl] = useState("");
   const [recordedFile, setRecordedFile] = useState(null);
@@ -257,6 +257,9 @@ export default function LiveVideoKycRecorder({ uploadState = {}, onUpload }) {
     setElapsedSeconds(0);
     setCameraError("");
     setPhase("idle");
+    if (onRetake) {
+      onRetake();
+    }
   };
 
   const uploadRecording = () => {
@@ -313,17 +316,47 @@ export default function LiveVideoKycRecorder({ uploadState = {}, onUpload }) {
             <span className="text-emerald-700">Preview your recording before submitting</span>
           </div>
           {isUploaded ? (
-            <div className="flex items-center gap-2 rounded-xl bg-emerald-50 p-3 text-sm font-medium text-emerald-800">
-              <CheckCircle2 className="h-5 w-5" /> Video uploaded and confirmed by server.
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 rounded-xl bg-emerald-50 p-3.5 border border-emerald-200 text-xs font-medium text-emerald-800">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
+                <span>Video uploaded and confirmed by server ✓</span>
+              </div>
+              <button
+                type="button"
+                onClick={retakeRecording}
+                className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100/60 cursor-pointer shadow-2xs"
+              >
+                <RefreshCw className="h-3.5 w-3.5 text-emerald-700" />
+                <span>Record Again / Retake Video</span>
+              </button>
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <button type="button" onClick={retakeRecording} disabled={isUploading} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50">
+              <button
+                type="button"
+                onClick={retakeRecording}
+                disabled={isUploading}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 cursor-pointer"
+              >
                 <RefreshCw className="h-4 w-4" /> Retake Video
               </button>
-              <button type="button" onClick={uploadRecording} disabled={isUploading || !recordedFile} className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#0a1945] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#13286b] disabled:opacity-50">
-                {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-                {isUploading ? "Uploading Video…" : isFailed ? "Retry Upload" : "Submit Video KYC"}
+              <button
+                type="button"
+                onClick={uploadRecording}
+                disabled={isUploading || !recordedFile}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#0a1945] px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-[#13286b] disabled:opacity-50 cursor-pointer shadow-xs"
+              >
+                {isUploading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>Uploading Video…</span>
+                  </>
+                ) : (
+                  <>
+                    <Upload className="h-4 w-4" />
+                    <span>{isFailed ? "Retry Upload" : "Submit Video KYC"}</span>
+                  </>
+                )}
               </button>
             </div>
           )}

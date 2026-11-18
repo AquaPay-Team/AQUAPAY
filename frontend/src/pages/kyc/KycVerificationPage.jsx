@@ -117,6 +117,11 @@ export function KycVerificationPage() {
     },
   });
   const [panErrorMessage, setPanErrorMessage] = useState("");
+  const [uploadStates, setUploadStates] = useState({
+    selfie: { status: "idle", error: null, name: "" },
+    video: { status: "idle", error: null, name: "" },
+    shop: { status: "idle", error: null, name: "" },
+  });
 
   // Legacy / other states
   const [otpSent, setOtpSent] = useState(false);
@@ -492,6 +497,13 @@ export function KycVerificationPage() {
               } catch {
                 // Ignore bank details fetch error
               }
+            }
+            if (kycData.completedSteps.includes(5)) {
+              setUploadStates({
+                selfie: { status: "uploaded", error: null, name: "Signatory Photo" },
+                video: { status: "uploaded", error: null, name: "Live Video KYC" },
+                shop: { status: "uploaded", error: null, name: "Commercial Premise Photo" },
+              });
             }
           }
 
@@ -912,14 +924,43 @@ export function KycVerificationPage() {
   };
 
   const handleFileUpload = async (file, assetType, fieldName) => {
-    handleChange(fieldName, file);
+    const stateKey =
+      assetType === "selfie" ? "selfie" : assetType === "consent_video" ? "video" : "shop";
+
+    if (!file) {
+      handleChange(fieldName, null);
+      setUploadStates((prev) => ({
+        ...prev,
+        [stateKey]: { status: "idle", error: null, name: "" },
+      }));
+      return;
+    }
+
+    setUploadStates((prev) => ({
+      ...prev,
+      [stateKey]: { status: "uploading", error: null, name: file.name },
+    }));
+
     try {
       toast.loading(`Uploading ${file.name}...`, { id: assetType });
       await uploadKycMedia(file, assetType);
+      handleChange(fieldName, file);
+      setUploadStates((prev) => ({
+        ...prev,
+        [stateKey]: { status: "uploaded", error: null, name: file.name },
+      }));
       toast.success(`${file.name} uploaded successfully`, { id: assetType });
     } catch (err) {
       const parsed = parseApiError(err);
-      toast.error(parsed.message || `Failed to upload ${file.name}. Please ensure format is JPG, PNG, or MP4/WebM under 20MB.`, { id: assetType });
+      handleChange(fieldName, null);
+      setUploadStates((prev) => ({
+        ...prev,
+        [stateKey]: { status: "failed", error: parsed.message, name: file.name },
+      }));
+      toast.error(
+        parsed.message || `Failed to upload ${file.name}. Please ensure format is JPG, PNG, or MP4/WebM under 20MB.`,
+        { id: assetType }
+      );
     }
   };
 
@@ -1032,12 +1073,16 @@ export function KycVerificationPage() {
     // STEP 5 VALIDATION (Media Uploads)
     if (currentStep === 5) {
       const missing = [];
-      if (!formData.videoFile) missing.push("1. Consent Video Clip");
-      if (!formData.selfieFile) missing.push("2. Signatory Photo (Selfie)");
-      if (!formData.shopPhotoFile) missing.push("3. Commercial Premise Photo");
+      const isVideoUploaded = uploadStates.video.status === "uploaded" || completedSteps.includes(5);
+      const isSelfieUploaded = uploadStates.selfie.status === "uploaded" || completedSteps.includes(5);
+      const isShopUploaded = uploadStates.shop.status === "uploaded" || completedSteps.includes(5);
+
+      if (!formData.videoFile && !isVideoUploaded) missing.push("1. Live Video KYC");
+      if (!formData.selfieFile && !isSelfieUploaded) missing.push("2. Signatory Photo (Selfie)");
+      if (!formData.shopPhotoFile && !isShopUploaded) missing.push("3. Commercial Premise Photo");
 
       if (missing.length > 0) {
-        toast.error(`Please attach all 3 verification documents: missing ${missing.join(", ")}`);
+        toast.error(`Please upload all 3 documents to the server: missing ${missing.join(", ")}`);
         return;
       }
 
@@ -1296,6 +1341,7 @@ export function KycVerificationPage() {
             {currentStep === 5 && (
               <Step5MediaUploads
                 formData={formData}
+                uploadStates={uploadStates}
                 onFileUpload={handleFileUpload}
                 onNext={handleNextStep}
                 onPrev={handlePrevStep}

@@ -857,8 +857,8 @@ export function KycVerificationPage() {
 
       setCompletedSteps((prev) => Array.from(new Set([...prev, 3])));
       toast.success(
-        "Your Aadhaar and PAN details have been successfully verified. Your registered legal name has been updated using your Aadhaar-verified name.",
-        { duration: 6000 }
+        "PAN details verified successfully.",
+        { duration: 4000 }
       );
     } catch (err) {
       const parsed = parseApiError(err);
@@ -869,6 +869,7 @@ export function KycVerificationPage() {
 
       setPanVerified(false);
       if (isMismatch) {
+        const mismatchMsg = "PAN card holder name does not match. Please use a valid PAN card.";
         setVerificationState((prev) => ({
           ...prev,
           pan: {
@@ -881,16 +882,11 @@ export function KycVerificationPage() {
           },
           nameMatch: {
             status: "mismatch",
-            message:
-              "The name on your Aadhaar and PAN records does not match. Please check your identity documents or contact support.",
+            message: mismatchMsg,
           },
         }));
-        setPanErrorMessage(
-          "The name on your Aadhaar and PAN records does not match. Please check your identity documents or contact support."
-        );
-        toast.error(
-          "The name on your Aadhaar and PAN records does not match. Please check your identity documents or contact support."
-        );
+        setPanErrorMessage(mismatchMsg);
+        toast.error(mismatchMsg);
       } else {
         setVerificationState((prev) => ({
           ...prev,
@@ -1010,7 +1006,7 @@ export function KycVerificationPage() {
         return;
       }
       if (verificationState.nameMatch.status === "mismatch") {
-        toast.error("Cannot proceed: The name on your Aadhaar and PAN records does not match. Please check your identity documents or contact support.");
+        toast.error("PAN card holder name does not match. Please use a valid PAN card.");
         return;
       }
       const isPanDone = panVerified || verificationState.pan.status === "verified";

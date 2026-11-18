@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Info, ShieldCheck, Eye, EyeOff } from "lucide-react";
 
-export function Step4BankDetails({ formData, onChange, errors = {}, isVerified = false, onSkip = () => {} }) {
+export function Step4BankDetails({ formData, onChange, errors = {}, isVerified = false }) {
   const [showAccountNumber, setShowAccountNumber] = useState(false);
   const [showConfirmAccountNumber, setShowConfirmAccountNumber] = useState(false);
 
@@ -17,18 +17,6 @@ export function Step4BankDetails({ formData, onChange, errors = {}, isVerified =
 
   return (
     <div className="space-y-6">
-      {/* Optional Skip Banner */}
-      <div className="p-3.5 bg-blue-50/80 border border-blue-200 rounded-xl flex items-center justify-between text-xs text-blue-900 shadow-2xs">
-        <span className="font-medium">Step 4 (Bank Details) is currently optional and can be skipped for now.</span>
-        <button
-          type="button"
-          onClick={onSkip}
-          className="font-bold text-blue-700 hover:text-blue-900 underline underline-offset-2 cursor-pointer ml-3 shrink-0"
-        >
-          Skip to Step 5 →
-        </button>
-      </div>
-
       <div className="border-b border-slate-200 pb-3">
         <h3 className="text-base font-semibold text-slate-900">Settlement Bank Account</h3>
         <p className="text-xs text-slate-500 mt-0.5">

@@ -7,6 +7,7 @@ export function KycStepper({
   currentStep,
   completedSteps = [],
   onSelectStep,
+  lockedBeforeStep = 1,
   isSubmitted,
 }) {
   const percentComplete = Math.round((completedSteps.length / steps.length) * 100);
@@ -40,7 +41,8 @@ export function KycStepper({
             .every((s) => completedSteps.includes(s.id));
 
           // Step 1 is always accessible. Subsequent steps require all previous steps to be completed.
-          const isAccessible = step.id === 1 || allPreviousStepsDone || isDone;
+          const isAccessible = step.id >= lockedBeforeStep &&
+            (step.id === 1 || allPreviousStepsDone || isDone);
 
           return (
             <button
@@ -56,6 +58,7 @@ export function KycStepper({
                 }
               }}
               disabled={!isAccessible}
+              title={step.id < lockedBeforeStep ? "Already verified; not editable after KYC restart" : undefined}
               className={`flex flex-col items-center p-2.5 rounded-xl transition-all duration-150 text-center relative select-none ${
                 isCurrent
                   ? "bg-blue-50/80 border border-blue-600 text-blue-900 shadow-xs ring-1 ring-blue-600/10 cursor-default"

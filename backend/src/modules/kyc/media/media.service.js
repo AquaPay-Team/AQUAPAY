@@ -38,7 +38,10 @@ function serviceUnavailable() {
 function logMediaFailure(operation, error) {
   const details = {};
 
-  if (typeof error?.code === "string" && /^[A-Z0-9_]+$/.test(error.code)) {
+  if (
+    typeof error?.code === "string" &&
+    /^[A-Z0-9_]+$/.test(error.code)
+  ) {
     details.code = error.code;
   }
 
@@ -50,9 +53,18 @@ function logMediaFailure(operation, error) {
     details.errorType = error?.name || "UnknownError";
   }
 
-  console.error(`[AquaPay Media] ${operation} failed`, details);
+  console.error(
+    `[AquaPay Media] ${operation} failed`,
+    details,
+  );
 }
 
+/**
+ * Safely release a database connection.
+ *
+ * If rollback or release fails, destroy the connection
+ * instead of returning an unsafe connection to the pool.
+ */
 async function releaseConnection(connection, rollback = false) {
   if (!connection) return;
 
@@ -60,6 +72,7 @@ async function releaseConnection(connection, rollback = false) {
     if (rollback) {
       await connection.rollback();
     }
+
     connection.release();
   } catch (error) {
     logMediaFailure("connection cleanup", error);
@@ -72,6 +85,10 @@ async function releaseConnection(connection, rollback = false) {
   }
 }
 
+/**
+ * Validate media type, file presence, MIME type
+ * and maximum allowed file size.
+ */
 function validateUpload(assetType, file) {
   const rules = MEDIA_RULES[assetType];
 
@@ -116,14 +133,17 @@ function validateUpload(assetType, file) {
   return rules;
 }
 
-// Check ownership and upload eligibility.
-// Called inside a database transaction.
-
+/**
+ * Check ownership and upload eligibility.
+ *
+ * Must be called inside a database transaction.
+ */
 async function findEligibleCase(connection, userId) {
-  const cases = await mediaModel.findCasesByUserIdForUpdate(
-    connection,
-    userId,
-  );
+  const cases =
+    await mediaModel.findCasesByUserIdForUpdate(
+      connection,
+      userId,
+    );
 
   if (cases.length === 0) {
     throw new ApiError(
@@ -154,14 +174,18 @@ async function findEligibleCase(connection, userId) {
     );
   }
 
-  // Step 5 requires Step 4 (Bank Details) to be completed.
-  const bankDetailsStep = await mediaModel.findStepByCaseIdAndNumber(
-    connection,
-    kycCase.id,
-    4,
-  );
+  // Step 5 requires Step 4 to be completed.
+  const bankDetailsStep =
+    await mediaModel.findStepByCaseIdAndNumber(
+      connection,
+      kycCase.id,
+      4,
+    );
 
-  if (!bankDetailsStep || bankDetailsStep.status !== "completed") {
+  if (
+    !bankDetailsStep ||
+    bankDetailsStep.status !== "completed"
+  ) {
     throw new ApiError(
       httpStatus.CONFLICT,
       "Complete bank details verification before uploading media.",
@@ -170,12 +194,13 @@ async function findEligibleCase(connection, userId) {
     );
   }
 
-  // Check whether Step 5 is initialized.
-  const step = await mediaModel.findStepByCaseIdAndNumber(
-    connection,
-    kycCase.id,
-    MEDIA_STEP,
-  );
+  // Verify Step 5 exists.
+  const step =
+    await mediaModel.findStepByCaseIdAndNumber(
+      connection,
+      kycCase.id,
+      MEDIA_STEP,
+    );
 
   if (!step) {
     throw new ApiError(
@@ -198,8 +223,10 @@ async function findEligibleCase(connection, userId) {
   return kycCase.id;
 }
 
-
-// Verify that the user can upload to an existing KYC case.
+/**
+ * Verify that the authenticated merchant can upload
+ * media to their existing KYC application.
+ */
 async function verifyUploadEligibility(userId) {
   const connection = await mediaModel.getConnection();
   let rollback = false;
@@ -207,7 +234,10 @@ async function verifyUploadEligibility(userId) {
   try {
     await connection.beginTransaction();
 
-    const caseId = await findEligibleCase(connection, userId);
+    const caseId = await findEligibleCase(
+      connection,
+      userId,
+    );
 
     await connection.commit();
 
@@ -226,31 +256,34 @@ async function verifyUploadEligibility(userId) {
   }
 }
 
-// Upload file to Cloudinary using a memory buffer.
+/**
+ * Upload media to Cloudinary.
+ */
 function uploadToCloudinary(file, rules, caseId) {
   return new Promise((resolve, reject) => {
     try {
       const cloudinary = getCloudinary();
 
-      const uploadStream = cloudinary.uploader.upload_stream(
-        {
-          resource_type: rules.resourceType,
-          type: "authenticated",
-          folder: `aquapay/kyc/${caseId}`,
-          public_id: crypto.randomUUID(),
-          overwrite: false,
-          use_filename: false,
-          unique_filename: false,
-        },
-        (error, result) => {
-          if (error) {
-            reject(error);
-            return;
-          }
+      const uploadStream =
+        cloudinary.uploader.upload_stream(
+          {
+            resource_type: rules.resourceType,
+            type: "authenticated",
+            folder: `aquapay/kyc/${caseId}`,
+            public_id: crypto.randomUUID(),
+            overwrite: false,
+            use_filename: false,
+            unique_filename: false,
+          },
+          (error, result) => {
+            if (error) {
+              reject(error);
+              return;
+            }
 
-          resolve(result);
-        },
-      );
+            resolve(result);
+          },
+        );
 
       uploadStream.end(file.buffer);
     } catch (error) {
@@ -259,8 +292,14 @@ function uploadToCloudinary(file, rules, caseId) {
   });
 }
 
-// Remove Cloudinary asset if saving its database record fails.
-async function cleanupCloudinaryAsset(publicId, resourceType) {
+/**
+ * Delete a Cloudinary asset if database persistence
+ * fails after a successful upload.
+ */
+async function cleanupCloudinaryAsset(
+  publicId,
+  resourceType,
+) {
   if (!publicId) return;
 
   try {
@@ -276,7 +315,17 @@ async function cleanupCloudinaryAsset(publicId, resourceType) {
   }
 }
 
-// Main upload operation.
+/**
+ * Upload a KYC media asset.
+ *
+ * Supported assets:
+ * - shop_image
+ * - selfie
+ * - consent_video
+ *
+ * Step 5 is completed only after all three required
+ * asset types have been uploaded.
+ */
 async function uploadMedia(userId, assetType, file) {
   const rules = validateUpload(assetType, file);
 
@@ -286,7 +335,11 @@ async function uploadMedia(userId, assetType, file) {
   let cloudinaryResult;
 
   try {
-    cloudinaryResult = await uploadToCloudinary(file, rules, caseId);
+    cloudinaryResult = await uploadToCloudinary(
+      file,
+      rules,
+      caseId,
+    );
   } catch (error) {
     logMediaFailure("Cloudinary upload", error);
 
@@ -308,14 +361,18 @@ async function uploadMedia(userId, assetType, file) {
   }
 
   const connection = await mediaModel.getConnection();
+
   let rollback = false;
   let databaseSaved = false;
 
   try {
     await connection.beginTransaction();
 
-    // Recheck eligibility to avoid saving against a changed case.
-    const currentCaseId = await findEligibleCase(connection, userId);
+    // Recheck eligibility before database insertion.
+    const currentCaseId = await findEligibleCase(
+      connection,
+      userId,
+    );
 
     if (currentCaseId !== caseId) {
       throw new ApiError(
@@ -326,41 +383,50 @@ async function uploadMedia(userId, assetType, file) {
       );
     }
 
-    const mediaId = await mediaModel.insertMediaAsset(connection, {
-      caseId,
-      assetType,
-      storageProvider: "cloudinary",
-      storageKey: cloudinaryResult.public_id,
-      mimeType: file.detectedMimeType,
-      fileSizeBytes: file.size,
-    });
-
-    // Step 5 is complete only when all three required media types exist.
-    const allRequiredMediaUploaded = await mediaModel.hasAllRequiredMedia(
+    // Save new media metadata.
+    const mediaId = await mediaModel.insertMediaAsset(
       connection,
-      caseId,
+      {
+        caseId,
+        assetType,
+        storageProvider: "cloudinary",
+        storageKey: cloudinaryResult.public_id,
+        mimeType: file.detectedMimeType,
+        fileSizeBytes: file.size,
+      },
     );
+
+    // Step 5 is complete only when all required media
+    // asset types exist with active upload statuses.
+    const allRequiredMediaUploaded =
+      await mediaModel.hasAllRequiredMedia(
+        connection,
+        caseId,
+      );
 
     if (allRequiredMediaUploaded) {
-  const step5Completed = await mediaModel.completeStep5(
-    connection,
-    caseId,
-  );
+      const step5Completed =
+        await mediaModel.completeStep5(
+          connection,
+          caseId,
+        );
 
-  if (!step5Completed) {
-    throw new ApiError(
-      httpStatus.CONFLICT,
-      "Unable to complete media upload step.",
-      [],
-      "KYC_STEP_COMPLETION_FAILED",
-    );
-  }
-}
+      if (!step5Completed) {
+        throw new ApiError(
+          httpStatus.CONFLICT,
+          "Unable to complete media upload step.",
+          [],
+          "KYC_STEP_COMPLETION_FAILED",
+        );
+      }
+    }
 
-    const stepsCompleted = await mediaModel.updateCompletedStepsCount(
-      connection,
-      caseId,
-    );
+    // Recalculate progress from completed step records.
+    const stepsCompleted =
+      await mediaModel.updateCompletedStepsCount(
+        connection,
+        caseId,
+      );
 
     await connection.commit();
     databaseSaved = true;
@@ -373,7 +439,9 @@ async function uploadMedia(userId, assetType, file) {
       fileSizeBytes: file.size,
       status: "uploaded",
       allUploadsComplete: allRequiredMediaUploaded,
-      ...(stepsCompleted !== null ? { steps_completed: stepsCompleted } : {}),
+      ...(stepsCompleted !== null
+        ? { steps_completed: stepsCompleted }
+        : {}),
     };
   } catch (error) {
     rollback = true;
@@ -396,4 +464,196 @@ async function uploadMedia(userId, assetType, file) {
   }
 }
 
-export { uploadMedia };
+/**
+ * Restart a rejected KYC application from Step 5.
+ *
+ * Business rules:
+ *
+ * 1. Only the authenticated KYC owner may restart.
+ * 2. Case must currently be rejected.
+ * 3. Steps 1-4 must remain completed.
+ * 4. Old media is invalidated for the new attempt.
+ * 5. Steps 5 and 7 are reset to pending.
+ * 6. Step 6 remains unchanged for now.
+ * 7. Case is reopened as pending at Step 5.
+ * 8. A status-history entry is recorded.
+ *
+ * Every database change occurs inside one transaction.
+ */
+async function restartRejectedKyc(userId) {
+  if (
+    !Number.isSafeInteger(Number(userId)) ||
+    Number(userId) < 1
+  ) {
+    throw new ApiError(
+      httpStatus.UNAUTHORIZED,
+      "Authentication required",
+      [],
+      "UNAUTHORIZED",
+    );
+  }
+
+  let connection;
+  let transactionStarted = false;
+
+  try {
+    connection = await mediaModel.getConnection();
+
+    await connection.beginTransaction();
+    transactionStarted = true;
+
+    // Find and lock the authenticated merchant's case.
+    const cases =
+      await mediaModel.findCasesByUserIdForUpdate(
+        connection,
+        Number(userId),
+      );
+
+    if (cases.length === 0) {
+      throw new ApiError(
+        httpStatus.NOT_FOUND,
+        "KYC application not found.",
+        [],
+        "KYC_CASE_NOT_FOUND",
+      );
+    }
+
+    if (cases.length > 1) {
+      throw new ApiError(
+        httpStatus.CONFLICT,
+        "Multiple KYC applications found.",
+        [],
+        "KYC_CASE_AMBIGUOUS",
+      );
+    }
+
+    const kycCase = cases[0];
+
+    // Only rejected applications can restart.
+    if (kycCase.status !== "rejected") {
+      throw new ApiError(
+        httpStatus.CONFLICT,
+        `KYC cannot be restarted from status '${kycCase.status}'.`,
+        [],
+        "INVALID_KYC_STATE",
+      );
+    }
+
+    const caseId = kycCase.id;
+
+    // Preserve Steps 1-4.
+    // Verify that each prerequisite was completed.
+    for (const stepNumber of [1, 2, 3, 4]) {
+      const step =
+        await mediaModel.findStepByCaseIdAndNumber(
+          connection,
+          caseId,
+          stepNumber,
+        );
+
+      if (!step || step.status !== "completed") {
+        throw new ApiError(
+          httpStatus.CONFLICT,
+          `KYC Step ${stepNumber} must be completed before restart.`,
+          [],
+          "KYC_PREREQUISITE_NOT_COMPLETED",
+        );
+      }
+    }
+
+    // Ensure Step 5 ,6 and Step 7 records exist.
+    for (const stepNumber of [5, 6, 7]) {
+      const step =
+        await mediaModel.findStepByCaseIdAndNumber(
+          connection,
+          caseId,
+          stepNumber,
+        );
+
+      if (!step) {
+        throw new ApiError(
+          httpStatus.CONFLICT,
+          `KYC Step ${stepNumber} is not initialized.`,
+          [],
+          "KYC_STEP_NOT_INITIALIZED",
+        );
+      }
+    }
+
+    // Invalidate media from earlier submissions.
+    // Records and Cloudinary assets are preserved.
+    const invalidatedMediaCount =
+      await mediaModel.invalidatePreviousMedia(
+        connection,
+        caseId,
+      );
+
+    // Reset progress starting from Step 5.
+    const progress =
+      await mediaModel.resetKycProgressFromStep5(
+        connection,
+        caseId,
+      );
+
+    // Reopen the case so new media can be uploaded.
+    const reopened =
+      await mediaModel.reopenRejectedKycCase(
+        connection,
+        caseId,
+      );
+
+    if (!reopened) {
+      throw new ApiError(
+        httpStatus.CONFLICT,
+        "Unable to reopen rejected KYC application.",
+        [],
+        "KYC_RESTART_FAILED",
+      );
+    }
+
+    // Record the rejected -> pending transition.
+    await mediaModel.insertRestartStatusHistory(
+      connection,
+      caseId,
+      Number(userId),
+    );
+
+    // Commit only after every operation succeeds.
+    await connection.commit();
+    transactionStarted = false;
+
+    return {
+      caseId,
+      previousStatus: "rejected",
+      status: "pending",
+      currentStep: progress.currentStep,
+      stepsCompleted: progress.stepsCompleted,
+      invalidatedMediaCount,
+      requiredMedia: [
+        "shop_image",
+        "selfie",
+        "consent_video",
+      ],
+      message: "KYC restarted from Step 5 successfully",
+    };
+  } catch (error) {
+    // Rollback is handled during connection cleanup.
+    // If rollback fails, the helper destroys the connection.
+    if (error instanceof ApiError) {
+      throw error;
+    }
+
+    logMediaFailure("KYC restart", error);
+    throw serviceUnavailable();
+  } finally {
+    await releaseConnection(
+      connection,
+      transactionStarted,
+    );
+  }
+}
+
+export {
+  uploadMedia,
+  restartRejectedKyc,
+};

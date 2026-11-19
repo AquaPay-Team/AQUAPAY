@@ -223,6 +223,221 @@ test("KYC status model uses parameterized queries and approved schema columns", 
   }
 });
 
+test("KYC status returns only masked Aadhaar last four for a completed verification", async () => {
+  const restore = replaceModelMethods({
+    findCasesByUserId: async () => [caseRow],
+    findStepsByCaseId: async () => [
+      { step_number: 1, status: "completed", completed_at: null },
+      { step_number: 2, status: "completed", completed_at: null },
+      { step_number: 3, status: "pending", completed_at: null },
+    ],
+    findVerifiedAadhaarByCaseId: async (caseId) => {
+      assert.equal(caseId, 13);
+      return [{ masked_identifier: "XXXXXX1234", verified_name: "Verified Example" }];
+    },
+  });
+
+  try {
+    const result = await statusService.getKycStatus("52");
+    assert.deepEqual(result.aadhaar, {
+      maskedIdentifier: "•••• •••• 1234",
+      verifiedName: "Verified Example",
+    });
+    assert.equal(JSON.stringify(result).includes("XXXXXX1234"), false);
+  } finally {
+    restore();
+  }
+});
+
+test("KYC status never exposes unmasked or malformed Aadhaar identifiers", async () => {
+  let raw = "123456789012";
+  const restore = replaceModelMethods({
+    findCasesByUserId: async () => [caseRow],
+    findStepsByCaseId: async () => [
+      { step_number: 2, status: "completed", completed_at: null },
+    ],
+    findVerifiedAadhaarByCaseId: async () => [
+      { masked_identifier: raw, verified_name: "Verified Example" },
+    ],
+  });
+
+  try {
+    assert.equal("aadhaar" in await statusService.getKycStatus("52"), false);
+    raw = "XXXXXX1234-INJECTION";
+    assert.equal("aadhaar" in await statusService.getKycStatus("52"), false);
+    raw = null;
+    assert.equal("aadhaar" in await statusService.getKycStatus("52"), false);
+  } finally {
+    restore();
+  }
+});
+
+test("KYC status does not query Aadhaar records until Step 2 is completed", async () => {
+  const restore = replaceModelMethods({
+    findCasesByUserId: async () => [caseRow],
+    findStepsByCaseId: async () => stepRows,
+    findVerifiedAadhaarByCaseId: async () => {
+      throw new Error("Should not retrieve an unverified Aadhaar identifier");
+    },
+  });
+
+  try {
+    assert.equal("aadhaar" in await statusService.getKycStatus("52"), false);
+  } finally {
+    restore();
+  }
+});
+
+test("KYC status fails closed for duplicate verified Aadhaar records", async () => {
+  const restore = replaceModelMethods({
+    findCasesByUserId: async () => [caseRow],
+    findStepsByCaseId: async () => [
+      { step_number: 2, status: "completed", completed_at: null },
+    ],
+    findVerifiedAadhaarByCaseId: async () => [
+      { masked_identifier: "XXXXXX1234" },
+      { masked_identifier: "XXXXXX5678" },
+    ],
+  });
+
+  try {
+    await assert.rejects(
+      statusService.getKycStatus("52"),
+      (error) => error.statusCode === 409 &&
+        error.code === "AADHAAR_VERIFICATION_AMBIGUOUS",
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("KYC status masks database failures retrieving verified Aadhaar", async () => {
+  const restore = replaceModelMethods({
+    findCasesByUserId: async () => [caseRow],
+    findStepsByCaseId: async () => [
+      { step_number: 2, status: "completed", completed_at: null },
+    ],
+    findVerifiedAadhaarByCaseId: async () => {
+      throw new Error("private SQL information");
+    },
+  });
+
+  try {
+    await assert.rejects(
+      statusService.getKycStatus("52"),
+      (error) => error.statusCode === 503 &&
+        error.code === "SERVICE_UNAVAILABLE" &&
+        !error.message.includes("private SQL information"),
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("Aadhaar status model scopes the verified record to a KYC case", async () => {
+  const originalExecute = pool.execute;
+  pool.execute = async (sql, params) => {
+    assert.deepEqual(params, [13]);
+    assert.match(sql, /v\.case_id = \?/);
+    assert.match(sql, /verification_type = 'aadhaar'/);
+    assert.match(sql, /v\.status = 'verified'/);
+    assert.match(sql, /s\.status = 'completed'/);
+    assert.doesNotMatch(sql, /SELECT \*/i);
+    return [[{ masked_identifier: "XXXXXX1234", verified_name: "Verified Example" }]];
+  };
+
+  try {
+    const result = await statusModel.findVerifiedAadhaarByCaseId(13);
+    assert.equal(result.length, 1);
+  } finally {
+    pool.execute = originalExecute;
+  }
+});
+
+test("KYC status restores a verified PAN mask without exposing the full number", async () => {
+  const restore = replaceModelMethods({
+    findCasesByUserId: async () => [caseRow],
+    findStepsByCaseId: async () => [
+      { step_number: 3, status: "completed", completed_at: null },
+    ],
+    findVerifiedPanByCaseId: async (caseId) => {
+      assert.equal(caseId, 13);
+      return [{ masked_identifier: "XXXXXX234F", verified_name: "PAN Verified" }];
+    },
+  });
+
+  try {
+    const result = await statusService.getKycStatus("52");
+    assert.deepEqual(result.pan, {
+      maskedIdentifier: "XXXXXX234F",
+      verifiedName: "PAN Verified",
+    });
+    assert.equal(JSON.stringify(result).includes("ABCDE1234F"), false);
+  } finally {
+    restore();
+  }
+});
+
+test("KYC status fails closed for malformed PAN masks and missing Step 3", async () => {
+  let completed = true;
+  let masked = "ABCDE1234F";
+  const restore = replaceModelMethods({
+    findCasesByUserId: async () => [caseRow],
+    findStepsByCaseId: async () => completed
+      ? [{ step_number: 3, status: "completed", completed_at: null }]
+      : [{ step_number: 3, status: "pending", completed_at: null }],
+    findVerifiedPanByCaseId: async () => [{ masked_identifier: masked }],
+  });
+  try {
+    assert.equal("pan" in await statusService.getKycStatus("52"), false);
+    masked = "XXXXXX234F";
+    completed = false;
+    assert.equal("pan" in await statusService.getKycStatus("52"), false);
+  } finally {
+    restore();
+  }
+});
+
+test("KYC status rejects ambiguous verified PAN rows", async () => {
+  const restore = replaceModelMethods({
+    findCasesByUserId: async () => [caseRow],
+    findStepsByCaseId: async () => [
+      { step_number: 3, status: "completed", completed_at: null },
+    ],
+    findVerifiedPanByCaseId: async () => [
+      { masked_identifier: "XXXXXX234F" },
+      { masked_identifier: "XXXXXX567P" },
+    ],
+  });
+  try {
+    await assert.rejects(
+      statusService.getKycStatus("52"),
+      (error) => error.statusCode === 409 &&
+        error.code === "PAN_VERIFICATION_AMBIGUOUS",
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("PAN status query is scoped to verified Step 3 and the case", async () => {
+  const originalExecute = pool.execute;
+  pool.execute = async (sql, params) => {
+    assert.deepEqual(params, [13]);
+    assert.match(sql, /v\.case_id = \?/);
+    assert.match(sql, /verification_type = 'pan'/);
+    assert.match(sql, /v\.status = 'verified'/);
+    assert.match(sql, /s\.status = 'completed'/);
+    assert.doesNotMatch(sql, /SELECT \*/i);
+    return [[{ masked_identifier: "XXXXXX234F", verified_name: "PAN Verified" }]];
+  };
+  try {
+    assert.equal((await statusModel.findVerifiedPanByCaseId(13)).length, 1);
+  } finally {
+    pool.execute = originalExecute;
+  }
+});
+
 test("mounted KYC status route rejects unauthenticated requests", async () => {
   const server = app.listen(0);
 

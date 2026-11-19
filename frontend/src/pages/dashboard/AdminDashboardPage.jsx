@@ -10,6 +10,7 @@ import { CommandSearchModal } from '../../features/admin/modals/CommandSearchMod
 import { ActionModal } from '../../features/admin/modals/ActionModal';
 import { AddAgentModal } from '../../features/admin/modals/AddAgentModal';
 import UserProfile from '../user/UserProfile';
+import AdminKycReview from '../../features/admin/components/AdminKycReview';
 
 export default function AdminDashboardPage() {
   const {
@@ -78,7 +79,7 @@ export default function AdminDashboardPage() {
       setSelectedRoleId(requestedRoleId);
       if (requestedRoleId) loadUsers(requestedRoleId);
     } else if (location.pathname.includes('/admin/kyc')) {
-      setActiveTab('all-users');
+      setActiveTab('kyc');
     } else if (location.pathname.includes('/admin/dashboard')) {
       setActiveTab('dashboard');
       setSelectedRoleId('');
@@ -127,6 +128,8 @@ export default function AdminDashboardPage() {
         <main className="p-4 md:p-6 lg:p-8 flex-1">
           {isProfileRoute ? (
             <UserProfile targetUserId={targetUserMatch?.[1]} />
+          ) : location.pathname === '/admin/kyc' ? (
+            <AdminKycReview />
           ) : activeTab === 'dashboard' ? (
             <DashboardOverview
               stats={stats}

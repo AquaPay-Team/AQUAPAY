@@ -50,8 +50,8 @@ export function Step5MediaUploads({
         toast.error(`Invalid file format for ${file.name}. Only JPG, PNG, and WebP images are allowed.`);
         return;
       }
-      if (file.size > 10 * 1024 * 1024) {
-        toast.error(`File size exceeds 10 MB limit (${(file.size / (1024 * 1024)).toFixed(1)} MB).`);
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error(`File size exceeds 5 MB limit (${(file.size / (1024 * 1024)).toFixed(1)} MB).`);
         return;
       }
     } else if (assetType === "consent_video") {
@@ -302,7 +302,7 @@ export function Step5MediaUploads({
                     Drag and drop selfie photo here
                   </span>
                   <span className="text-xs text-slate-400 mt-0.5 mb-3">
-                    PNG, JPG or WebP (max. 10 MB)
+                    PNG, JPG or WebP (max. 5 MB)
                   </span>
                   <button
                     type="button"
@@ -371,7 +371,7 @@ export function Step5MediaUploads({
                   <span className="block text-xs text-slate-400">
                     {shopState.status === "uploaded"
                       ? "Uploaded & Confirmed by Server ✓"
-                      : "PNG, JPG or WebP (max. 10 MB)"}
+                      : "PNG, JPG or WebP (max. 5 MB)"}
                   </span>
                 </div>
               </div>
@@ -391,14 +391,18 @@ export function Step5MediaUploads({
 
       {/* Footer Navigation Buttons */}
       <div className="pt-4 flex items-center justify-between border-t border-slate-100">
-        <button
-          type="button"
-          onClick={onPrev}
-          disabled={isSavingStep || isUploadingAny}
-          className="px-5 py-2.5 rounded-xl border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer disabled:opacity-50"
-        >
-          Previous Step
-        </button>
+        {onPrev ? (
+          <button
+            type="button"
+            onClick={onPrev}
+            disabled={isSavingStep || isUploadingAny}
+            className="px-5 py-2.5 rounded-xl border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer disabled:opacity-50"
+          >
+            Previous Step
+          </button>
+        ) : (
+          <span className="text-xs text-emerald-700 font-medium">Steps 1–4 already verified</span>
+        )}
 
         <button
           type="button"

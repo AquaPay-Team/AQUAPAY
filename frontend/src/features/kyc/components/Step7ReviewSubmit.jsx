@@ -12,26 +12,18 @@ export function Step7ReviewSubmit({
   onEditStep,
   onSubmitKyc,
   isSubmitting,
+  isRestartFlow = false,
 }) {
-  // Mask sensitive Aadhaar
+  // Display the last four Aadhaar digits only if available from the
+  // verification flow; otherwise show the verified status honestly.
   const cleanAadhaar = String(formData.aadhaarNumber || "").replace(/\D/g, "");
+  const maskedLast4 =
+    String(formData.aadhaarMasked || "").match(/(\d{4})$/)?.[1] ||
+    (cleanAadhaar.length >= 4 ? cleanAadhaar.slice(-4) : "");
 
-  let maskedAadhaar = "•••• •••• ••••";
-
-  if (
-    formData.aadhaarMasked &&
-    formData.aadhaarMasked !== "•••• •••• ••••"
-  ) {
-    const match = String(formData.aadhaarMasked).match(/(\d{4})$/);
-
-    if (match) {
-      maskedAadhaar = `•••• •••• ${match[1]}`;
-    } else {
-      maskedAadhaar = formData.aadhaarMasked;
-    }
-  } else if (cleanAadhaar.length >= 4) {
-    maskedAadhaar = `•••• •••• ${cleanAadhaar.slice(-4)}`;
-  }
+  const maskedAadhaar = maskedLast4
+    ? `•••• •••• ${maskedLast4}`
+    : "Verified — number hidden";
 
   // Mask sensitive PAN
   const cleanPan = String(formData.panNumber || "").trim().toUpperCase();
@@ -74,13 +66,13 @@ export function Step7ReviewSubmit({
               Personal & Business Information
             </span>
 
-            <button
+            {!isRestartFlow && <button
               type="button"
               onClick={() => onEditStep(1)}
               className="text-xs text-blue-600 hover:text-blue-700 font-medium hover:underline cursor-pointer"
             >
               Modify
-            </button>
+            </button>}
           </div>
 
           <div className="text-xs space-y-1.5 text-slate-700">
@@ -121,13 +113,13 @@ export function Step7ReviewSubmit({
               Identity & Tax Records
             </span>
 
-            <button
+            {!isRestartFlow && <button
               type="button"
               onClick={() => onEditStep(2)}
               className="text-xs text-blue-600 hover:text-blue-700 font-medium hover:underline cursor-pointer"
             >
               Modify
-            </button>
+            </button>}
           </div>
 
           <div className="text-xs space-y-1.5 text-slate-700">
@@ -162,13 +154,13 @@ export function Step7ReviewSubmit({
               Settlement Bank Account
             </span>
 
-            <button
+            {!isRestartFlow && <button
               type="button"
               onClick={() => onEditStep(4)}
               className="text-xs text-blue-600 hover:text-blue-700 font-medium hover:underline cursor-pointer"
             >
               Modify
-            </button>
+            </button>}
           </div>
 
           <div className="text-xs space-y-1.5 text-slate-700">

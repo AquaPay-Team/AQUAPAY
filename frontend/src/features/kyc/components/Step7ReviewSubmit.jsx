@@ -14,25 +14,16 @@ export function Step7ReviewSubmit({
   isSubmitting,
   isRestartFlow = false,
 }) {
-  // Mask sensitive Aadhaar
+  // Display the last four Aadhaar digits only if available from the
+  // verification flow; otherwise show the verified status honestly.
   const cleanAadhaar = String(formData.aadhaarNumber || "").replace(/\D/g, "");
+  const maskedLast4 =
+    String(formData.aadhaarMasked || "").match(/(\d{4})$/)?.[1] ||
+    (cleanAadhaar.length >= 4 ? cleanAadhaar.slice(-4) : "");
 
-  let maskedAadhaar = "•••• •••• ••••";
-
-  if (
-    formData.aadhaarMasked &&
-    formData.aadhaarMasked !== "•••• •••• ••••"
-  ) {
-    const match = String(formData.aadhaarMasked).match(/(\d{4})$/);
-
-    if (match) {
-      maskedAadhaar = `•••• •••• ${match[1]}`;
-    } else {
-      maskedAadhaar = formData.aadhaarMasked;
-    }
-  } else if (cleanAadhaar.length >= 4) {
-    maskedAadhaar = `•••• •••• ${cleanAadhaar.slice(-4)}`;
-  }
+  const maskedAadhaar = maskedLast4
+    ? `•••• •••• ${maskedLast4}`
+    : "Verified — number hidden";
 
   // Mask sensitive PAN
   const cleanPan = String(formData.panNumber || "").trim().toUpperCase();

@@ -176,23 +176,36 @@ export function KycVerificationPage() {
   // Synchronize real legal name fetched from UIDAI Aadhaar across entire app state
   const syncAadhaarVerifiedName = useCallback(async (directVerifiedName, maskedId) => {
     let finalName = directVerifiedName;
-    try {
-      const meRes = await getCurrentUser();
-      if (meRes?.data?.name) {
-        finalName = meRes.data.name;
+    let verifiedMaskedId = maskedId;
+
+    // The DigiLocker session status confirms completion but does not return
+    // the saved Aadhaar mask. Read the authenticated KYC case status instead.
+    if (!verifiedMaskedId || !finalName) {
+      try {
+        const kycResponse = await getKycStatus();
+        const kycData = kycResponse?.data;
+        if (kycData?.hasCase && kycData.completedSteps?.includes(2)) {
+          finalName = finalName || kycData.aadhaar?.verifiedName;
+          verifiedMaskedId = verifiedMaskedId || kycData.aadhaar?.maskedIdentifier;
+        }
+      } catch {
+        // A display-only lookup must not mark an existing verification failed.
       }
-    } catch (err) {
-      console.warn("Could not retrieve updated user from /api/auth/me:", err);
     }
 
-    if (!finalName && directVerifiedName) {
-      finalName = directVerifiedName;
+    if (!finalName) {
+      try {
+        const meRes = await getCurrentUser();
+        finalName = meRes?.data?.name || null;
+      } catch {
+        // Profile name is informational and not an Aadhaar verification source.
+      }
     }
 
-    // Determine unmasked last 4 digits (UIDAI compliance: never mask the last 4 digits)
+    // Display only the last four digits received from the authenticated API.
     let last4 = "";
-    if (maskedId) {
-      const match = String(maskedId).match(/(\d{4})$/);
+    if (verifiedMaskedId) {
+      const match = String(verifiedMaskedId).match(/(\d{4})$/);
       if (match) last4 = match[1];
     }
     // Show masked digits only when the authenticated backend returned them;
@@ -452,9 +465,30 @@ export function KycVerificationPage() {
           setAadhaarVerified(true);
           setSessionStatus("verified");
           // Name sync is informational; verified steps remain the source of truth.
-          syncAadhaarVerifiedName();
+          // Restore masked Aadhaar from the authenticated KYC status response.
+          // Never invent the last four digits or read them from localStorage.
+          await syncAadhaarVerifiedName(
+            response?.data?.aadhaar?.verifiedName,
+            response?.data?.aadhaar?.maskedIdentifier,
+          );
         }
-        if (state.completedSteps.includes(3)) setPanVerified(true);
+        if (state.completedSteps.includes(3)) {
+          setPanVerified(true);
+          // Rehydrate only verified PAN display data from this merchant's
+          // authenticated KYC status. The PAN verification API is unchanged.
+          const verifiedPan = response?.data?.pan;
+          const mask = verifiedPan?.maskedIdentifier;
+          const validMask = typeof mask === "string" &&
+            /^X{6}[0-9]{3}[A-Z]$/.test(mask);
+
+          setFormData((prev) => ({
+            ...prev,
+            panMasked: validMask ? mask : "",
+            ...(verifiedPan?.verifiedName
+              ? { panName: verifiedPan.verifiedName }
+              : {}),
+          }));
+        }
         if (state.completedSteps.includes(4)) {
           try {
             const bank = (await getBankDetails())?.data;

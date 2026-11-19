@@ -62,9 +62,11 @@ export function Step2AadhaarAuth({
     return "";
   })();
 
+  // A completed KYC verification is valid even when the public status API
+  // does not disclose the masked identifier. Do not invent Aadhaar digits.
   const displayMaskedAadhaar = currentLast4
     ? `•••• •••• ${currentLast4}`
-    : "Not available";
+    : null;
 
   const handleStartVerification = () => {
     if (!consentGiven) {
@@ -125,9 +127,20 @@ export function Step2AadhaarAuth({
                 Masked Aadhaar
               </span>
 
-              <span className="font-mono font-semibold text-slate-900 text-sm tracking-wide select-none">
-                {displayMaskedAadhaar}
+              <span
+                className={
+                  displayMaskedAadhaar
+                    ? "font-mono font-semibold text-slate-900 text-sm tracking-wide select-none"
+                    : "font-semibold text-emerald-700 text-sm"
+                }
+              >
+                {displayMaskedAadhaar || "Verified — number hidden"}
               </span>
+              {!displayMaskedAadhaar && (
+                <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                  The verification API does not share the masked number.
+                </p>
+              )}
             </div>
 
             {/* Authentication Authority */}

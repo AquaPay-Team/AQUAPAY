@@ -1,4 +1,3 @@
-
 import api from "./axios";
 
 // Status
@@ -66,6 +65,12 @@ export const getBankDetails = async () => {
   return response.data;
 };
 
+// Merchant rejected-KYC restart (authenticated account only).
+export const restartRejectedKyc = async () => {
+  const response = await api.post("/kyc/media/restart", {});
+  return response.data;
+};
+
 // Step 5: Media Uploads
 
 export const uploadKycMedia = async (file, assetType) => {
@@ -84,6 +89,12 @@ export const uploadKycMedia = async (file, assetType) => {
   return response.data;
 };
 
+
+// Restore individually uploaded media after a reload (no asset URLs).
+export const getMediaUploadStatus = async () => {
+  const response = await api.get("/kyc/media/status");
+  return response.data;
+};
 
 // Step 6: Agreements
 export const getAgreementDetails = async () => {

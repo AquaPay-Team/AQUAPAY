@@ -30,10 +30,15 @@ import Step5MediaUploads from "../../features/kyc/components/Step5MediaUploads";
 import Step6Agreements from "../../features/kyc/components/Step6Agreements";
 import Step7ReviewSubmit from "../../features/kyc/components/Step7ReviewSubmit";
 import KycSuccessView from "../../features/kyc/components/KycSuccessView";
+import KycRejectedView from "../../features/kyc/components/KycRejectedView";
+import { interpretKycStatus, currentMediaState } from "../../features/kyc/utils/kycFlow";
 
 // KYC Backend API Services
 import {
   getKycStatus,
+  getSubmissionStatus,
+  restartRejectedKyc,
+  getMediaUploadStatus,
   saveBasicDetails,
   requestBasicDetailsOtp,
   verifyBasicDetailsOtp,
@@ -61,14 +66,28 @@ export function KycVerificationPage() {
   })();
 
   const [currentStep, setCurrentStep] = useState(
-    storedUser?.kyc?.currentStep ? Number(storedUser.kyc.currentStep) : 1
+    1
   );
   const [completedSteps, setCompletedSteps] = useState([]);
+  const [kycStatus, setKycStatus] = useState(null);
+  const [rejectionReason, setRejectionReason] = useState(null);
+  const [isLoadingKycStatus, setIsLoadingKycStatus] = useState(true);
+  const [kycStatusError, setKycStatusError] = useState("");
+  const [isRestarting, setIsRestarting] = useState(false);
+  const [refreshStatusKey, setRefreshStatusKey] = useState(0);
+  const restartFlagKey = storedUser?.id ? `aquapay_kyc_restarted_${storedUser.id}` : null;
+  const [isRestartFlow, setIsRestartFlow] = useState(() => {
+    try {
+      return Boolean(restartFlagKey && localStorage.getItem(restartFlagKey) === "true");
+    } catch {
+      return false;
+    }
+  });
   const [step1Errors, setStep1Errors] = useState({});
   const [isSavingStep, setIsSavingStep] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(
-    storedUser?.kyc?.status === "submitted" || storedUser?.kyc?.status === "under_review"
+    false
   );
   const [referenceId, setReferenceId] = useState(
     storedUser?.kyc?.caseId || ""
@@ -176,39 +195,9 @@ export function KycVerificationPage() {
       const match = String(maskedId).match(/(\d{4})$/);
       if (match) last4 = match[1];
     }
-    if (!last4 && formData.aadhaarNumber) {
-      const clean = String(formData.aadhaarNumber).replace(/\D/g, "");
-      if (clean.length >= 4) last4 = clean.slice(-4);
-    }
-    const userId = storedUser?.id;
-    if (!last4 && userId) {
-      try {
-        const savedLast4 = localStorage.getItem(`aquapay_aadhaar_last4_${userId}`);
-        if (savedLast4 && /^\d{4}$/.test(savedLast4)) {
-          last4 = savedLast4;
-        }
-      } catch {}
-    }
-    if (!last4 && finalName) {
-      const lower = finalName.toLowerCase();
-      if (lower.includes("chauhan") || lower.includes("meet")) {
-        last4 = "6508";
-      } else if (lower.includes("mayur")) {
-        last4 = "0318";
-      } else if (lower.includes("karan")) {
-        last4 = "2988";
-      }
-    }
-    if (!last4) {
-      last4 = "6508";
-    }
-
-    const formattedMasked = `•••• •••• ${last4}`;
-    if (userId && last4) {
-      try {
-        localStorage.setItem(`aquapay_aadhaar_last4_${userId}`, last4);
-      } catch {}
-    }
+    // Show masked digits only when the authenticated backend returned them;
+    // older localStorage entries may contain unverified placeholder digits.
+    const formattedMasked = last4 ? `•••• •••• ${last4}` : "—";
 
     setFormData((prev) => ({
       ...prev,
@@ -218,7 +207,7 @@ export function KycVerificationPage() {
             panName: finalName.toUpperCase(),
           }
         : {}),
-      aadhaarNumber: last4,
+      aadhaarNumber: last4 || "",
       aadhaarMasked: formattedMasked,
     }));
 
@@ -240,7 +229,7 @@ export function KycVerificationPage() {
     });
 
     return finalName;
-  }, [storedUser?.id, storedUser?.name, formData.aadhaarNumber]);
+  }, [storedUser?.id]);
 
   // Polling cleanup helper
   const stopAadhaarPolling = useCallback(() => {
@@ -330,10 +319,8 @@ export function KycVerificationPage() {
 
       // 3. Trigger authoritative backend check (never trust message data alone)
       if (e.data?.type === "DIGILOCKER_COMPLETED" || e.data?.action === "kyc_completed") {
-        if (e.data?.maskedIdentifier || e.data?.last4 || e.data?.aadhaarLast4) {
-          const directMasked = e.data.maskedIdentifier || e.data.last4 || e.data.aadhaarLast4;
-          syncAadhaarVerifiedName(e.data.verifiedName, directMasked);
-        }
+        // The popup message is a trigger only. Do not accept identity fields
+        // from postMessage; confirm them with our authenticated backend first.
         handleCheckAadhaarStatus();
       }
     };
@@ -349,90 +336,203 @@ export function KycVerificationPage() {
     };
   }, [stopAadhaarPolling]);
 
-  // Fetch KYC status on mount & enforce Admin exemption
+  // Check authoritative KYC case + submission status on load and on explicit refresh.
+  // Fail closed on conflicting backend responses rather than showing an editable Step 1.
   useEffect(() => {
     if (storedUser && isAdminRole(storedUser)) {
-      toast.info("Admin accounts are exempt from KYC verification.");
       navigate("/admin/dashboard", { replace: true });
       return;
     }
-
+    let cancelled = false;
     async function fetchStatus() {
+      setIsLoadingKycStatus(true);
+      setKycStatusError("");
       try {
-        const res = await getKycStatus();
-        if (res?.data) {
-          const kycData = res.data;
+        const response = await getKycStatus();
+        if (cancelled) return;
+        const state = interpretKycStatus(response?.data);
+        setKycStatus(state.status);
+        setCompletedSteps(state.completedSteps);
+        setCurrentStep(state.currentStep || 1);
 
-          if (kycData.hasCase === false) {
-            return;
+        if (response?.data?.hasCase === false) {
+          setIsSubmitted(false);
+          setRejectionReason(null);
+          setIsRestartFlow(false);
+          return;
+        }
+
+        // Confirm that we're looking at the same authenticated KYC application.
+        // The second endpoint also provides the admin's exact rejection reason.
+        const submission = (await getSubmissionStatus())?.data;
+        if (cancelled) return;
+        if (!submission || String(submission.status).toLowerCase() !== state.status) {
+          throw new Error("KYC review status changed while loading. Refresh to get the latest result.");
+        }
+        setRejectionReason(state.status === "rejected" ? submission.rejectionReason || null : null);
+
+        if (state.view === "approved") {
+          if (restartFlagKey) localStorage.removeItem(restartFlagKey);
+          navigate("/user/dashboard", { replace: true });
+          return;
+        }
+        if (state.view === "submitted") {
+          if (restartFlagKey) localStorage.removeItem(restartFlagKey);
+          setIsSubmitted(true);
+          setIsRestartFlow(false);
+          setReferenceId(submission.caseId ? `AQP-${String(submission.caseId).padStart(6, "0")}` : "");
+          return;
+        }
+        setIsSubmitted(false);
+        if (state.view === "rejected") {
+          if (restartFlagKey) localStorage.removeItem(restartFlagKey);
+          setIsRestartFlow(false);
+          setUploadStates(currentMediaState());
+          setFormData(prev => ({
+            ...prev, selfieFile: null, videoFile: null, shopPhotoFile: null,
+            agreedTerms: false, agreedDataProcessing: false, agreedCreditCheck: false,
+          }));
+          return;
+        }
+
+        // The backend lists active media separately; partial uploads must survive refresh.
+                
+        let media = null;
+
+        try {
+          const mediaResponse = await getMediaUploadStatus();
+          media = mediaResponse?.data;
+
+          if (!media || String(media.status).toLowerCase() !== state.status) {
+            throw new Error("Media status changed. Refresh to continue safely.");
+          }
+        } catch (error) {
+          if (error?.response?.status !== 404) {
+            throw error;
           }
 
-          if (kycData.status === "completed" || kycData.status === "approved") {
-            navigate("/user/dashboard", { replace: true });
-            return;
-          } else if (kycData.status === "submitted" || kycData.status === "under_review") {
-            setIsSubmitted(true);
-            return;
-          }
+          // Older backend does not provide media-status.
+          // Do not assume that any partial uploads succeeded.
+          console.warn("Media status API unavailable; using verified KYC step progress.");
+        }
 
-          if (Array.isArray(kycData.completedSteps)) {
-            setCompletedSteps(kycData.completedSteps);
+        if (cancelled) return;
 
-            // Step 2 Aadhaar restoration
-            if (kycData.completedSteps.includes(2)) {
-              setAadhaarVerified(true);
-              setSessionStatus("verified");
-              syncAadhaarVerifiedName();
-            }
+        const restarted = media
+          ? Boolean(media.isRestartAttempt && state.status === "pending")
+          : Boolean(
+              restartFlagKey &&
+              localStorage.getItem(restartFlagKey) === "true" &&
+              state.status === "pending"
+            );
 
-            // Step 3 PAN restoration
-            if (kycData.completedSteps.includes(3)) {
-              setPanVerified(true);
-            }
+        setIsRestartFlow(restarted);
 
-            // Step 4 Bank details restoration
-            if (kycData.completedSteps.includes(4)) {
-              try {
-                const bankRes = await getBankDetails();
-                if (bankRes?.data) {
-                  setFormData((prev) => ({
-                    ...prev,
-                    bankName: bankRes.data.bankName || prev.bankName,
-                    ifscCode: bankRes.data.ifscCode || prev.ifscCode,
-                    accountNumber: `••••••••${bankRes.data.accountNumberLast4 || "XXXX"}`,
-                    confirmAccountNumber: `••••••••${bankRes.data.accountNumberLast4 || "XXXX"}`,
-                  }));
-                }
-              } catch {
-                // Ignore bank details fetch error
-              }
-            }
-
-            // Step 5 Media restoration
-            if (kycData.completedSteps.includes(5)) {
-              setUploadStates({
-                selfie: { status: "uploaded", name: "Signatory Photo", error: null },
-                video: { status: "uploaded", name: "Consent Video Clip", error: null },
-                shop: { status: "uploaded", name: "Commercial Premise Photo", error: null },
-              });
-            }
-          }
-
-          if (kycData.currentStep) {
-            const serverCurrentStep = Number(kycData.currentStep);
-            if (serverCurrentStep > 1 && !kycData.completedSteps?.includes(1)) {
-              setCurrentStep(1);
-            } else {
-              setCurrentStep(serverCurrentStep);
-            }
+        if (restartFlagKey && media) {
+          if (restarted) {
+            localStorage.setItem(restartFlagKey, "true");
+          } else {
+            localStorage.removeItem(restartFlagKey);
           }
         }
-      } catch (err) {
-        // Fallback to local session
+
+        setUploadStates(
+          currentMediaState(
+            media?.uploadedTypes || [],
+            state.completedSteps.includes(5)
+          )
+        );
+
+        setFormData(prev => ({
+          ...prev,
+          // Old acceptance rows do not make a reset Step 6 complete.
+          agreedTerms: state.completedSteps.includes(6),
+        }));
+        if (state.completedSteps.includes(2)) {
+          setAadhaarVerified(true);
+          setSessionStatus("verified");
+          // Name sync is informational; verified steps remain the source of truth.
+          syncAadhaarVerifiedName();
+        }
+        if (state.completedSteps.includes(3)) setPanVerified(true);
+        if (state.completedSteps.includes(4)) {
+          try {
+            const bank = (await getBankDetails())?.data;
+            if (!cancelled && bank) setFormData(prev => ({
+              ...prev,
+              bankName: bank.bankName || prev.bankName,
+              ifscCode: bank.ifscCode || prev.ifscCode,
+              accountNumber: `••••••••${bank.accountNumberLast4 || "XXXX"}`,
+              confirmAccountNumber: `••••••••${bank.accountNumberLast4 || "XXXX"}`,
+            }));
+          } catch { /* Bank details are informational for previously verified Step 4. */ }
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setKycStatusError(error?.message || parseApiError(error).message || "Unable to load KYC status.");
+        }
+      } finally {
+        if (!cancelled) setIsLoadingKycStatus(false);
       }
     }
     fetchStatus();
-  }, [navigate, syncAadhaarVerifiedName]);
+    return () => { cancelled = true; };
+  }, [navigate, syncAadhaarVerifiedName, refreshStatusKey]);
+
+  const handleRefreshStatus = () => setRefreshStatusKey(value => value + 1);
+
+  const handleRestartRejectedKyc = async () => {
+    if (isRestarting) return;
+    setIsRestarting(true);
+    try {
+      const response = await restartRejectedKyc();
+      if (response?.data?.status !== "pending" || Number(response?.data?.currentStep) !== 5) {
+        throw new Error("The server did not confirm a restart at Step 5. Refresh KYC status before continuing.");
+      }
+
+      setKycStatus("pending");
+      setIsSubmitted(false);
+      setRejectionReason(null);
+      setCurrentStep(5);
+      setCompletedSteps([1, 2, 3, 4]);
+      setUploadStates({
+        selfie: { status: "idle", name: "", error: null },
+        video: { status: "idle", name: "", error: null },
+        shop: { status: "idle", name: "", error: null },
+      });
+      setFormData((prev) => ({
+        ...prev,
+        selfieFile: null,
+        videoFile: null,
+        shopPhotoFile: null,
+        agreedTerms: false,
+        agreedDataProcessing: false,
+        agreedCreditCheck: false,
+      }));
+      setIsRestartFlow(true);
+      if (restartFlagKey) localStorage.setItem(restartFlagKey, "true");
+      try {
+        const user = JSON.parse(localStorage.getItem("user") || "null");
+        if (user) {
+          user.kyc = { ...(user.kyc || {}), status: "pending", currentStep: 5 };
+          localStorage.setItem("user", JSON.stringify(user));
+          window.dispatchEvent(new CustomEvent("aquapay:user_updated", { detail: user }));
+        }
+      } catch {
+        // The next server check remains the source of truth.
+      }
+      toast.success("KYC reopened. Please upload all three fresh media files.");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      handleRefreshStatus();
+    } catch (err) {
+      toast.error(parseApiError(err).message || "Could not restart KYC.");
+      // A network error can happen after the server commits a restart. Recheck
+      // status so the merchant can continue instead of attempting it twice.
+      handleRefreshStatus();
+    } finally {
+      setIsRestarting(false);
+    }
+  };
 
   // Step 1 OTP countdown
   useEffect(() => {
@@ -879,6 +979,16 @@ toast.success("Bank details saved successfully.");
         return;
       }
 
+      try {
+        const statusRes = await getKycStatus();
+        if (!statusRes?.data?.completedSteps?.includes(5)) {
+          toast.error("Waiting for the server to confirm all three fresh media uploads. Please try again.");
+          return;
+        }
+      } catch (err) {
+        toast.error(parseApiError(err).message || "Unable to confirm media uploads.");
+        return;
+      }
       setCompletedSteps((prev) => Array.from(new Set([...prev, 5])));
       toast.success("All 3 verification documents confirmed by server.");
       setCurrentStep(6);
@@ -888,6 +998,11 @@ toast.success("Bank details saved successfully.");
 
     // STEP 6 VALIDATION (Agreement)
     if (currentStep === 6) {
+      if (completedSteps.includes(6)) {
+        setCurrentStep(7);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
       if (!formData.agreedTerms) {
         toast.error("Please review and accept the merchant agreement before proceeding.");
         return;
@@ -916,6 +1031,10 @@ toast.success("Bank details saved successfully.");
   };
 
   const handlePrevStep = () => {
+    if (isRestartFlow && currentStep <= 5) {
+      toast.info("Steps 1–4 remain verified. Restart continues at Step 5.");
+      return;
+    }
     if (currentStep > 1) {
       setCurrentStep((prev) => prev - 1);
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -923,6 +1042,10 @@ toast.success("Bank details saved successfully.");
   };
 
   const handleSelectStep = (stepId) => {
+    if (isRestartFlow && stepId < 5) {
+      toast.info("Steps 1–4 remain verified. Continue from Step 5.");
+      return;
+    }
     if (stepId > 1 && !completedSteps.includes(1)) {
       toast.error("You must complete Step 1 (Basic Details) before moving to subsequent steps.");
       return;
@@ -950,6 +1073,9 @@ toast.success("Bank details saved successfully.");
     setIsSubmitting(true);
     try {
       const res = await submitKycApplication({ confirm: true });
+      if (!["submitted", "under_review"].includes(res?.data?.status)) {
+        throw new Error("The backend did not confirm KYC submission. Refresh status before retrying.");
+      }
       const caseId = res?.data?.caseId || res?.caseId;
       if (caseId) {
         setReferenceId(`AQP-${String(caseId).padStart(6, "0")}`);
@@ -961,6 +1087,9 @@ toast.success("Bank details saved successfully.");
       }
 
       setIsSubmitted(true);
+      setKycStatus("submitted");
+      setIsRestartFlow(false);
+      if (restartFlagKey) localStorage.removeItem(restartFlagKey);
       toast.success("KYC Application submitted successfully.");
     } catch (err) {
       const parsed = parseApiError(err);
@@ -977,10 +1106,55 @@ toast.success("Bank details saved successfully.");
     navigate("/login");
   };
 
+  if (isLoadingKycStatus) {
+    return (
+      <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center gap-3 text-sm text-slate-600">
+        <Loader2 className="w-5 h-5 animate-spin text-blue-600" /> Checking your KYC status...
+      </div>
+    );
+  }
+
+  if (kycStatusError) {
+    return (
+      <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center p-4">
+        <div className="w-full max-w-lg bg-white border border-slate-200 rounded-2xl p-7 shadow-sm text-center space-y-4">
+          <h1 className="text-lg font-semibold text-slate-900">Unable to load KYC status</h1>
+          <p className="text-sm text-slate-600">{kycStatusError}</p>
+          <button type="button" onClick={handleRefreshStatus} className="bg-blue-600 text-white text-sm font-medium rounded-xl px-5 py-2.5 hover:bg-blue-700">Try again</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (kycStatus === "rejected") {
+    return (
+      <KycRejectedView
+        rejectionReason={rejectionReason}
+        completedSteps={completedSteps}
+        onRestart={handleRestartRejectedKyc}
+        isRestarting={isRestarting}
+        onRefresh={handleRefreshStatus}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  if (kycStatus !== "pending" && !isSubmitted) {
+    return (
+      <div className="min-h-screen bg-[#f8fafc] flex flex-col items-center justify-center p-6 text-slate-700 gap-4">
+        <h2 className="text-lg font-semibold">KYC status unavailable</h2>
+        <p className="text-sm">We couldn't confirm your application is editable. No changes were made.</p>
+        <button type="button" onClick={handleRefreshStatus} className="rounded-xl bg-blue-600 px-5 py-2.5 text-white text-sm">Refresh status</button>
+      </div>
+    );
+  }
+
   if (isSubmitted) {
     return (
       <KycSuccessView
-        referenceId={referenceId || "AQP-" + Math.floor(100000 + Math.random() * 900000)}
+        onCheckStatus={handleRefreshStatus}
+        isCheckingStatus={isLoadingKycStatus}
+        referenceId={referenceId || "—"}
         onProceedDashboard={() => {
           navigate("/user/dashboard");
         }}
@@ -1007,6 +1181,7 @@ toast.success("Bank details saved successfully.");
           currentStep={currentStep}
           completedSteps={completedSteps}
           onSelectStep={handleSelectStep}
+          lockedBeforeStep={isRestartFlow ? 5 : 1}
           isSubmitted={isSubmitted}
         />
 
@@ -1102,14 +1277,15 @@ toast.success("Bank details saved successfully.");
                 formData={formData}
                 onFileUpload={handleFileUpload}
                 onNext={handleNextStep}
-                onPrev={handlePrevStep}
+                onPrev={isRestartFlow ? undefined : handlePrevStep}
                 isSavingStep={isSavingStep}
                 uploadStates={uploadStates}
               />
             )}
 
             {currentStep === 6 && (
-              <Step6Agreements 
+              <Step6Agreements
+                isStepCompleted={completedSteps.includes(6)}
                 formData={formData} 
                 onChange={handleChange} 
                 onNext={handleNextStep}
@@ -1119,6 +1295,7 @@ toast.success("Bank details saved successfully.");
 
             {currentStep === 7 && (
               <Step7ReviewSubmit
+                isRestartFlow={isRestartFlow}
                 formData={formData}
                 onEditStep={(stepId) => handleSelectStep(stepId)}
                 onSubmitKyc={handleSubmitApplication}

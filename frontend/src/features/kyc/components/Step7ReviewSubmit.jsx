@@ -12,6 +12,7 @@ export function Step7ReviewSubmit({
   onEditStep,
   onSubmitKyc,
   isSubmitting,
+  isRestartFlow = false,
 }) {
   // Mask sensitive Aadhaar
   const cleanAadhaar = String(formData.aadhaarNumber || "").replace(/\D/g, "");
@@ -74,13 +75,13 @@ export function Step7ReviewSubmit({
               Personal & Business Information
             </span>
 
-            <button
+            {!isRestartFlow && <button
               type="button"
               onClick={() => onEditStep(1)}
               className="text-xs text-blue-600 hover:text-blue-700 font-medium hover:underline cursor-pointer"
             >
               Modify
-            </button>
+            </button>}
           </div>
 
           <div className="text-xs space-y-1.5 text-slate-700">
@@ -121,13 +122,13 @@ export function Step7ReviewSubmit({
               Identity & Tax Records
             </span>
 
-            <button
+            {!isRestartFlow && <button
               type="button"
               onClick={() => onEditStep(2)}
               className="text-xs text-blue-600 hover:text-blue-700 font-medium hover:underline cursor-pointer"
             >
               Modify
-            </button>
+            </button>}
           </div>
 
           <div className="text-xs space-y-1.5 text-slate-700">
@@ -162,13 +163,13 @@ export function Step7ReviewSubmit({
               Settlement Bank Account
             </span>
 
-            <button
+            {!isRestartFlow && <button
               type="button"
               onClick={() => onEditStep(4)}
               className="text-xs text-blue-600 hover:text-blue-700 font-medium hover:underline cursor-pointer"
             >
               Modify
-            </button>
+            </button>}
           </div>
 
           <div className="text-xs space-y-1.5 text-slate-700">

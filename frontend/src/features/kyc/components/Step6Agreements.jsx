@@ -18,7 +18,8 @@ export function Step6Agreements({
   formData, 
   onChange, 
   onNext, 
-  isSavingStep = false 
+  isSavingStep = false,
+  isStepCompleted = false,
 }) {
   const [agreementData, setAgreementData] = useState(null);
   const [zoomLevel, setZoomLevel] = useState(100);
@@ -33,7 +34,9 @@ export function Step6Agreements({
         const res = await getAgreementDetails();
         if (isMounted && res?.data) {
           setAgreementData(res.data);
-          if (res.data.isAccepted && !formData.agreedTerms) {
+          // A previous acceptance may exist even though Step 6 was reset
+          // during rejected-KYC restart. Do not auto-consent in that case.
+          if (res.data.isAccepted && isStepCompleted && !formData.agreedTerms) {
             onChange("agreedTerms", true);
           }
         }
@@ -48,7 +51,7 @@ export function Step6Agreements({
   }, []);
 
   // Format date as in reference screenshot: "12 October 2026"
-  const agreementDate = agreementData?.signSection?.date || new Date().toLocaleDateString("en-GB", {
+  const agreementDate = (isStepCompleted ? agreementData?.signSection?.date : null) || new Date().toLocaleDateString("en-GB", {
     day: "numeric",
     month: "long",
     year: "numeric",

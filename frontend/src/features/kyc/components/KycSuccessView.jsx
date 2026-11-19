@@ -1,7 +1,7 @@
 import React from "react";
 import { CheckCircle2, Clock, ShieldCheck, ArrowRight } from "lucide-react";
 
-export function KycSuccessView({ referenceId, onProceedDashboard }) {
+export function KycSuccessView({ referenceId, onProceedDashboard, onCheckStatus, isCheckingStatus }) {
   const submissionTime = new Date().toLocaleString("en-GB", {
     day: "numeric",
     month: "short",
@@ -38,15 +38,26 @@ export function KycSuccessView({ referenceId, onProceedDashboard }) {
           <div className="flex justify-between items-center text-xs">
             <span className="text-slate-500">Underwriting SLA:</span>
             <span className="text-blue-700 font-semibold flex items-center gap-1">
-              <Clock className="w-3.5 h-3.5" /> Within 24-48 Hours
+              <Clock className="w-3.5 h-3.5" /> Pending review
             </span>
           </div>
         </div>
 
         {/* Notice */}
         <p className="text-xs text-slate-400 mb-6 leading-normal">
-          You will receive an SMS and email notification once your verification is completed and settlement services are activated.
+          Check your application status here for an update from the compliance team.
         </p>
+
+        {onCheckStatus && (
+          <button
+            type="button"
+            onClick={onCheckStatus}
+            disabled={isCheckingStatus}
+            className="w-full mb-3 border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium py-2.5 rounded-xl transition disabled:opacity-50 cursor-pointer"
+          >
+            {isCheckingStatus ? "Checking review status..." : "Check review status"}
+          </button>
+        )}
 
         {/* Primary Action Button */}
         <button

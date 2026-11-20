@@ -12,4 +12,8 @@ export default defineConfig({
     },
     dedupe: ["react", "react-dom"],
   },
+  test: {
+    globals: true,
+    environment: "node",
+  },
 });

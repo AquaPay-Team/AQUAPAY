@@ -25,14 +25,21 @@ export function Step6Agreements({
   const [zoomLevel, setZoomLevel] = useState(100);
   const [rotation, setRotation] = useState(0);
   const docContainerRef = useRef(null);
+  
+  const [currentDate] = useState(() =>
+    new Date().toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    })
+  );
 
-  // Load dynamic agreement details from backend
   useEffect(() => {
-    let isMounted = true;
+    const isMountedRef = { current: true };
     async function loadAgreement() {
       try {
         const res = await getAgreementDetails();
-        if (isMounted && res?.data) {
+        if (isMountedRef.current && res?.data) {
           setAgreementData(res.data);
           // A previous acceptance may exist even though Step 6 was reset
           // during rejected-KYC restart. Do not auto-consent in that case.
@@ -40,22 +47,19 @@ export function Step6Agreements({
             onChange("agreedTerms", true);
           }
         }
-      } catch (err) {
+      } catch {
         // Fallback to local data gracefully
       }
     }
     loadAgreement();
     return () => {
-      isMounted = false;
+      isMountedRef.current = false;
     };
-  }, []);
+  }, [isStepCompleted, formData.agreedTerms, onChange]);
 
   // Format date as in reference screenshot: "12 October 2026"
-  const agreementDate = (isStepCompleted ? agreementData?.signSection?.date : null) || new Date().toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
+  const agreementDate =
+    (isStepCompleted ? agreementData?.signSection?.date : null) || currentDate;
 
   // Dynamic merchant details from verified state
   const agentName = formData.fullName || agreementData?.agentDetails?.name || "[Agent Name]";
@@ -187,8 +191,8 @@ export function Step6Agreements({
 
       // Save file as PDF
       doc.save(`AquaPay_Agent_Agreement_${documentId.slice(0, 8)}.pdf`);
-      toast.success("AquaPay Agent Agreement PDF downloaded successfully!", { id: "pdf-gen" });
-    } catch (err) {
+      toast.success("AquaPay Agent Agreement PDF downloaded successfully!", { id: "pdf-gen" });    
+    } catch {
       toast.error("Failed to generate PDF. Please try again.", { id: "pdf-gen" });
     }
   };

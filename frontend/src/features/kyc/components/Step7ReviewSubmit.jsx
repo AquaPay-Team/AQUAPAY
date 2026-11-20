@@ -10,8 +10,8 @@ import {
 export function Step7ReviewSubmit({
   formData,
   onEditStep,
-  onSubmitKyc,
-  isSubmitting,
+  _onSubmitKyc,
+  _isSubmitting,
   isRestartFlow = false,
 }) {
   // Display the last four Aadhaar digits only if available from the

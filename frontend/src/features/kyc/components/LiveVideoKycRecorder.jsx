@@ -60,6 +60,12 @@ export default function LiveVideoKycRecorder({ uploadState = {}, onUpload }) {
   const isUploading = uploadState.status === "uploading";
   const isUploaded = uploadState.status === "uploaded";
   const isFailed = uploadState.status === "failed";
+    const effectivePhase = isUploaded
+    ? "uploaded"
+    : isFailed && phase === "uploading"
+    ? "preview"
+    : phase;
+  
 
   const stopCamera = () => {
     if (streamRef.current) {
@@ -99,11 +105,6 @@ export default function LiveVideoKycRecorder({ uploadState = {}, onUpload }) {
       previewVideoRef.current.load();
     }
   }, [phase, previewUrl]);
-
-  useEffect(() => {
-    if (isUploaded) setPhase("uploaded");
-    else if (isFailed && phase === "uploading") setPhase("preview");
-  }, [isUploaded, isFailed, phase]);
 
   useEffect(() => () => {
     clearRecordingTimer();
@@ -284,14 +285,14 @@ export default function LiveVideoKycRecorder({ uploadState = {}, onUpload }) {
         {isUploaded && <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />}
       </div>
 
-      {phase === "camera" || phase === "recording" ? (
+      {effectivePhase === "camera" || effectivePhase === "recording" ? (
         <div className="space-y-3">
           <div className="relative overflow-hidden rounded-xl bg-slate-950">
             <video ref={liveVideoRef} autoPlay muted playsInline className="aspect-video w-full object-cover" />
-            <div className={`absolute left-3 top-3 inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold text-white ${phase === "recording" ? "bg-rose-600" : "bg-slate-700"}`}>
-              <span className={`h-2 w-2 rounded-full bg-white ${phase === "recording" ? "animate-pulse" : ""}`} />
-              {phase === "recording" ? `REC ${formatDuration(elapsedSeconds)}` : "Starting camera…"}
-            </div>
+            <div className={`absolute left-3 top-3 inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold text-white ${effectivePhase === "recording" ? "bg-rose-600" : "bg-slate-700"}`}>
+  <span className={`h-2 w-2 rounded-full bg-white ${effectivePhase === "recording" ? "animate-pulse" : ""}`} />
+  {effectivePhase === "recording" ? `REC ${formatDuration(elapsedSeconds)}` : "Starting camera…"}
+</div>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
             <span className="inline-flex items-center gap-1.5"><Camera className="h-4 w-4" /> Front camera active</span>
@@ -303,7 +304,7 @@ export default function LiveVideoKycRecorder({ uploadState = {}, onUpload }) {
         </div>
       ) : null}
 
-      {phase === "preview" || phase === "uploading" || phase === "uploaded" ? (
+   {effectivePhase === "preview" || effectivePhase === "uploading" || effectivePhase === "uploaded" ? (
         <div className="space-y-3">
           <div className="overflow-hidden rounded-xl bg-slate-950">
             <video ref={previewVideoRef} src={previewUrl || undefined} controls playsInline className="aspect-video w-full object-contain" />

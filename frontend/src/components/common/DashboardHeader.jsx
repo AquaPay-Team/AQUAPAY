@@ -40,6 +40,16 @@ function markAllSeen() {
   localStorage.setItem(NOTIF_SEEN_KEY, new Date().toISOString());
 }
 
+function timeAgo(isoDate) {
+  const diff = Date.now() - new Date(isoDate).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 export function DashboardHeader({
   collapsed,
@@ -142,16 +152,6 @@ export function DashboardHeader({
       markAllSeen();
       setUnseenCount(0);
     }
-  };
-
-  const timeAgo = (isoDate) => {
-    const diff = Date.now() - new Date(isoDate).getTime();
-    const mins = Math.floor(diff / 60000);
-    if (mins < 1) return "Just now";
-    if (mins < 60) return `${mins}m ago`;
-    const hrs = Math.floor(mins / 60);
-    if (hrs < 24) return `${hrs}h ago`;
-    return `${Math.floor(hrs / 24)}d ago`;
   };
 
   return (

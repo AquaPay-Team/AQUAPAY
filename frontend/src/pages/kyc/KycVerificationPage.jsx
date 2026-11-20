@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   User,
@@ -57,13 +57,13 @@ export function KycVerificationPage() {
   const popupWindowRef = useRef(null);
   const pollIntervalRef = useRef(null);
 
-  const storedUser = (() => {
+    const storedUser = useMemo(() => {
     try {
       return JSON.parse(localStorage.getItem("user") || "null");
     } catch {
       return null;
     }
-  })();
+  }, []);
 
   const [currentStep, setCurrentStep] = useState(
     1
@@ -242,7 +242,7 @@ export function KycVerificationPage() {
     });
 
     return finalName;
-  }, [storedUser?.id]);
+    }, [setAadhaarVerifiedData]);
 
   // Polling cleanup helper
   const stopAadhaarPolling = useCallback(() => {
@@ -315,7 +315,17 @@ export function KycVerificationPage() {
     } finally {
       setIsCheckingAadhaarStatus(false);
     }
-  }, [digilockerSessionId, stopAadhaarPolling, syncAadhaarVerifiedName]);
+    }, [
+    digilockerSessionId,
+    stopAadhaarPolling,
+    syncAadhaarVerifiedName,
+    setIsCheckingAadhaarStatus,
+    setAadhaarErrorMessage,
+    setAadhaarVerified,
+    setSessionStatus,
+    setCompletedSteps,
+    setCurrentStep,
+  ]);
 
   // Listen for secure DigiLocker popup message
   useEffect(() => {
@@ -356,13 +366,13 @@ export function KycVerificationPage() {
       navigate("/admin/dashboard", { replace: true });
       return;
     }
-    let cancelled = false;
+        const activeRef = { isCurrent: true };
     async function fetchStatus() {
       setIsLoadingKycStatus(true);
       setKycStatusError("");
       try {
         const response = await getKycStatus();
-        if (cancelled) return;
+       if (!activeRef.isCurrent) return;
         const state = interpretKycStatus(response?.data);
         setKycStatus(state.status);
         setCompletedSteps(state.completedSteps);
@@ -378,7 +388,7 @@ export function KycVerificationPage() {
         // Confirm that we're looking at the same authenticated KYC application.
         // The second endpoint also provides the admin's exact rejection reason.
         const submission = (await getSubmissionStatus())?.data;
-        if (cancelled) return;
+       if (!activeRef.isCurrent) return;
         if (!submission || String(submission.status).toLowerCase() !== state.status) {
           throw new Error("KYC review status changed while loading. Refresh to get the latest result.");
         }
@@ -429,7 +439,7 @@ export function KycVerificationPage() {
           console.warn("Media status API unavailable; using verified KYC step progress.");
         }
 
-        if (cancelled) return;
+        if (!activeRef.isCurrent) return;
 
         const restarted = media
           ? Boolean(media.isRestartAttempt && state.status === "pending")
@@ -492,7 +502,7 @@ export function KycVerificationPage() {
         if (state.completedSteps.includes(4)) {
           try {
             const bank = (await getBankDetails())?.data;
-            if (!cancelled && bank) setFormData(prev => ({
+            if (activeRef.isCurrent && bank) setFormData(prev => ({
               ...prev,
               bankName: bank.bankName || prev.bankName,
               ifscCode: bank.ifscCode || prev.ifscCode,
@@ -502,16 +512,16 @@ export function KycVerificationPage() {
           } catch { /* Bank details are informational for previously verified Step 4. */ }
         }
       } catch (error) {
-        if (!cancelled) {
+        if (activeRef.isCurrent) {
           setKycStatusError(error?.message || parseApiError(error).message || "Unable to load KYC status.");
         }
       } finally {
-        if (!cancelled) setIsLoadingKycStatus(false);
+        if (activeRef.isCurrent) setIsLoadingKycStatus(false);
       }
     }
     fetchStatus();
-    return () => { cancelled = true; };
-  }, [navigate, syncAadhaarVerifiedName, refreshStatusKey]);
+        return () => { activeRef.isCurrent = false; };
+    }, [navigate, syncAadhaarVerifiedName, refreshStatusKey, storedUser, restartFlagKey]);
 
   const handleRefreshStatus = () => setRefreshStatusKey(value => value + 1);
 
@@ -1115,9 +1125,12 @@ toast.success("Bank details saved successfully.");
         setReferenceId(`AQP-${String(caseId).padStart(6, "0")}`);
       }
 
-      if (storedUser) {
-        storedUser.kyc = { ...(storedUser.kyc || {}), status: "submitted" };
-        localStorage.setItem("user", JSON.stringify(storedUser));
+            if (storedUser) {
+        const updatedUser = {
+          ...storedUser,
+          kyc: { ...(storedUser.kyc || {}), status: "submitted" },
+        };
+        localStorage.setItem("user", JSON.stringify(updatedUser));
       }
 
       setIsSubmitted(true);

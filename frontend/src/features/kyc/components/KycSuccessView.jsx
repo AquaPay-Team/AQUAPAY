@@ -1,15 +1,17 @@
-import React from "react";
-import { CheckCircle2, Clock, ShieldCheck, ArrowRight } from "lucide-react";
+import React, { useState } from "react";
+import { CheckCircle2, Clock, ArrowRight } from "lucide-react";
 
 export function KycSuccessView({ referenceId, onProceedDashboard, onCheckStatus, isCheckingStatus }) {
-  const submissionTime = new Date().toLocaleString("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-
+  const [submissionTime] = useState(() =>
+    new Date().toLocaleString("en-GB", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+  );
+  
   return (
     <div className="min-h-screen bg-[#f8fafc] text-slate-800 flex items-center justify-center p-4">
       <div className="w-full max-w-lg bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-sm text-center">

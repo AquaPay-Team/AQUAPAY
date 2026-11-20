@@ -7,6 +7,7 @@ import {
   updateBackendUser,
   adminLogout
 } from '../services/adminApi';
+import { parseApiError } from "@/lib/errors";
 
 export function useAdminDashboard() {
   // Navigation State
@@ -52,9 +53,9 @@ export function useAdminDashboard() {
       }
     } catch (err) {
       if (requestId !== userLoadRequestRef.current) return;
-      setUsers([]);
-      const message = err?.response?.data?.message || "Unable to load users. Please try again.";
-      toast.error(message);
+            setUsers([]);
+      const parsed = parseApiError(err);
+      toast.error(parsed.message || "Unable to load users. Please try again.");
       if (import.meta.env.DEV) {
         console.warn("Admin user directory request failed", {
           method: "GET",

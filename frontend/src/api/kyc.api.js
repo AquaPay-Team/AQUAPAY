@@ -101,17 +101,16 @@ export const getAgreementDetails = async () => {
   const response = await api.get("/kyc/agreement");
   return response.data;
 };
-
 export const acceptAgreement = async ({
   accepted = true,
-  agreementCode = "AQUAPAY_AGENT_AGREEMENT",
-  agreementVersion = "v1.0",
+  agreementCode,
+  agreementVersion,
 } = {}) => {
-  const response = await api.post("/kyc/agreement/accept", {
-    accepted,
-    agreementCode,
-    agreementVersion,
-  });
+  const payload = { accepted };
+  if (agreementCode) payload.agreementCode = agreementCode;
+  if (agreementVersion) payload.agreementVersion = agreementVersion;
+
+  const response = await api.post("/kyc/agreement/accept", payload);
   return response.data;
 };
 

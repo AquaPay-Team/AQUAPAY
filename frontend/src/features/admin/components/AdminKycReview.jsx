@@ -21,6 +21,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { parseApiError } from "@/lib/errors";
 import {
   approveAdminKyc,
   getAdminKycDetails,
@@ -28,6 +29,7 @@ import {
   listAdminKycApplications,
   rejectAdminKyc,
 } from "../services/adminKycApi";
+
 
 const FILTERS = [
   { value: "", label: "Awaiting review" },
@@ -56,8 +58,7 @@ const formatDate = (value) => {
   const result = new Date(value);
   return Number.isNaN(result.getTime()) ? "—" : result.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
 };
-
-const errorText = (error) => error?.response?.data?.message || "Something went wrong. Please try again.";
+const errorText = (error) => parseApiError(error).message || "Something went wrong. Please try again.";
 const panel = "bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden";
 const secondaryButton = "inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 hover:shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:cursor-not-allowed disabled:opacity-50";
 const primaryButton = "inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-semibold text-white shadow-2xs transition hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:cursor-not-allowed disabled:opacity-50";

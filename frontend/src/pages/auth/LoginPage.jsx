@@ -1,3 +1,6 @@
+import { useAuth } from "../../features/auth/useAuth";
+import { isKycComplete } from "../../features/kyc/model/kycStatus";
+import { ROUTES } from "../../routes/paths";
 import React, { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -8,7 +11,7 @@ import { toast } from "sonner";
 import { LightAnimatedBackground } from "../../components/common/LightAnimatedBackground";
 import { ErrorAlert } from "../../components/common/ErrorAlert";
 import { parseApiError } from "../../utils/errorHandler";
-import { authenticateWithMe, getCurrentUser } from "../../api/auth.api";
+import { authenticateWithMe } from "../../api/auth.api";
 import { isAdminRole, isNormalUserRole } from "../../constants/roles";
 
 const schema = z.object({
@@ -29,6 +32,7 @@ export const LoginPage = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [apiError, setApiError] = useState(null);
   const navigate = useNavigate();
+    const { login } = useAuth();
 
   const {
     register,
@@ -50,33 +54,30 @@ export const LoginPage = () => {
     }, 2500);
     return () => clearInterval(timer);
   }, []);
-
-  // Verify existing sessions from the server and route by the authoritative role.
+  // Redirect if already authenticated
+  const { isAuthenticated, isAdmin, user } = useAuth();
   useEffect(() => {
-    const token = localStorage.getItem("accessToken");
-    if (!token) return;
-    getCurrentUser().then((response) => {
-      const user = response?.data || response;
-      if (isAdminRole(user)) navigate("/admin/dashboard", { replace: true });
-      else if (isNormalUserRole(user)) {
-        const kycDone = ["approved", "completed", "verified", "submitted"].includes(String(user?.kyc?.status || "").toLowerCase());
-        navigate(kycDone ? "/user/dashboard" : "/kyc", { replace: true });
-      }
-    }).catch(() => {});
-  }, [navigate]);
+    if (!isAuthenticated || !user) return;
+    if (isAdmin) {
+      navigate(ROUTES.ADMIN_DASHBOARD, { replace: true });
+    } else {
+      const kycDone = isKycComplete(user?.kyc?.status);
+      navigate(kycDone ? ROUTES.USER_DASHBOARD : ROUTES.KYC, { replace: true });
+    }
+  }, [isAuthenticated, isAdmin, user, navigate]);
 
   const onSubmit = async (data) => {
     try {
       setIsLoading(true);
       setApiError(null);
 
-      // 1. Shared authentication via POST /api/auth/login + GET /api/auth/me
-      const { accessToken, user } = await authenticateWithMe({
+      // Shared authentication via POST /api/auth/login + GET /api/auth/me
+      const { accessToken, user: authUser } = await authenticateWithMe({
         identifier: data.email.trim(),
         password: data.password,
       });
 
-      if (!isAdminRole(user) && !isNormalUserRole(user)) {
+      if (!isAdminRole(authUser) && !isNormalUserRole(authUser)) {
         const msg = "Access Denied: Unrecognized account role. Please contact system support.";
         setApiError({
           title: "Access Denied",
@@ -86,36 +87,24 @@ export const LoginPage = () => {
         return;
       }
 
-      if (accessToken) {
-        localStorage.setItem("accessToken", accessToken);
-      }
-      if (user) {
-        localStorage.setItem("user", JSON.stringify(user));
-      }
-      if (isAdminRole(user)) localStorage.setItem("adminUser", JSON.stringify(user));
-      else localStorage.removeItem("adminUser");
+      // Hand over session management to AuthContext
+      login({ token: accessToken, user: authUser });
 
       toast.success(
-        `Welcome back, ${user?.name || "User"}! Signed in successfully.`
+        `Welcome back, ${authUser?.name || "User"}! Signed in successfully.`
       );
 
-      if (isAdminRole(user)) {
-        navigate("/admin/dashboard", { replace: true });
+      if (isAdminRole(authUser)) {
+        navigate(ROUTES.ADMIN_DASHBOARD, { replace: true });
         return;
       }
 
-      // KYC Status Check for normal users
-      const isKycDone =
-        user?.kyc &&
-        ["approved", "completed", "verified", "submitted"].includes(
-          String(user.kyc.status || "").toLowerCase()
-        );
-
-      if (!isKycDone) {
+      // Unified KYC check
+      if (!isKycComplete(authUser?.kyc?.status)) {
         toast.info("Please complete your KYC verification to access your dashboard.");
-        navigate("/kyc", { replace: true });
+        navigate(ROUTES.KYC, { replace: true });
       } else {
-        navigate("/user/dashboard", { replace: true });
+        navigate(ROUTES.USER_DASHBOARD, { replace: true });
       }
     } catch (err) {
       const parsed = parseApiError(err);
@@ -124,10 +113,6 @@ export const LoginPage = () => {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleForgotPassword = () => {
-    navigate("/forgot-password");
   };
 
   const handleTerms = () => {

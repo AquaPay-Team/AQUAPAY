@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useAuth } from "../../features/auth/useAuth";
 import {
   LayoutDashboard,
   Users,
@@ -51,12 +52,10 @@ export function AdminSidebar({
     setOpenGroups((prev) => ({ ...prev, [groupId]: !prev[groupId] }));
   };
 
+  const { logout } = useAuth();
   const handleLogout = () => {
-    localStorage.removeItem("accessToken");
-    localStorage.removeItem("user");
-    localStorage.removeItem("adminUser");
     toast.info("Signed out successfully from Admin Console");
-    navigate("/login/admin", { replace: true });
+    logout();
   };
 
   const navItems = ROLE_NAVIGATION.AD;

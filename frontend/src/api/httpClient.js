@@ -1,4 +1,5 @@
 import axios from "axios";
+import { getToken, clearSession } from "@/features/auth/session";
 
 const rawBaseUrl = import.meta.env.VITE_API_BASE_URL;
 
@@ -26,7 +27,7 @@ export const httpClient = axios.create({
 // Request Interceptor: Attach JWT Access Token
 httpClient.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem("accessToken");
+    const token = getToken();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -49,9 +50,7 @@ httpClient.interceptors.response.use(
 
     // Handle token expiry / invalid token on protected endpoints
     if (status === 401 && !isPublicAuthRoute) {
-      localStorage.removeItem("accessToken");
-      localStorage.removeItem("user");
-      localStorage.removeItem("adminUser");
+      clearSession();
 
       if (typeof window !== "undefined") {
         const path = window.location.pathname;

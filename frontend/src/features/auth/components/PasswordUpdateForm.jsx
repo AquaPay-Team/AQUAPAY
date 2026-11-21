@@ -5,7 +5,7 @@ import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
 import { Button } from "../../../components/ui/button";
 import { changePassword } from "../../../api/auth.api";
-import { resetBackendUserPassword } from "../../admin/services/adminApi";
+import { resetBackendUserPassword } from "../../users/api/usersApi";
 
 export function PasswordUpdateForm({ targetUserId, onSuccess, compact = false }) {
   const isAdminReset = Boolean(targetUserId);

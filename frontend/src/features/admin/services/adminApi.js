@@ -1,4 +1,3 @@
-import api from "../../../api/axios";
 import { authenticateWithMe, getCurrentUser } from "../../../api/auth.api";
 import { isAdminRole } from "../../../constants/roles";
 
@@ -55,36 +54,15 @@ export const adminLogout = () => {
   localStorage.removeItem("adminUser");
 };
 
-// 2. Real Backend Users Management
-export const fetchBackendUsers = async (params = {}) => {
-  const response = await api.get("/users", { params });
-  return response.data;
-};
-
-export const fetchBackendDescendantRoles = async () => {
-  const response = await api.get("/users/roles/descendants");
-  return response.data;
-};
-
-export const fetchBackendUserById = async (id) => {
-  const response = await api.get(`/users/${id}`);
-  return response.data;
-};
-
-export const createBackendUser = async (userData) => {
-  const response = await api.post("/users", userData);
-  return response.data;
-};
-
-export const updateBackendUser = async (id, userData) => {
-  const response = await api.patch(`/users/${id}`, userData);
-  return response.data;
-};
-
-export const resetBackendUserPassword = async (id, { newPassword, confirmPassword }) => {
-  const response = await api.post(`/users/${id}/reset-password`, { newPassword, confirmPassword });
-  return response.data;
-};
+// 2. Real Backend Users Management (delegated to shared usersApi)
+export {
+  fetchBackendUsers,
+  fetchBackendDescendantRoles,
+  fetchBackendUserById,
+  createBackendUser,
+  updateBackendUser,
+  resetBackendUserPassword,
+} from "../../users/api/usersApi";
 
 export default {
   adminLogin,

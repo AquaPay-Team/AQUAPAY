@@ -22,27 +22,14 @@ export function AdminSidebar({
   setSidebarCollapsed = () => {},
   mobileSidebarOpen = false,
   setMobileSidebarOpen = () => {},
-  activeTab,
-  setActiveTab,
   onOpenCreateModal,
 }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user, logout } = useAuth();
 
-  const currentUser = (() => {
-    try {
-      return JSON.parse(
-        localStorage.getItem("adminUser") ||
-          localStorage.getItem("user") ||
-          "{}"
-      );
-    } catch {
-      return {};
-    }
-  })();
-
-  const adminName = currentUser.name || "Administrator";
-  const adminRole = currentUser.role_name || (currentUser.role_id === 1 ? "Super Admin" : "Admin");
+  const adminName = user?.name || "Administrator";
+  const adminRole = user?.role_name || (user?.role_id === 1 ? "Super Admin" : "Admin");
 
   const [openGroups, setOpenGroups] = useState({
     "admin-users": true,
@@ -52,7 +39,6 @@ export function AdminSidebar({
     setOpenGroups((prev) => ({ ...prev, [groupId]: !prev[groupId] }));
   };
 
-  const { logout } = useAuth();
   const handleLogout = () => {
     toast.info("Signed out successfully from Admin Console");
     logout();
@@ -60,37 +46,29 @@ export function AdminSidebar({
 
   const navItems = ROLE_NAVIGATION.AD;
 
-  const isCurrentActive = (item) => {
-    if (activeTab && item.id) {
-      if (item.id === "admin-dashboard" && activeTab === "dashboard") return true;
-      if (
-        item.id === "admin-all-users" &&
-        (activeTab === "all-users" || activeTab === "users")
-      )
-        return true;
-      if (item.id === "admin-kyc" && activeTab === "kyc") return true;
+    const isCurrentActive = (item) => {
+    if (!item.path) return false;
+    if (item.path === "/admin/dashboard") {
+      return location.pathname === "/admin/dashboard" || location.pathname === "/admin";
     }
-    if (item.path && location.pathname === item.path) return true;
-    return false;
+    if (item.path === "/admin/users") {
+      return location.pathname === "/admin/users" && !location.search;
+    }
+    return location.pathname.startsWith(item.path);
   };
 
   const handleNavClick = (item) => {
     if (setMobileSidebarOpen) setMobileSidebarOpen(false);
 
-    if (item.path) {
-      navigate(item.path);
+    if (item.id === "admin-create-user") {
+      navigate("/admin/users");
+      if(onOpenCreateModal)
+        onOpenCreateModal();
+        return;
     }
-    if (setActiveTab) {
-      if (item.id === "admin-dashboard") setActiveTab("dashboard");
-      else if (item.id === "admin-all-users") setActiveTab("all-users");
-      else if (item.id === "admin-create-user") {
-        if (onOpenCreateModal) onOpenCreateModal();
-        setActiveTab("all-users");
-      } else if (item.id === "admin-kyc") setActiveTab("kyc");
-      else if (item.id === "admin-reports") setActiveTab("reports");
-      else if (item.id === "admin-profile") setActiveTab("profile");
-      else if (item.id === "admin-settings") setActiveTab("settings");
-    }
+   if(item.path){
+    navigate(item.path);
+   }
   };
 
   const getIcon = (iconName) => {

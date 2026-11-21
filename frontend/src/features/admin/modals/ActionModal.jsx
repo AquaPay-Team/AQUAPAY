@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, X, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Settings, X, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 export function ActionModal({
@@ -22,19 +22,24 @@ export function ActionModal({
 
   // Load existing user details whenever modal opens or actionModalUser changes
   useEffect(() => {
+    let isCurrent = true;
     if (actionModalUser) {
-      setFormData({
-        name: actionModalUser.name || '',
-        email: actionModalUser.email || '',
-        mobile: actionModalUser.mobile || '',
-        shopname: actionModalUser.shopname || '',
-        city: actionModalUser.city || '',
-        state: actionModalUser.state || '',
-        pincode: actionModalUser.pincode || '',
-        address: actionModalUser.address || '',
+      Promise.resolve().then(() => {
+        if (!isCurrent) return;
+        setFormData({
+          name: actionModalUser.name || '',
+          email: actionModalUser.email || '',
+          mobile: actionModalUser.mobile || '',
+          shopname: actionModalUser.shopname || '',
+          city: actionModalUser.city || '',
+          state: actionModalUser.state || '',
+          pincode: actionModalUser.pincode || '',
+          address: actionModalUser.address || '',
+        });
+        setErrorMessage('');
       });
-      setErrorMessage('');
     }
+    return () => { isCurrent = false; };
   }, [actionModalUser]);
 
   if (!actionModalUser) return null;

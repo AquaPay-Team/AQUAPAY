@@ -10,12 +10,6 @@ import {
   LogOut,
   ChevronDown,
   X,
-  CreditCard,
-  Wallet,
-  FileText,
-  Send,
-  QrCode,
-  Landmark,
 } from "lucide-react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { toast } from "sonner";

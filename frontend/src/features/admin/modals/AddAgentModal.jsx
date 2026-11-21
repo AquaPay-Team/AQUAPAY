@@ -67,19 +67,24 @@ export function AddAgentModal({
   const [fieldErrors, setFieldErrors] = useState({});
 
   // Generate a fresh unique password each time the modal opens
+  // Generate a fresh unique password each time the modal opens
   useEffect(() => {
+    let isCurrent = true;
     if (addAgentModalOpen) {
-      setPassword(generateSecurePassword(12));
-      setShowPassword(true);
-      setCopied(false);
-      setCreatedAgent(null);
-      setFieldErrors({});
+      Promise.resolve().then(() => {
+        if (!isCurrent) return;
+        setPassword(generateSecurePassword(12));
+        setShowPassword(true);
+        setCopied(false);
+        setCreatedAgent(null);
+        setFieldErrors({});
+      });
     } else {
-      // Clear password from state completely when modal closes
       setPassword('');
       setCreatedAgent(null);
       setFieldErrors({});
     }
+    return () => { isCurrent = false; };
   }, [addAgentModalOpen]);
 
   const handleRegeneratePassword = useCallback(() => {

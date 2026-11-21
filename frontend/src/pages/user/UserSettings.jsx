@@ -1,11 +1,7 @@
 import React, { useState } from "react";
 import {
-  Settings,
   Lock,
   Building2,
-  Bell,
-  ShieldCheck,
-  Check,
   KeyRound
 } from "lucide-react";
 import { toast } from "sonner";

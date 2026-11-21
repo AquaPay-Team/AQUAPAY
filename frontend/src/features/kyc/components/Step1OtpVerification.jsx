@@ -1,6 +1,4 @@
-import React, { useRef } from "react";
-import { ShieldCheck, RefreshCw, AlertCircle, ArrowLeft, Loader2 } from "lucide-react";
-
+import { ShieldCheck, AlertCircle, Loader2, ArrowLeft } from "lucide-react";
 /**
  * Step 1 OTP Verification Card
  *
@@ -52,7 +50,6 @@ export function Step1OtpVerification({
     }
   };
 
-  const canResend = !isRequesting && otpTimer === 0;
   const otpFull = otpValue.join("").length === 6;
 
   return (

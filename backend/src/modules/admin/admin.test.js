@@ -359,6 +359,8 @@ test("bcrypt configuration is consistent across Admin and user creation", async 
   const originalCanCreateRole = authorizationService.canCreateRole;
   const originalCheckDuplicateUser = userModel.checkDuplicateUser;
   const originalInsertUser = userModel.insertUser;
+  const originalFindActiveDefaultScheme = userModel.findActiveDefaultScheme;
+  const originalInsertSchemeAssignmentHistory = userModel.insertSchemeAssignmentHistory;
   const originalInitKycCaseForUser = userModel.initKycCaseForUser;
   const originalFindUserSafeById = userModel.findUserSafeById;
   const originalHash = bcrypt.hash;
@@ -384,6 +386,8 @@ test("bcrypt configuration is consistent across Admin and user creation", async 
     authorizationService.canCreateRole = async () => true;
     userModel.checkDuplicateUser = async () => null;
     userModel.insertUser = async () => 10;
+    userModel.findActiveDefaultScheme = async () => ({ id: 1, name: "Default Scheme" });
+    userModel.insertSchemeAssignmentHistory = async () => 1;
     userModel.initKycCaseForUser = async () => ({});
     userModel.findUserSafeById = async (id) => ({ id });
 
@@ -422,8 +426,196 @@ test("bcrypt configuration is consistent across Admin and user creation", async 
     authorizationService.canCreateRole = originalCanCreateRole;
     userModel.checkDuplicateUser = originalCheckDuplicateUser;
     userModel.insertUser = originalInsertUser;
+    userModel.findActiveDefaultScheme = originalFindActiveDefaultScheme;
+    userModel.insertSchemeAssignmentHistory = originalInsertSchemeAssignmentHistory;
     userModel.initKycCaseForUser = originalInitKycCaseForUser;
     userModel.findUserSafeById = originalFindUserSafeById;
     bcrypt.hash = originalHash;
+  }
+});
+
+// Phase 3 Scheme Manager regression tests (no database connection required).
+test("scheme.service: lists and searches schemes without exposing SQL aliases", async () => {
+  const schemeService = (await import("./schemes/scheme.service.js")).default;
+  const originalExecute = pool.execute;
+  const calls = [];
+  try {
+    pool.execute = async (sql, params) => {
+      calls.push({ sql, params });
+      return [[{
+        id: 1, name: "Default Scheme", status: 1, is_default: 1,
+        created_at: "2026-11-21T10:00:00.000Z",
+      }]];
+    };
+
+    const all = await schemeService.getSchemes();
+    assert.deepEqual(all, [{
+      id: 1, name: "Default Scheme", status: "1", is_default: true,
+      created_at: "2026-11-21T10:00:00.000Z",
+    }]);
+    assert.deepEqual(calls[0].params, []);
+    assert.match(calls[0].sql, /ORDER BY id ASC/);
+
+    await schemeService.getSchemes("Premium");
+    assert.deepEqual(calls[1].params, ["%Premium%"]);
+    assert.match(calls[1].sql, /WHERE name LIKE \?/);
+  } finally {
+    pool.execute = originalExecute;
+  }
+});
+
+test("scheme.service: creates a non-default scheme and rejects duplicate names", async () => {
+  const schemeService = (await import("./schemes/scheme.service.js")).default;
+  const originalExecute = pool.execute;
+  let duplicate = false;
+  try {
+    pool.execute = async (sql, params) => {
+      if (sql.includes("INSERT INTO schemes")) {
+        assert.deepEqual(params, ["Premium Scheme"]);
+        assert.match(sql, /VALUES \(\?, 1, 0\)/);
+        if (duplicate) throw Object.assign(new Error("duplicate"), { code: "ER_DUP_ENTRY" });
+        return [{ insertId: 7 }];
+      }
+      assert.deepEqual(params, [7]);
+      return [[{ id: 7, name: "Premium Scheme", status: 1, is_default: 0 }]];
+    };
+
+    const created = await schemeService.createScheme("Premium Scheme");
+    assert.equal(created.id, 7);
+    assert.equal(created.is_default, false);
+    assert.equal(created.status, "1");
+
+    duplicate = true;
+    await assert.rejects(schemeService.createScheme("Premium Scheme"),
+      (error) => error.statusCode === 409 && error.code === "DUPLICATE_SCHEME");
+  } finally {
+    pool.execute = originalExecute;
+  }
+});
+
+test("scheme.service: protects Default Scheme from deactivation and allows no-op updates", async () => {
+  const schemeService = (await import("./schemes/scheme.service.js")).default;
+  const originalExecute = pool.execute;
+  let writes = 0;
+  try {
+    pool.execute = async (sql) => {
+      if (sql.includes("UPDATE schemes")) writes += 1;
+      return [[{ id: 1, name: "Default Scheme", status: 1, is_default: 1 }]];
+    };
+
+    await assert.rejects(schemeService.updateSchemeStatus(1, 0),
+      (error) => error.statusCode === 403 && error.code === "DEFAULT_SCHEME_PROTECTED");
+    const unchanged = await schemeService.updateSchemeStatus(1, 1);
+    assert.equal(unchanged.status, "1");
+    assert.equal(writes, 0);
+  } finally {
+    pool.execute = originalExecute;
+  }
+});
+
+test("scheme.service: changes status only for non-default schemes", async () => {
+  const schemeService = (await import("./schemes/scheme.service.js")).default;
+  const originalExecute = pool.execute;
+  let status = 1;
+  let updateCount = 0;
+  try {
+    pool.execute = async (sql, params) => {
+      if (sql.includes("UPDATE schemes")) {
+        assert.match(sql, /AND is_default = 0/);
+        assert.deepEqual(params, [0, 7]);
+        status = params[0];
+        updateCount += 1;
+        return [{ affectedRows: 1 }];
+      }
+      return [[{ id: 7, name: "Premium Scheme", status, is_default: 0 }]];
+    };
+
+    const updated = await schemeService.updateSchemeStatus(7, 0);
+    assert.equal(updated.status, "0");
+    assert.equal(updateCount, 1);
+    await schemeService.updateSchemeStatus(7, 0);
+    assert.equal(updateCount, 1);
+  } finally {
+    pool.execute = originalExecute;
+  }
+});
+
+test("scheme.controller: validates names, search and status before writing", async () => {
+  const controllers = await import("./schemes/scheme.controller.js");
+  const schemeService = (await import("./schemes/scheme.service.js")).default;
+  const originals = {
+    getSchemes: schemeService.getSchemes,
+    createScheme: schemeService.createScheme,
+    updateSchemeStatus: schemeService.updateSchemeStatus,
+  };
+  const errors = [];
+  const response = { status() { return this; }, json() { return this; } };
+  const next = (error) => errors.push(error);
+  try {
+    schemeService.getSchemes = async () => { throw new Error("Invalid request reached service"); };
+    schemeService.createScheme = async () => { throw new Error("Invalid request reached service"); };
+    schemeService.updateSchemeStatus = async () => { throw new Error("Invalid request reached service"); };
+
+    await controllers.createSchemeController({ body: { name: "   " } }, response, next);
+    await controllers.createSchemeController({ body: { name: "x".repeat(101) } }, response, next);
+    await controllers.getSchemesController({ query: { search: ["a", "b"] } }, response, next);
+    await controllers.updateSchemeStatusController({ params: { schemeId: "1e2" }, body: { status: 1 } }, response, next);
+    await controllers.updateSchemeStatusController({ params: { schemeId: "2" }, body: { status: 2 } }, response, next);
+
+    assert.equal(errors.length, 5);
+    for (const error of errors) {
+      assert.equal(error.statusCode, 400);
+      assert.equal(error.code, "VALIDATION_ERROR");
+    }
+  } finally {
+    Object.assign(schemeService, originals);
+  }
+});
+
+test("scheme.routes: requires authentication and Admin role", async () => {
+  const app = (await import("../../app.js")).default;
+  const authModel = (await import("../auth/auth.model.js")).default;
+  const schemeService = (await import("./schemes/scheme.service.js")).default;
+  const jwt = (await import("jsonwebtoken")).default;
+  const originals = {
+    jwtSecret: process.env.JWT_SECRET,
+    isUserActive: authModel.isUserActive,
+    isAdmin: authModel.isAdmin,
+    getSchemes: schemeService.getSchemes,
+  };
+  let server;
+  try {
+    process.env.JWT_SECRET = "aquapay-test-only-jwt-secret-with-40-characters";
+    authModel.isUserActive = async () => true;
+    let adminAllowed = false;
+    authModel.isAdmin = async () => adminAllowed;
+    schemeService.getSchemes = async () => [{ id: 1, name: "Default Scheme" }];
+    const token = jwt.sign({}, process.env.JWT_SECRET, {
+      subject: "5",
+      issuer: "aquapay-api",
+      audience: "aquapay-client",
+      expiresIn: "5m",
+    });
+    server = app.listen(0, "127.0.0.1");
+    await new Promise((resolve) => server.once("listening", resolve));
+    const url = `http://127.0.0.1:${server.address().port}/api/admin/schemes`;
+
+    const unauthenticated = await fetch(url);
+    assert.equal(unauthenticated.status, 401);
+    const nonAdmin = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    assert.equal(nonAdmin.status, 403);
+    adminAllowed = true;
+    const admin = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    assert.equal(admin.status, 200);
+    const response = await admin.json();
+    assert.equal(response.success, true);
+    assert.equal(response.data[0].name, "Default Scheme");
+  } finally {
+    if (server) await new Promise((resolve) => server.close(resolve));
+    if (originals.jwtSecret === undefined) delete process.env.JWT_SECRET;
+    else process.env.JWT_SECRET = originals.jwtSecret;
+    authModel.isUserActive = originals.isUserActive;
+    authModel.isAdmin = originals.isAdmin;
+    schemeService.getSchemes = originals.getSchemes;
   }
 });

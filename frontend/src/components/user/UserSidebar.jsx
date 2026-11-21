@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useAuth } from "../../features/auth/useAuth";
 import {
   LayoutDashboard,
   Users,
@@ -64,12 +65,10 @@ export function UserSidebar({
     setOpenGroups((prev) => ({ ...prev, [groupId]: !prev[groupId] }));
   };
 
+  const { logout } = useAuth();
   const handleLogout = () => {
-    localStorage.removeItem("accessToken");
-    localStorage.removeItem("user");
-    localStorage.removeItem("adminUser");
     toast.info("Signed out successfully");
-    navigate("/login", { replace: true });
+    logout();
   };
 
   const isCurrentActive = (item) => {

@@ -21,7 +21,7 @@ const AdminKycPage = lazy(() => import("@/features/admin/pages/AdminKycPage"));
 // Normal User Pages (Lazy)
 const UserDashboard = lazy(() => import("../pages/user/UserDashboard"));
 const UserTeam = lazy(() => import("../pages/user/UserTeam"));
-const UserProfile = lazy(() => import("../pages/user/UserProfile"));
+const UserProfile = lazy(() => import("@/features/users/pages/UserProfile"));
 const UserSettings = lazy(() => import("../pages/user/UserSettings"));
 const UserKyc = lazy(() => import("../pages/user/UserKyc"));
 

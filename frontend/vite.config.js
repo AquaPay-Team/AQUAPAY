@@ -11,7 +11,19 @@ export default defineConfig({
       "@": path.resolve(import.meta.dirname, "./src"),
       "cn": path.resolve(import.meta.dirname,"./src/lib/utils")
     },
-    dedupe: ["react", "react-dom"],
+        dedupe: ["react", "react-dom"],
+  },
+   build: {
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("jspdf") || id.includes("html2canvas")) {
+            return "vendor-pdf";
+          }
+        },
+      },
+    },
   },
   test: {
     globals: true,

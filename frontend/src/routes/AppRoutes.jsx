@@ -1,33 +1,33 @@
-import React from "react";
+import React, { lazy, Suspense } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 
-// Auth Pages
-import LoginPage from "../pages/auth/LoginPage";
-import ForgotPasswordPage from "../pages/auth/ForgotPasswordPage";
-
-// Route Guards
+// Layouts & Guards
 import AdminProtectedRoute from "./AdminProtectedRoute";
 import UserProtectedRoute from "./UserProtectedRoute";
-
-// Layouts
 import AdminLayout from "../layouts/AdminLayout";
 import UserLayout from "../layouts/UserLayout";
+import RouteLoadingFallback from "@/components/feedback/RouteLoadingFallback";
 
-// Admin Pagesimport AdminDashboardOverviewPage from "@/features/admin/pages/AdminDashboardOverviewPage";
-import AdminDashboardOverviewPage from "@/features/admin/pages/AdminDashboardOverviewPage";
-import AdminUsersPage from "@/features/admin/pages/AdminUsersPage";
-import AdminKycPage from "@/features/admin/pages/AdminKycPage";
+// Auth Pages (Lazy)
+const LoginPage = lazy(() => import("../pages/auth/LoginPage"));
+const ForgotPasswordPage = lazy(() => import("../pages/auth/ForgotPasswordPage"));
+const NotFoundPage = lazy(() => import("../pages/not-found/NotFoundPage"));
 
-// Normal User Pages
-import UserDashboard from "../pages/user/UserDashboard";
-import UserTeam from "../pages/user/UserTeam";
-import UserProfile from "../pages/user/UserProfile";
-import UserSettings from "../pages/user/UserSettings";
-import UserKyc from "../pages/user/UserKyc";
-import NotFoundPage from "../pages/not-found/NotFoundPage";
+// Admin Pages (Lazy)
+const AdminDashboardOverviewPage = lazy(() => import("@/features/admin/pages/AdminDashboardOverviewPage"));
+const AdminUsersPage = lazy(() => import("@/features/admin/pages/AdminUsersPage"));
+const AdminKycPage = lazy(() => import("@/features/admin/pages/AdminKycPage"));
+
+// Normal User Pages (Lazy)
+const UserDashboard = lazy(() => import("../pages/user/UserDashboard"));
+const UserTeam = lazy(() => import("../pages/user/UserTeam"));
+const UserProfile = lazy(() => import("../pages/user/UserProfile"));
+const UserSettings = lazy(() => import("../pages/user/UserSettings"));
+const UserKyc = lazy(() => import("../pages/user/UserKyc"));
 
 export function AppRoutes() {
   return (
+    <Suspense fallback={<RouteLoadingFallback/>}>
     <Routes>
       {/* 1. Public Authentication Entry Points */}
       <Route path="/login" element={<LoginPage />} />
@@ -94,6 +94,7 @@ export function AppRoutes() {
       <Route path="/404" element={<NotFoundPage />} />
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
+    </Suspense >
   );
 }
 

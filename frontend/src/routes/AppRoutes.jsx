@@ -13,8 +13,10 @@ import UserProtectedRoute from "./UserProtectedRoute";
 import AdminLayout from "../layouts/AdminLayout";
 import UserLayout from "../layouts/UserLayout";
 
-// Admin Pages
-import ExistingAdminDashboard from "../pages/admin/ExistingAdminDashboard";
+// Admin Pagesimport AdminDashboardOverviewPage from "@/features/admin/pages/AdminDashboardOverviewPage";
+import AdminDashboardOverviewPage from "@/features/admin/pages/AdminDashboardOverviewPage";
+import AdminUsersPage from "@/features/admin/pages/AdminUsersPage";
+import AdminKycPage from "@/features/admin/pages/AdminKycPage";
 
 // Normal User Pages
 import UserDashboard from "../pages/user/UserDashboard";
@@ -75,14 +77,14 @@ export function AppRoutes() {
       <Route element={<AdminProtectedRoute />}>
         <Route path="/admin" element={<AdminLayout />}>
           <Route index element={<Navigate to="/admin/dashboard" replace />} />
-          <Route path="dashboard" element={<ExistingAdminDashboard />} />
-          <Route path="users" element={<ExistingAdminDashboard />} />
-          <Route path="users/create" element={<ExistingAdminDashboard />} />
+          <Route path="dashboard" element={<AdminDashboardOverviewPage  />} />
+          <Route path="users" element={<AdminUsersPage   />} />
+          <Route path="users/create" element={<Navigate to="/admin/users" replace />} />
           <Route path="users/:id" element={<UserProfile />} />
-          <Route path="kyc" element={<ExistingAdminDashboard />} />
-          <Route path="reports" element={<ExistingAdminDashboard />} />
-          <Route path="profile" element={<UserProfile />} />
-          <Route path="settings" element={<ExistingAdminDashboard />} />
+          <Route path="kyc" element={<AdminKycPage  />} />
+          <Route path="reports" element={<Navigate to="/admin/dashboard" replace />} />
+          <Route path="profile" element={<UserProfile />} /> 
+          <Route path="settings" element={<Navigate to="/admin/dashboard" replace />} />
           <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
         </Route>
       </Route>

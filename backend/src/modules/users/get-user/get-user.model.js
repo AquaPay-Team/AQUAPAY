@@ -1,4 +1,3 @@
-
 import pool from "../../../config/db.js";
 
 const USER_PROJECTION = `
@@ -20,17 +19,37 @@ const USER_PROJECTION = `
     c.name AS company_name,
     u.parent_id,
     p.name AS parent_name,
+
+    u.scheme_id,
+    s.id AS scheme_record_id,
+    s.name AS scheme_name,
+    s.status AS scheme_status,
+    s.created_at AS scheme_created_at,
+
     k.id AS kyc_case_id,
     k.status AS kyc_status,
     k.steps_completed AS kyc_steps_completed,
     k.business_type AS kyc_business_type,
+
     u.created_at,
     u.updated_at
+
   FROM users u
-  JOIN roles r ON r.id = u.role_id
-  LEFT JOIN companies c ON c.id = u.company_id
-  LEFT JOIN users p ON p.id = u.parent_id
-  LEFT JOIN kyc_cases k ON k.user_id = u.id
+
+  JOIN roles r
+    ON r.id = u.role_id
+
+  LEFT JOIN companies c
+    ON c.id = u.company_id
+
+  LEFT JOIN users p
+    ON p.id = u.parent_id
+
+  LEFT JOIN schemes s
+    ON s.id = u.scheme_id
+
+  LEFT JOIN kyc_cases k
+    ON k.user_id = u.id
 `;
 
 function formatUserRow(row) {
@@ -38,11 +57,19 @@ function formatUserRow(row) {
 
   const user = { ...row };
 
+  // Remove temporary KYC query fields.
   delete user.kyc_case_id;
   delete user.kyc_status;
   delete user.kyc_steps_completed;
   delete user.kyc_business_type;
 
+  // Remove temporary scheme query fields.
+  delete user.scheme_record_id;
+  delete user.scheme_name;
+  delete user.scheme_status;
+  delete user.scheme_created_at;
+
+  // Preserve existing KYC response format.
   user.kyc = row.kyc_case_id
     ? {
         status: row.kyc_status,
@@ -50,6 +77,17 @@ function formatUserRow(row) {
         business_type: row.kyc_business_type,
       }
     : null;
+
+  // Add nested scheme information.
+  user.scheme =
+    row.scheme_record_id == null
+      ? null
+      : {
+          id: row.scheme_record_id,
+          name: row.scheme_name,
+          status: String(row.scheme_status),
+          created_at: row.scheme_created_at,
+        };
 
   return user;
 }
@@ -73,26 +111,39 @@ async function findDescendantRoles(actorId) {
     `WITH RECURSIVE descendants AS (
        SELECT rh.child_role_id AS role_id
        FROM users actor
-       JOIN role_hierarchy rh ON rh.parent_role_id = actor.role_id
-       WHERE actor.id = ? AND actor.status = 'active'
+       JOIN role_hierarchy rh
+         ON rh.parent_role_id = actor.role_id
+       WHERE actor.id = ?
+         AND actor.status = 'active'
+
        UNION DISTINCT
+
        SELECT rh.child_role_id
        FROM role_hierarchy rh
-       JOIN descendants d ON rh.parent_role_id = d.role_id
+       JOIN descendants d
+         ON rh.parent_role_id = d.role_id
      )
-     SELECT DISTINCT r.id, r.name, r.slug
+
+     SELECT DISTINCT
+       r.id,
+       r.name,
+       r.slug
+
      FROM descendants d
-     JOIN roles r ON r.id = d.role_id
+     JOIN roles r
+       ON r.id = d.role_id
+
      ORDER BY r.id`,
     [actorId],
   );
+
   return rows;
 }
 
-// Get all users (Admin view) with optional KYC status filter.
-// Get all users (Admin view) with optional KYC status and search filters.
+// Get all users (Admin view) with optional filters.
 async function findAllUsers(options = {}) {
   let query = USER_PROJECTION;
+
   const conditions = [];
   const params = [];
 
@@ -125,36 +176,67 @@ async function findAllUsers(options = {}) {
   query += ` ORDER BY u.id DESC`;
 
   const [rows] = await pool.execute(query, params);
+
   return rows.map(formatUserRow);
 }
 
-async function findUsersInDescendantScope(actorId, roleId, options = {}) {
-  const conditions = ["u.role_id = ?", "scope.id <> ?"];
+// Get users within the authorized descendant hierarchy.
+async function findUsersInDescendantScope(
+  actorId,
+  roleId,
+  options = {},
+) {
+  const conditions = [
+    "u.role_id = ?",
+    "scope.id <> ?",
+  ];
+
   const params = [actorId, roleId, actorId];
+
   if (options.kycStatus) {
     conditions.push("k.status = ?");
     params.push(options.kycStatus);
   }
+
   if (options.search) {
-    conditions.push(`(u.name LIKE ? OR u.mobile LIKE ? OR u.email LIKE ?)`);
+    conditions.push(
+      `(u.name LIKE ? OR u.mobile LIKE ? OR u.email LIKE ?)`,
+    );
+
     const value = `%${options.search}%`;
+
     params.push(value, value, value);
   }
+
   const [rows] = await pool.execute(
     `WITH RECURSIVE scope AS (
-       SELECT id FROM users WHERE id = ?
+       SELECT id
+       FROM users
+       WHERE id = ?
+
        UNION DISTINCT
-       SELECT child.id FROM users child JOIN scope parent ON child.parent_id = parent.id
+
+       SELECT child.id
+       FROM users child
+       JOIN scope parent
+         ON child.parent_id = parent.id
      )
+
      ${USER_PROJECTION}
-     JOIN scope ON scope.id = u.id
+
+     JOIN scope
+       ON scope.id = u.id
+
      WHERE ${conditions.join(" AND ")}
+
      ORDER BY u.id DESC`,
     params,
   );
+
   return rows.map(formatUserRow);
 }
 
+// Get one user by ID.
 async function findUserById(userId) {
   const [rows] = await pool.execute(
     `${USER_PROJECTION}
@@ -166,10 +248,11 @@ async function findUserById(userId) {
   return formatUserRow(rows[0]);
 }
 
-// Get children created by a parent.
-
-// Get children created by a parent with optional KYC status and search filters.
-async function findChildrenByParentId(parentId, options = {}) {
+// Get users created by a specific parent.
+async function findChildrenByParentId(
+  parentId,
+  options = {},
+) {
   let query = `${USER_PROJECTION}
     WHERE u.parent_id = ?`;
 
@@ -195,14 +278,19 @@ async function findChildrenByParentId(parentId, options = {}) {
   query += ` ORDER BY u.id DESC`;
 
   const [rows] = await pool.execute(query, params);
+
   return rows.map(formatUserRow);
 }
 
-
-async function findChildByIdAndParentId(childId, parentId) {
+// Find a direct child by ID and parent.
+async function findChildByIdAndParentId(
+  childId,
+  parentId,
+) {
   const [rows] = await pool.execute(
     `${USER_PROJECTION}
-     WHERE u.id = ? AND u.parent_id = ?
+     WHERE u.id = ?
+       AND u.parent_id = ?
      LIMIT 1`,
     [childId, parentId],
   );
@@ -210,19 +298,37 @@ async function findChildByIdAndParentId(childId, parentId) {
   return formatUserRow(rows[0]);
 }
 
-async function findDescendantUserById(childId, parentId) {
+// Find a user within the actual descendant hierarchy.
+async function findDescendantUserById(
+  childId,
+  parentId,
+) {
   const [rows] = await pool.execute(
     `WITH RECURSIVE scope AS (
-       SELECT id FROM users WHERE id = ?
+       SELECT id
+       FROM users
+       WHERE id = ?
+
        UNION DISTINCT
-       SELECT child.id FROM users child JOIN scope parent ON child.parent_id = parent.id
+
+       SELECT child.id
+       FROM users child
+       JOIN scope parent
+         ON child.parent_id = parent.id
      )
+
      ${USER_PROJECTION}
-     JOIN scope ON scope.id = u.id
-     WHERE u.id = ? AND u.id <> ?
+
+     JOIN scope
+       ON scope.id = u.id
+
+     WHERE u.id = ?
+       AND u.id <> ?
+
      LIMIT 1`,
     [parentId, childId, parentId],
   );
+
   return formatUserRow(rows[0]);
 }
 

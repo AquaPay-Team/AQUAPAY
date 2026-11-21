@@ -90,8 +90,21 @@ async function createUser({
       );
     }
 
-    // 5. Validate and hash password before storing
+    // 5. Resolve the active Default Scheme
+    const defaultScheme = await userModel.findActiveDefaultScheme(connection);
+
+    if (!defaultScheme) {
+      throw new ApiError(
+        httpStatus.INTERNAL_SERVER_ERROR,
+        "Active Default Scheme is not configured",
+        [],
+        "DEFAULT_SCHEME_NOT_CONFIGURED",
+      );
+    }
+
+    // 6. Validate and hash password before storing
     const passwordConfig = getPasswordConfig();
+
     if (
       typeof password !== "string" ||
       password.length < passwordConfig.passwordMinLength ||
@@ -108,13 +121,17 @@ async function createUser({
         "VALIDATION_ERROR",
       );
     }
-    const passwordHash = await bcrypt.hash(password, passwordConfig.bcryptSaltRounds);
 
-    // 6. Parent ID is the authenticated creator
+    const passwordHash = await bcrypt.hash(
+      password,
+      passwordConfig.bcryptSaltRounds,
+    );
+
+    // 7. Parent ID is the authenticated creator
     const parentId = actor.id;
     const companyId = actor.company_id || null;
 
-    // 7. Insert the user using the approved database schema
+    // 8. Insert user with Default Scheme
     const newUserId = await userModel.insertUser(
       {
         name,
@@ -129,12 +146,26 @@ async function createUser({
         roleId: targetRole.id,
         companyId,
         parentId,
+        schemeId: defaultScheme.id,
         status: "active",
       },
       connection,
     );
 
-    // 8. Initialize Phase 2 KYC Case for non-admin accounts
+    // 9. Record initial scheme assignment
+    await userModel.insertSchemeAssignmentHistory(
+      {
+        userId: newUserId,
+        previousSchemeId: null,
+        newSchemeId: defaultScheme.id,
+        actorUserId: actor.id,
+        changeSource: "user_creation",
+        reason: "Initial Default Scheme assignment",
+      },
+      connection,
+    );
+
+    // 10. Initialize KYC case for non-admin accounts
     if (targetRole.id !== 1) {
       await userModel.initKycCaseForUser(
         {
@@ -145,10 +176,13 @@ async function createUser({
       );
     }
 
-    // 9. Fetch the created user without password or password_hash
-    const newUser = await userModel.findUserSafeById(newUserId, connection);
+    // 11. Fetch created user without password hash
+    const newUser = await userModel.findUserSafeById(
+      newUserId,
+      connection,
+    );
 
-    // 10. Commit transaction
+    // 12. Commit the transaction
     await connection.commit();
 
     return newUser;
@@ -156,7 +190,7 @@ async function createUser({
     try {
       await connection.rollback();
     } catch (rollbackError) {
-      // Preserve the original error if rollback also fails.
+      // Preserve original error if rollback fails.
     }
 
     if (error.code === "ER_DUP_ENTRY") {

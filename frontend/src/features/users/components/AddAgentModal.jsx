@@ -7,50 +7,11 @@ import {
   Copy,
   Check,
   RefreshCw,
-  ShieldCheck,
-  CheckCircle2,
   AlertCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
-
-/**
- * Secure cryptographic password generator using Web Crypto API
- * Generates a random 12-character temporary password using the available character sets.
- */
-function generateSecurePassword(length = 12) {
-  const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
-  const lower = "abcdefghijkmnopqrstuvwxyz";
-  const numbers = "23456789";
-  const symbols = "@$!%*?&#";
-  const allChars = upper + lower + numbers + symbols;
-
-  const getRandomChar = (charset) => {
-    const array = new Uint32Array(1);
-    crypto.getRandomValues(array);
-    return charset[array[0] % charset.length];
-  };
-
-  const passwordChars = [
-    getRandomChar(upper),
-    getRandomChar(lower),
-    getRandomChar(numbers),
-    getRandomChar(symbols),
-  ];
-
-  for (let i = passwordChars.length; i < length; i++) {
-    passwordChars.push(getRandomChar(allChars));
-  }
-
-  // Cryptographic Fisher-Yates shuffle
-  for (let i = passwordChars.length - 1; i > 0; i--) {
-    const array = new Uint32Array(1);
-    crypto.getRandomValues(array);
-    const j = array[0] % (i + 1);
-    [passwordChars[i], passwordChars[j]] = [passwordChars[j], passwordChars[i]];
-  }
-
-  return passwordChars.join("");
-}
+import { generateSecurePassword } from '@/utils/crypto';
+import { AgentCredentialSuccess } from './AgentCredentialSuccess';
 
 export function AddAgentModal({
   addAgentModalOpen,
@@ -58,7 +19,6 @@ export function AddAgentModal({
   handleOnboardAgent,
   selectedRole = "",
 }) {
-  // --- ALL HOOKS AT TOP LEVEL (Rules of Hooks) ---
   const [isLoading, setIsLoading] = useState(false);
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(true);
@@ -66,7 +26,6 @@ export function AddAgentModal({
   const [createdAgent, setCreatedAgent] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
 
-  // Generate a fresh unique password each time the modal opens
   // Generate a fresh unique password each time the modal opens
   useEffect(() => {
     let isCurrent = true;
@@ -115,7 +74,6 @@ export function AddAgentModal({
   }, [setAddAgentModalOpen]);
 
   const selectedRoleSlug = String(selectedRole || "");
-
   const isPasswordValid = password.length >= 8;
 
   const handleSubmit = async (e) => {
@@ -179,7 +137,6 @@ export function AddAgentModal({
     try {
       const createdData = await handleOnboardAgent(newObj);
       if (createdData) {
-        // Transition to success & handoff view
         setCreatedAgent({
           ...newObj,
           id: createdData.id || createdData.user?.id,
@@ -193,7 +150,6 @@ export function AddAgentModal({
     }
   };
 
-  // Conditional early return AFTER all hooks
   if (!addAgentModalOpen) return null;
 
   return (
@@ -222,72 +178,14 @@ export function AddAgentModal({
 
         {/* --- SUCCESS / CREDENTIAL HANDOFF VIEW --- */}
         {createdAgent ? (
-          <div className="mt-5 space-y-4">
-            <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl space-y-3">
-              <div className="flex items-center gap-2 text-emerald-800 font-semibold text-sm">
-                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-                <span>Agent Onboarded Successfully</span>
-              </div>
-              <div className="text-xs text-slate-700 grid grid-cols-2 gap-2 pt-1 border-t border-emerald-100">
-                <div>
-                  <span className="text-slate-500 block text-[11px]">Full Name</span>
-                  <span className="font-semibold text-slate-900">{createdAgent.name}</span>
-                </div>
-                <div>
-                  <span className="text-slate-500 block text-[11px]">Email</span>
-                  <span className="font-mono text-slate-900">{createdAgent.email}</span>
-                </div>
-                <div>
-                  <span className="text-slate-500 block text-[11px]">Mobile</span>
-                  <span className="font-mono text-slate-900">{createdAgent.mobile}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Temporary Password Handoff Box */}
-            <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-700">Initial Temporary Password</span>
-                <span className="text-[11px] text-amber-600 font-medium">Handoff to agent</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type={showPassword ? "text" : "password"}
-                  readOnly
-                  value={createdAgent.tempPassword}
-                  className="flex-1 bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs font-mono font-semibold text-slate-900 focus:outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="p-2 text-slate-500 hover:text-slate-700 border border-slate-200 rounded-lg bg-white hover:bg-slate-50 transition-colors"
-                  title={showPassword ? "Hide password" : "Show password"}
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCopyPassword}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium transition-colors cursor-pointer"
-                >
-                  {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                  <span>{copied ? "Copied" : "Copy"}</span>
-                </button>
-              </div>
-              <p className="text-[11px] text-slate-500 flex items-center gap-1 mt-1">
-                <ShieldCheck className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                <span>Please share this password with the agent. It is cleared once you close this modal.</span>
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleClose}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-lg text-xs transition-colors cursor-pointer"
-            >
-              Done & Close
-            </button>
-          </div>
+          <AgentCredentialSuccess
+            createdAgent={createdAgent}
+            showPassword={showPassword}
+            setShowPassword={setShowPassword}
+            handleCopyPassword={handleCopyPassword}
+            copied={copied}
+            handleClose={handleClose}
+          />
         ) : (
           /* --- CREATION FORM --- */
           <form onSubmit={handleSubmit} className="mt-4 space-y-3 text-xs">
@@ -349,7 +247,7 @@ export function AddAgentModal({
               )}
             </div>
 
-            {/* Password field uses the same input treatment as the other fields. */}
+            {/* Password field */}
             <div>
               <div className="flex items-center justify-between">
                 <label htmlFor="create-user-password" className="block font-semibold text-slate-700 mb-1">

@@ -11,6 +11,57 @@
  * 8: RT (Retailer)
  */
 
+// Helper to generate downline network hierarchy cleanly
+function createDownlineNav(prefix, teamLabel, agentsLabel, createLabel = "Onboard Agent", allId, createId) {
+  return [
+    {
+      id: `${prefix}-dashboard`,
+      label: "Dashboard",
+      path: "/user/dashboard",
+      icon: "LayoutDashboard",
+    },
+    {
+      id: `${prefix}-team`,
+      label: teamLabel,
+      path: "/user/team",
+      icon: "Users",
+      children: [
+        {
+          id: allId || `${prefix}-all-agents`,
+          label: agentsLabel,
+          path: "/user/team",
+          icon: "Users",
+        },
+        {
+          id: createId || `${prefix}-create-agent`,
+          label: createLabel,
+          path: "/user/team/create",
+          icon: "UserPlus",
+          permission: "canCreateUsers",
+        },
+      ],
+    },
+    {
+      id: `${prefix}-kyc`,
+      label: "KYC Status",
+      path: "/user/kyc",
+      icon: "ShieldCheck",
+    },
+    {
+      id: `${prefix}-profile`,
+      label: "My Profile",
+      path: "/user/profile",
+      icon: "User",
+    },
+    {
+      id: `${prefix}-settings`,
+      label: "Settings",
+      path: "/user/settings",
+      icon: "Settings",
+    },
+  ];
+}
+
 export const ROLE_NAVIGATION = {
   // Admin Navigation (Exclusively for Role 1 / AD)
   AD: [
@@ -42,300 +93,24 @@ export const ROLE_NAVIGATION = {
   ],
 
   // Sub Admin Navigation (Level 1)
-  SA: [
-    {
-      id: "sa-dashboard",
-      label: "Dashboard",
-      path: "/user/dashboard",
-      icon: "LayoutDashboard",
-    },
-    {
-      id: "sa-team",
-      label: "Downline Network",
-      path: "/user/team",
-      icon: "Users",
-      children: [
-        {
-          id: "sa-all-agents",
-          label: "My Agents",
-          path: "/user/team",
-          icon: "Users",
-        },
-        {
-          id: "sa-create-agent",
-          label: "Create Agent",
-          path: "/user/team/create",
-          icon: "UserPlus",
-          permission: "canCreateUsers",
-        },
-      ],
-    },
-    {
-      id: "sa-kyc",
-      label: "KYC Status",
-      path: "/user/kyc",
-      icon: "ShieldCheck",
-    },
-    {
-      id: "sa-profile",
-      label: "My Profile",
-      path: "/user/profile",
-      icon: "User",
-    },
-    {
-      id: "sa-settings",
-      label: "Settings",
-      path: "/user/settings",
-      icon: "Settings",
-    },
-  ],
+  SA: createDownlineNav("sa", "Downline Network", "My Agents", "Create Agent"),
 
   // NSM Navigation (Level 2)
-  NSM: [
-    {
-      id: "nsm-dashboard",
-      label: "Dashboard",
-      path: "/user/dashboard",
-      icon: "LayoutDashboard",
-    },
-    {
-      id: "nsm-team",
-      label: "National Network",
-      path: "/user/team",
-      icon: "Users",
-      children: [
-        {
-          id: "nsm-all-agents",
-          label: "My Team",
-          path: "/user/team",
-          icon: "Users",
-        },
-        {
-          id: "nsm-create-agent",
-          label: "Onboard Agent",
-          path: "/user/team/create",
-          icon: "UserPlus",
-          permission: "canCreateUsers",
-        },
-      ],
-    },
-    {
-      id: "nsm-kyc",
-      label: "KYC Status",
-      path: "/user/kyc",
-      icon: "ShieldCheck",
-    },
-    {
-      id: "nsm-profile",
-      label: "My Profile",
-      path: "/user/profile",
-      icon: "User",
-    },
-    {
-      id: "nsm-settings",
-      label: "Settings",
-      path: "/user/settings",
-      icon: "Settings",
-    },
-  ],
+  NSM: createDownlineNav("nsm", "National Network", "My Team", "Onboard Agent"),
 
   // State Head Navigation (Level 3)
-  SH: [
-    {
-      id: "sh-dashboard",
-      label: "Dashboard",
-      path: "/user/dashboard",
-      icon: "LayoutDashboard",
-    },
-    {
-      id: "sh-team",
-      label: "State Network",
-      path: "/user/team",
-      icon: "Users",
-      children: [
-        {
-          id: "sh-all-agents",
-          label: "State Team",
-          path: "/user/team",
-          icon: "Users",
-        },
-        {
-          id: "sh-create-agent",
-          label: "Onboard Agent",
-          path: "/user/team/create",
-          icon: "UserPlus",
-          permission: "canCreateUsers",
-        },
-      ],
-    },
-    {
-      id: "sh-kyc",
-      label: "KYC Status",
-      path: "/user/kyc",
-      icon: "ShieldCheck",
-    },
-    {
-      id: "sh-profile",
-      label: "My Profile",
-      path: "/user/profile",
-      icon: "User",
-    },
-    {
-      id: "sh-settings",
-      label: "Settings",
-      path: "/user/settings",
-      icon: "Settings",
-    },
-  ],
+  SH: createDownlineNav("sh", "State Network", "State Team", "Onboard Agent"),
 
   // CNF / CHF Navigation (Level 4)
-  CNF: [
-    {
-      id: "cnf-dashboard",
-      label: "Dashboard",
-      path: "/user/dashboard",
-      icon: "LayoutDashboard",
-    },
-    {
-      id: "cnf-team",
-      label: "Territory Network",
-      path: "/user/team",
-      icon: "Users",
-      children: [
-        {
-          id: "cnf-all-agents",
-          label: "Territory Agents",
-          path: "/user/team",
-          icon: "Users",
-        },
-        {
-          id: "cnf-create-agent",
-          label: "Onboard Agent",
-          path: "/user/team/create",
-          icon: "UserPlus",
-          permission: "canCreateUsers",
-        },
-      ],
-    },
-    {
-      id: "cnf-kyc",
-      label: "KYC Status",
-      path: "/user/kyc",
-      icon: "ShieldCheck",
-    },
-    {
-      id: "cnf-profile",
-      label: "My Profile",
-      path: "/user/profile",
-      icon: "User",
-    },
-    {
-      id: "cnf-settings",
-      label: "Settings",
-      path: "/user/settings",
-      icon: "Settings",
-    },
-  ],
+  CNF: createDownlineNav("cnf", "Territory Network", "Territory Agents", "Onboard Agent"),
 
   // Master Distributor Navigation (Level 5)
-  MD: [
-    {
-      id: "md-dashboard",
-      label: "Dashboard",
-      path: "/user/dashboard",
-      icon: "LayoutDashboard",
-    },
-    {
-      id: "md-team",
-      label: "My Distributors",
-      path: "/user/team",
-      icon: "Users",
-      children: [
-        {
-          id: "md-dist-list",
-          label: "Distributors List",
-          path: "/user/team",
-          icon: "Users",
-        },
-        {
-          id: "md-create-dist",
-          label: "Create Distributor",
-          path: "/user/team/create",
-          icon: "UserPlus",
-          permission: "canCreateUsers",
-        },
-      ],
-    },
-    {
-      id: "md-kyc",
-      label: "KYC Status",
-      path: "/user/kyc",
-      icon: "ShieldCheck",
-    },
-    {
-      id: "md-profile",
-      label: "My Profile",
-      path: "/user/profile",
-      icon: "User",
-    },
-    {
-      id: "md-settings",
-      label: "Settings",
-      path: "/user/settings",
-      icon: "Settings",
-    },
-  ],
+  MD: createDownlineNav("md", "My Distributors", "Distributors List", "Create Distributor", "md-dist-list", "md-create-dist"),
 
   // Distributor Navigation (Level 6)
-  DT: [
-    {
-      id: "dt-dashboard",
-      label: "Dashboard",
-      path: "/user/dashboard",
-      icon: "LayoutDashboard",
-    },
-    {
-      id: "dt-team",
-      label: "My Retailers",
-      path: "/user/team",
-      icon: "Users",
-      children: [
-        {
-          id: "dt-retailer-list",
-          label: "Retailers List",
-          path: "/user/team",
-          icon: "Users",
-        },
-        {
-          id: "dt-create-retailer",
-          label: "Create Retailer",
-          path: "/user/team/create",
-          icon: "UserPlus",
-          permission: "canCreateUsers",
-        },
-      ],
-    },
-    {
-      id: "dt-kyc",
-      label: "KYC Status",
-      path: "/user/kyc",
-      icon: "ShieldCheck",
-    },
-    {
-      id: "dt-profile",
-      label: "My Profile",
-      path: "/user/profile",
-      icon: "User",
-    },
-    {
-      id: "dt-settings",
-      label: "Settings",
-      path: "/user/settings",
-      icon: "Settings",
-    },
-  ],
+  DT: createDownlineNav("dt", "My Retailers", "Retailers List", "Create Retailer", "dt-retailer-list", "dt-create-retailer"),
 
-  // Retailer Navigation (Level 7) - Dedicated Merchant Terminal matching user UI
+  // Retailer Navigation (Level 7) - Dedicated Merchant Terminal
   RT: [
     {
       id: "rt-dashboard",

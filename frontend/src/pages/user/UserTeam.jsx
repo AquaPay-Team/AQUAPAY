@@ -2,8 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom";
 import { Download, Plus, RefreshCw, Search, UserRound } from "lucide-react";
 import { toast } from "sonner";
-import { fetchBackendDescendantRoles, fetchBackendUsers, createBackendUser } from "../../features/admin/services/adminApi";
-import { AddAgentModal } from "../../features/admin/modals/AddAgentModal";
+import { fetchBackendDescendantRoles, fetchBackendUsers, createBackendUser } from "@/features/users/api/usersApi";
+import { AddAgentModal } from "@/features/users/components/AddAgentModal";
 
 export default function UserTeam() {
   const [searchParams] = useSearchParams();
@@ -100,7 +100,6 @@ export default function UserTeam() {
         pincode: agentData.pincode ? String(agentData.pincode).trim() : null,
       });
       await loadAgents();
-      window.dispatchEvent(new Event("aquapay:downline_updated"));
       toast.success("User created successfully.");
       return response?.data;
     } catch (error) {

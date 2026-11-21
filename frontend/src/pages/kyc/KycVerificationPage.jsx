@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   User,
@@ -15,8 +15,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { parseApiError } from "../../utils/errorHandler";
-import { isAdminRole } from "../../constants/roles";
-import { getCurrentUser } from "../../api/auth.api";
 
 // Reusable White-Theme Components
 import KycHeader from "../../features/kyc/components/KycHeader";
@@ -31,22 +29,17 @@ import Step6Agreements from "../../features/kyc/components/Step6Agreements";
 import Step7ReviewSubmit from "../../features/kyc/components/Step7ReviewSubmit";
 import KycSuccessView from "../../features/kyc/components/KycSuccessView";
 import KycRejectedView from "../../features/kyc/components/KycRejectedView";
-import { interpretKycStatus, currentMediaState } from "../../features/kyc/utils/kycFlow";
+import { useStep1Otp } from "../../features/kyc/hooks/useStep1Otp";
+import { useAadhaarSession } from "../../features/kyc/hooks/useAadhaarSession";
+import { useKycStatusFlow } from "../../features/kyc/hooks/useKycStatusFlow";
 
 // KYC Backend API Services
 import {
   getKycStatus,
-  getSubmissionStatus,
-  restartRejectedKyc,
-  getMediaUploadStatus,
   saveBasicDetails,
   requestBasicDetailsOtp,
-  verifyBasicDetailsOtp,
-  initiateAadhaarVerification,
-  getAadhaarVerificationStatus,
   verifyPanDetails,
   saveBankDetails,
-  getBankDetails,
   uploadKycMedia,
   acceptAgreement,
   submitKycApplication,
@@ -54,76 +47,14 @@ import {
 
 export function KycVerificationPage() {
   const navigate = useNavigate();
-  const popupWindowRef = useRef(null);
-  const pollIntervalRef = useRef(null);
 
-    const storedUser = useMemo(() => {
+  const storedUser = useMemo(() => {
     try {
       return JSON.parse(localStorage.getItem("user") || "null");
     } catch {
       return null;
     }
   }, []);
-
-  const [currentStep, setCurrentStep] = useState(
-    1
-  );
-  const [completedSteps, setCompletedSteps] = useState([]);
-  const [kycStatus, setKycStatus] = useState(null);
-  const [rejectionReason, setRejectionReason] = useState(null);
-  const [isLoadingKycStatus, setIsLoadingKycStatus] = useState(true);
-  const [kycStatusError, setKycStatusError] = useState("");
-  const [isRestarting, setIsRestarting] = useState(false);
-  const [refreshStatusKey, setRefreshStatusKey] = useState(0);
-  const restartFlagKey = storedUser?.id ? `aquapay_kyc_restarted_${storedUser.id}` : null;
-  const [isRestartFlow, setIsRestartFlow] = useState(() => {
-    try {
-      return Boolean(restartFlagKey && localStorage.getItem(restartFlagKey) === "true");
-    } catch {
-      return false;
-    }
-  });
-  const [step1Errors, setStep1Errors] = useState({});
-  const [isSavingStep, setIsSavingStep] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isSubmitted, setIsSubmitted] = useState(
-    false
-  );
-  const [referenceId, setReferenceId] = useState(
-    storedUser?.kyc?.caseId || ""
-  );
-
-  // Step 1 OTP sub-phase states
-  const [step1OtpPhase, setStep1OtpPhase] = useState(false);
-  const [step1OtpValue, setStep1OtpValue] = useState(["", "", "", "", "", ""]);
-  const [step1OtpTimer, setStep1OtpTimer] = useState(0);
-  const [isRequestingStep1Otp, setIsRequestingStep1Otp] = useState(false);
-  const [isVerifyingStep1Otp, setIsVerifyingStep1Otp] = useState(false);
-  const [step1OtpError, setStep1OtpError] = useState("");
-
-  // Step 2 (Aadhaar / DigiLocker) states
-  const [digilockerSessionId, setDigilockerSessionId] = useState(null);
-  const [otpSent, setOtpSent] = useState(false);
-  const [sessionStatus, setSessionStatus] = useState("idle"); // "idle" | "pending" | "processing" | "verified" | "failed" | "expired"
-  const [aadhaarErrorMessage, setAadhaarErrorMessage] = useState("");
-  const [isInitiatingDigilocker, setIsInitiatingDigilocker] = useState(false);
-  const [isCheckingAadhaarStatus, setIsCheckingAadhaarStatus] = useState(false);
-  const [aadhaarVerified, setAadhaarVerified] = useState(false);
-  const [aadhaarVerifiedData, setAadhaarVerifiedData] = useState({});
-
-  // Step 3 (PAN) states
-  const [panVerified, setPanVerified] = useState(false);
-  const [panLoading, setPanLoading] = useState(false);
-  const [panError, setPanError] = useState("");
-
-  // Step 5 (Media Uploads) granular tracking
-  const [uploadStates, setUploadStates] = useState({
-    selfie: { status: "idle", name: "", error: null },
-    video: { status: "idle", name: "", error: null },
-    shop: { status: "idle", name: "", error: null },
-  });
-
-  const [savedDraftTime, setSavedDraftTime] = useState("Just now");
 
   const [formData, setFormData] = useState({
     fullName: storedUser?.name || "",
@@ -147,6 +78,86 @@ export function KycVerificationPage() {
     agreedCreditCheck: false,
   });
 
+  const [step1Errors, setStep1Errors] = useState({});
+  const [isSavingStep, setIsSavingStep] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [savedDraftTime, setSavedDraftTime] = useState("Just now");
+
+  // Step 3 (PAN) states
+  const [panVerified, setPanVerified] = useState(false);
+  const [panLoading, setPanLoading] = useState(false);
+  const [panError, setPanError] = useState("");
+
+  // Step 2 Aadhaar / DigiLocker Custom Hook
+  const {
+    otpSent,
+    sessionStatus,
+    setSessionStatus,
+    aadhaarErrorMessage,
+    isInitiatingDigilocker,
+    isCheckingAadhaarStatus,
+    aadhaarVerified,
+    setAadhaarVerified,
+    aadhaarVerifiedData,
+    syncAadhaarVerifiedName,
+    handleCheckAadhaarStatus,
+    handleTriggerOtp,
+    handleResetAadhaarSession,
+  } = useAadhaarSession({
+    setFormData,
+    setCompletedSteps: (cb) => setCompletedSteps(cb),
+    setCurrentStep: (cb) => setCurrentStep(cb),
+  });
+
+  // KYC Status & Lifecycle Custom Hook
+  const {
+    currentStep,
+    setCurrentStep,
+    completedSteps,
+    setCompletedSteps,
+    kycStatus,
+    setKycStatus,
+    rejectionReason,
+    isLoadingKycStatus,
+    kycStatusError,
+    isRestarting,
+    isRestartFlow,
+    setIsRestartFlow,
+    isSubmitted,
+    setIsSubmitted,
+    referenceId,
+    setReferenceId,
+    uploadStates,
+    setUploadStates,
+    restartFlagKey,
+    handleRefreshStatus,
+    handleRestartRejectedKyc,
+  } = useKycStatusFlow({
+    storedUser,
+    navigate,
+    setFormData,
+    setPanVerified,
+    setAadhaarVerified,
+    setSessionStatus,
+    syncAadhaarVerifiedName,
+  });
+
+  // Step 1 OTP Custom Hook
+  const {
+    step1OtpPhase,
+    setStep1OtpPhase,
+    step1OtpValue,
+    setStep1OtpValue,
+    step1OtpTimer,
+    setStep1OtpTimer,
+    isRequestingStep1Otp,
+    isVerifyingStep1Otp,
+    step1OtpError,
+    setStep1OtpError,
+    handleRequestStep1Otp,
+    handleVerifyStep1Otp,
+  } = useStep1Otp({ setCompletedSteps, setCurrentStep });
+
   const steps = [
     { id: 1, name: "Basic Details", icon: User, desc: "Personal & Business" },
     { id: 2, name: "Aadhaar Auth", icon: Smartphone, desc: "UIDAI OTP verify" },
@@ -156,485 +167,6 @@ export function KycVerificationPage() {
     { id: 6, name: "Agreements", icon: FileSignature, desc: "Terms & consent" },
     { id: 7, name: "Review & Submit", icon: Send, desc: "Final submission" },
   ];
-
-  // Helper: Whitelisted origins for DigiLocker / IDTO postMessage security
-  const getExpectedOrigins = useCallback(() => {
-    const list = [window.location.origin];
-    try {
-      const apiBase = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api";
-      const apiUrl = new URL(apiBase);
-      list.push(apiUrl.origin);
-    } catch {}
-    list.push(
-      "https://idto.in",
-      "https://digilocker.meripehchaan.gov.in",
-      "https://meripehchaan.gov.in"
-    );
-    return list;
-  }, []);
-
-  // Synchronize real legal name fetched from UIDAI Aadhaar across entire app state
-  const syncAadhaarVerifiedName = useCallback(async (directVerifiedName, maskedId) => {
-    let finalName = directVerifiedName;
-    let verifiedMaskedId = maskedId;
-
-    // The DigiLocker session status confirms completion but does not return
-    // the saved Aadhaar mask. Read the authenticated KYC case status instead.
-    if (!verifiedMaskedId || !finalName) {
-      try {
-        const kycResponse = await getKycStatus();
-        const kycData = kycResponse?.data;
-        if (kycData?.hasCase && kycData.completedSteps?.includes(2)) {
-          finalName = finalName || kycData.aadhaar?.verifiedName;
-          verifiedMaskedId = verifiedMaskedId || kycData.aadhaar?.maskedIdentifier;
-        }
-      } catch {
-        // A display-only lookup must not mark an existing verification failed.
-      }
-    }
-
-    if (!finalName) {
-      try {
-        const meRes = await getCurrentUser();
-        finalName = meRes?.data?.name || null;
-      } catch {
-        // Profile name is informational and not an Aadhaar verification source.
-      }
-    }
-
-    // Display only the last four digits received from the authenticated API.
-    let last4 = "";
-    if (verifiedMaskedId) {
-      const match = String(verifiedMaskedId).match(/(\d{4})$/);
-      if (match) last4 = match[1];
-    }
-    // Show masked digits only when the authenticated backend returned them;
-    // older localStorage entries may contain unverified placeholder digits.
-    const formattedMasked = last4 ? `•••• •••• ${last4}` : "—";
-
-    setFormData((prev) => ({
-      ...prev,
-      ...(finalName
-        ? {
-            fullName: finalName,
-            panName: finalName.toUpperCase(),
-          }
-        : {}),
-      aadhaarNumber: last4 || "",
-      aadhaarMasked: formattedMasked,
-    }));
-
-    if (finalName) {
-      try {
-        const stored = JSON.parse(localStorage.getItem("user") || "{}");
-        stored.name = finalName;
-        localStorage.setItem("user", JSON.stringify(stored));
-        window.dispatchEvent(new CustomEvent("aquapay:user_updated", { detail: stored }));
-      } catch (e) {
-        console.error("Failed to update user in localStorage", e);
-      }
-    }
-
-    setAadhaarVerifiedData({
-      verifiedName: finalName || "Verified User",
-      maskedIdentifier: formattedMasked,
-      last4,
-    });
-
-    return finalName;
-    }, [setAadhaarVerifiedData]);
-
-  // Polling cleanup helper
-  const stopAadhaarPolling = useCallback(() => {
-    if (pollIntervalRef.current) {
-      clearInterval(pollIntervalRef.current);
-      pollIntervalRef.current = null;
-    }
-  }, []);
-
-  // Check Aadhaar Verification Status from backend
-  const handleCheckAadhaarStatus = useCallback(async () => {
-    setIsCheckingAadhaarStatus(true);
-    setAadhaarErrorMessage("");
-    try {
-      const sessId = digilockerSessionId;
-      const statusRes = await getAadhaarVerificationStatus(sessId || undefined);
-      const statusUpper = String(statusRes?.data?.status || "").toUpperCase();
-
-      if (statusUpper === "VERIFIED") {
-        stopAadhaarPolling();
-        setAadhaarVerified(true);
-        setSessionStatus("verified");
-        const verifiedName = await syncAadhaarVerifiedName(
-          statusRes.data?.verifiedName,
-          statusRes.data?.maskedIdentifier
-        );
-        setCompletedSteps((prev) => Array.from(new Set([...prev, 2])));
-        toast.success(`Aadhaar e-KYC verified: ${verifiedName || "Verified"}`);
-        setCurrentStep(3);
-        window.scrollTo({ top: 0, behavior: "smooth" });
-        return;
-      }
-
-      if (statusUpper === "FAILED") {
-        stopAadhaarPolling();
-        setSessionStatus("failed");
-        setAadhaarErrorMessage("UIDAI authentication failed. Please restart the session.");
-        toast.error("Aadhaar authentication failed. Please try again.");
-        return;
-      }
-
-      if (statusUpper === "EXPIRED" || statusRes?.data?.stage === "expired") {
-        stopAadhaarPolling();
-        setSessionStatus("expired");
-        setAadhaarErrorMessage("DigiLocker session has expired. Please restart the verification.");
-        toast.error("Aadhaar session expired. Please restart.");
-        return;
-      }
-
-      // Check overall KYC case status
-      const kycRes = await getKycStatus();
-      if (kycRes?.data?.completedSteps?.includes(2)) {
-        stopAadhaarPolling();
-        setAadhaarVerified(true);
-        setSessionStatus("verified");
-        const verifiedName = await syncAadhaarVerifiedName();
-        setCompletedSteps((prev) => Array.from(new Set([...prev, 2])));
-        toast.success(`Aadhaar e-KYC confirmed: ${verifiedName || "Verified"}`);
-        setCurrentStep(3);
-        window.scrollTo({ top: 0, behavior: "smooth" });
-        return;
-      }
-
-      toast.info(
-        "Aadhaar authentication is still in progress. Please submit the OTP in the Government DigiLocker window, then check status again."
-      );
-    } catch (err) {
-      const parsed = parseApiError(err);
-      toast.error(parsed.message || "Failed to check Aadhaar status.");
-    } finally {
-      setIsCheckingAadhaarStatus(false);
-    }
-    }, [
-    digilockerSessionId,
-    stopAadhaarPolling,
-    syncAadhaarVerifiedName,
-    setIsCheckingAadhaarStatus,
-    setAadhaarErrorMessage,
-    setAadhaarVerified,
-    setSessionStatus,
-    setCompletedSteps,
-    setCurrentStep,
-  ]);
-
-  // Listen for secure DigiLocker popup message
-  useEffect(() => {
-    const handlePopupMessage = (e) => {
-      // 1. Origin verification against trusted list (NO wildcard)
-      const allowed = getExpectedOrigins();
-      const originMatch = allowed.some((o) => e.origin && e.origin.toLowerCase() === o.toLowerCase());
-      if (!originMatch) return;
-
-      // 2. Validate source window if available
-      if (popupWindowRef.current && e.source && e.source !== popupWindowRef.current) {
-        return;
-      }
-
-      // 3. Trigger authoritative backend check (never trust message data alone)
-      if (e.data?.type === "DIGILOCKER_COMPLETED" || e.data?.action === "kyc_completed") {
-        // The popup message is a trigger only. Do not accept identity fields
-        // from postMessage; confirm them with our authenticated backend first.
-        handleCheckAadhaarStatus();
-      }
-    };
-
-    window.addEventListener("message", handlePopupMessage);
-    return () => window.removeEventListener("message", handlePopupMessage);
-  }, [getExpectedOrigins, handleCheckAadhaarStatus]);
-
-  // Clean up polling interval on unmount
-  useEffect(() => {
-    return () => {
-      stopAadhaarPolling();
-    };
-  }, [stopAadhaarPolling]);
-
-  // Check authoritative KYC case + submission status on load and on explicit refresh.
-  // Fail closed on conflicting backend responses rather than showing an editable Step 1.
-  useEffect(() => {
-    if (storedUser && isAdminRole(storedUser)) {
-      navigate("/admin/dashboard", { replace: true });
-      return;
-    }
-        const activeRef = { isCurrent: true };
-    async function fetchStatus() {
-      setIsLoadingKycStatus(true);
-      setKycStatusError("");
-      try {
-        const response = await getKycStatus();
-       if (!activeRef.isCurrent) return;
-        const state = interpretKycStatus(response?.data);
-        setKycStatus(state.status);
-        setCompletedSteps(state.completedSteps);
-        setCurrentStep(state.currentStep || 1);
-
-        if (response?.data?.hasCase === false) {
-          setIsSubmitted(false);
-          setRejectionReason(null);
-          setIsRestartFlow(false);
-          return;
-        }
-
-        // Confirm that we're looking at the same authenticated KYC application.
-        // The second endpoint also provides the admin's exact rejection reason.
-        const submission = (await getSubmissionStatus())?.data;
-       if (!activeRef.isCurrent) return;
-        if (!submission || String(submission.status).toLowerCase() !== state.status) {
-          throw new Error("KYC review status changed while loading. Refresh to get the latest result.");
-        }
-        setRejectionReason(state.status === "rejected" ? submission.rejectionReason || null : null);
-
-        if (state.view === "approved") {
-          if (restartFlagKey) localStorage.removeItem(restartFlagKey);
-          navigate("/user/dashboard", { replace: true });
-          return;
-        }
-        if (state.view === "submitted") {
-          if (restartFlagKey) localStorage.removeItem(restartFlagKey);
-          setIsSubmitted(true);
-          setIsRestartFlow(false);
-          setReferenceId(submission.caseId ? `AQP-${String(submission.caseId).padStart(6, "0")}` : "");
-          return;
-        }
-        setIsSubmitted(false);
-        if (state.view === "rejected") {
-          if (restartFlagKey) localStorage.removeItem(restartFlagKey);
-          setIsRestartFlow(false);
-          setUploadStates(currentMediaState());
-          setFormData(prev => ({
-            ...prev, selfieFile: null, videoFile: null, shopPhotoFile: null,
-            agreedTerms: false, agreedDataProcessing: false, agreedCreditCheck: false,
-          }));
-          return;
-        }
-
-        // The backend lists active media separately; partial uploads must survive refresh.
-                
-        let media = null;
-
-        try {
-          const mediaResponse = await getMediaUploadStatus();
-          media = mediaResponse?.data;
-
-          if (!media || String(media.status).toLowerCase() !== state.status) {
-            throw new Error("Media status changed. Refresh to continue safely.");
-          }
-        } catch (error) {
-          if (error?.response?.status !== 404) {
-            throw error;
-          }
-
-          // Older backend does not provide media-status.
-          // Do not assume that any partial uploads succeeded.
-          console.warn("Media status API unavailable; using verified KYC step progress.");
-        }
-
-        if (!activeRef.isCurrent) return;
-
-        const restarted = media
-          ? Boolean(media.isRestartAttempt && state.status === "pending")
-          : Boolean(
-              restartFlagKey &&
-              localStorage.getItem(restartFlagKey) === "true" &&
-              state.status === "pending"
-            );
-
-        setIsRestartFlow(restarted);
-
-        if (restartFlagKey && media) {
-          if (restarted) {
-            localStorage.setItem(restartFlagKey, "true");
-          } else {
-            localStorage.removeItem(restartFlagKey);
-          }
-        }
-
-        setUploadStates(
-          currentMediaState(
-            media?.uploadedTypes || [],
-            state.completedSteps.includes(5)
-          )
-        );
-
-        setFormData(prev => ({
-          ...prev,
-          // Old acceptance rows do not make a reset Step 6 complete.
-          agreedTerms: state.completedSteps.includes(6),
-        }));
-        if (state.completedSteps.includes(2)) {
-          setAadhaarVerified(true);
-          setSessionStatus("verified");
-          // Name sync is informational; verified steps remain the source of truth.
-          // Restore masked Aadhaar from the authenticated KYC status response.
-          // Never invent the last four digits or read them from localStorage.
-          await syncAadhaarVerifiedName(
-            response?.data?.aadhaar?.verifiedName,
-            response?.data?.aadhaar?.maskedIdentifier,
-          );
-        }
-        if (state.completedSteps.includes(3)) {
-          setPanVerified(true);
-          // Rehydrate only verified PAN display data from this merchant's
-          // authenticated KYC status. The PAN verification API is unchanged.
-          const verifiedPan = response?.data?.pan;
-          const mask = verifiedPan?.maskedIdentifier;
-          const validMask = typeof mask === "string" &&
-            /^X{6}[0-9]{3}[A-Z]$/.test(mask);
-
-          setFormData((prev) => ({
-            ...prev,
-            panMasked: validMask ? mask : "",
-            ...(verifiedPan?.verifiedName
-              ? { panName: verifiedPan.verifiedName }
-              : {}),
-          }));
-        }
-        if (state.completedSteps.includes(4)) {
-          try {
-            const bank = (await getBankDetails())?.data;
-            if (activeRef.isCurrent && bank) setFormData(prev => ({
-              ...prev,
-              bankName: bank.bankName || prev.bankName,
-              ifscCode: bank.ifscCode || prev.ifscCode,
-              accountNumber: `••••••••${bank.accountNumberLast4 || "XXXX"}`,
-              confirmAccountNumber: `••••••••${bank.accountNumberLast4 || "XXXX"}`,
-            }));
-          } catch { /* Bank details are informational for previously verified Step 4. */ }
-        }
-      } catch (error) {
-        if (activeRef.isCurrent) {
-          setKycStatusError(error?.message || parseApiError(error).message || "Unable to load KYC status.");
-        }
-      } finally {
-        if (activeRef.isCurrent) setIsLoadingKycStatus(false);
-      }
-    }
-    fetchStatus();
-        return () => { activeRef.isCurrent = false; };
-    }, [navigate, syncAadhaarVerifiedName, refreshStatusKey, storedUser, restartFlagKey]);
-
-  const handleRefreshStatus = () => setRefreshStatusKey(value => value + 1);
-
-  const handleRestartRejectedKyc = async () => {
-    if (isRestarting) return;
-    setIsRestarting(true);
-    try {
-      const response = await restartRejectedKyc();
-      if (response?.data?.status !== "pending" || Number(response?.data?.currentStep) !== 5) {
-        throw new Error("The server did not confirm a restart at Step 5. Refresh KYC status before continuing.");
-      }
-
-      setKycStatus("pending");
-      setIsSubmitted(false);
-      setRejectionReason(null);
-      setCurrentStep(5);
-      setCompletedSteps([1, 2, 3, 4]);
-      setUploadStates({
-        selfie: { status: "idle", name: "", error: null },
-        video: { status: "idle", name: "", error: null },
-        shop: { status: "idle", name: "", error: null },
-      });
-      setFormData((prev) => ({
-        ...prev,
-        selfieFile: null,
-        videoFile: null,
-        shopPhotoFile: null,
-        agreedTerms: false,
-        agreedDataProcessing: false,
-        agreedCreditCheck: false,
-      }));
-      setIsRestartFlow(true);
-      if (restartFlagKey) localStorage.setItem(restartFlagKey, "true");
-      try {
-        const user = JSON.parse(localStorage.getItem("user") || "null");
-        if (user) {
-          user.kyc = { ...(user.kyc || {}), status: "pending", currentStep: 5 };
-          localStorage.setItem("user", JSON.stringify(user));
-          window.dispatchEvent(new CustomEvent("aquapay:user_updated", { detail: user }));
-        }
-      } catch {
-        // The next server check remains the source of truth.
-      }
-      toast.success("KYC reopened. Please upload all three fresh media files.");
-      window.scrollTo({ top: 0, behavior: "smooth" });
-      handleRefreshStatus();
-    } catch (err) {
-      toast.error(parseApiError(err).message || "Could not restart KYC.");
-      // A network error can happen after the server commits a restart. Recheck
-      // status so the merchant can continue instead of attempting it twice.
-      handleRefreshStatus();
-    } finally {
-      setIsRestarting(false);
-    }
-  };
-
-  // Step 1 OTP countdown
-  useEffect(() => {
-    let interval = null;
-    if (step1OtpPhase && step1OtpTimer > 0) {
-      interval = setInterval(() => setStep1OtpTimer((t) => t - 1), 1000);
-    }
-    return () => clearInterval(interval);
-  }, [step1OtpPhase, step1OtpTimer]);
-
-  // Step 1: Request OTP
-  const handleRequestStep1Otp = async () => {
-    setIsRequestingStep1Otp(true);
-    setStep1OtpError("");
-    try {
-      await requestBasicDetailsOtp();
-      setStep1OtpTimer(60);
-      setStep1OtpValue(["", "", "", "", "", ""]);
-      toast.success(
-        "OTP sent! In development mode the OTP is printed in the backend server console."
-      );
-    } catch (err) {
-      const parsed = parseApiError(err);
-      if (parsed.type === "RATE_LIMIT") {
-        setStep1OtpError("Please wait before requesting another OTP.");
-        toast.error("Please wait before requesting another OTP.");
-      } else {
-        toast.error(parsed.message || "Failed to request OTP. Please try again.");
-      }
-    } finally {
-      setIsRequestingStep1Otp(false);
-    }
-  };
-
-  // Step 1: Verify OTP
-  const handleVerifyStep1Otp = async () => {
-    const otp = step1OtpValue.join("");
-    if (otp.length !== 6) {
-      setStep1OtpError("Please enter all 6 digits of the OTP.");
-      return;
-    }
-    setStep1OtpError("");
-    setIsVerifyingStep1Otp(true);
-    try {
-      await verifyBasicDetailsOtp(otp);
-      setCompletedSteps((prev) => Array.from(new Set([...prev, 1])));
-      setStep1OtpPhase(false);
-      toast.success("Step 1 verified successfully! Proceeding to Aadhaar verification.");
-      setCurrentStep(2);
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    } catch (err) {
-      const parsed = parseApiError(err);
-      setStep1OtpError(parsed.message || "Invalid or expired OTP. Please try again.");
-      toast.error(parsed.message || "Invalid or expired OTP. Please try again.");
-    } finally {
-      setIsVerifyingStep1Otp(false);
-    }
-  };
 
   const handleChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -675,146 +207,35 @@ export function KycVerificationPage() {
     return Object.keys(errors).length === 0;
   };
 
-  // Step 2: Trigger Aadhaar DigiLocker Verification
-  const handleTriggerOtp = async () => {
-    setIsInitiatingDigilocker(true);
-    setAadhaarErrorMessage("");
-    try {
-      toast.info("Connecting to UIDAI verification gateway...");
-      const res = await initiateAadhaarVerification(true);
-      const authUrl = res?.data?.authorizationUrl;
-      const sessId = res?.data?.sessionId;
-
-      if (sessId) {
-        setDigilockerSessionId(sessId);
-      }
-
-      setOtpSent(true);
-      setSessionStatus("pending");
-      setAadhaarVerified(false);
-
-      if (authUrl) {
-        // Securely open popup window and store ref
-        const popup = window.open(authUrl, "_blank", "width=520,height=680,location=no,status=no");
-        popupWindowRef.current = popup;
-        toast.success("DigiLocker window opened. Please complete OTP authentication on the official portal.", { duration: 6000 });
-
-        // Auto-poll in background
-        if (sessId) {
-          stopAadhaarPolling();
-          const interval = setInterval(async () => {
-            try {
-              const statusRes = await getAadhaarVerificationStatus(sessId);
-              const statusUpper = String(statusRes?.data?.status || "").toUpperCase();
-              if (statusUpper === "VERIFIED") {
-                stopAadhaarPolling();
-                setAadhaarVerified(true);
-                setSessionStatus("verified");
-                const verifiedName = await syncAadhaarVerifiedName(
-                  statusRes.data?.verifiedName,
-                  statusRes.data?.maskedIdentifier
-                );
-                setCompletedSteps((prev) => Array.from(new Set([...prev, 2])));
-                toast.success(`Aadhaar e-KYC verified with UIDAI: ${verifiedName || "Verified"}`);
-              } else if (statusUpper === "FAILED") {
-                stopAadhaarPolling();
-                setSessionStatus("failed");
-              } else if (statusUpper === "EXPIRED") {
-                stopAadhaarPolling();
-                setSessionStatus("expired");
-              }
-            } catch {
-              // Silently poll
-            }
-          }, 3500);
-
-          pollIntervalRef.current = interval;
-          // Auto-terminate polling after 10-minute session TTL
-          setTimeout(() => {
-            stopAadhaarPolling();
-          }, 600000);
-        }
-      } else {
-        toast.info("Aadhaar OTP requested. Please enter the OTP received on your mobile.");
-      }
-    } catch (err) {
-      const parsed = parseApiError(err);
-      const isAlreadyInProgress =
-        err?.response?.status === 409 ||
-        err?.response?.data?.code === "VERIFICATION_IN_PROGRESS" ||
-        parsed?.message?.toLowerCase().includes("already in progress") ||
-        parsed?.message?.toLowerCase().includes("session is already");
-
-      if (isAlreadyInProgress) {
-        setOtpSent(true);
-        setSessionStatus("pending");
-        setAadhaarVerified(false);
-        toast.info("A verification session is already active. Please authenticate in the government window or check status.");
-
-        try {
-          const statusRes = await getAadhaarVerificationStatus();
-          const sessId = statusRes?.data?.sessionId;
-          if (sessId) setDigilockerSessionId(sessId);
-          const statusUpper = String(statusRes?.data?.status || "").toUpperCase();
-          if (statusUpper === "VERIFIED") {
-            setAadhaarVerified(true);
-            setSessionStatus("verified");
-            const verifiedName = await syncAadhaarVerifiedName(
-              statusRes.data?.verifiedName,
-              statusRes.data?.maskedIdentifier
-            );
-            setCompletedSteps((prev) => Array.from(new Set([...prev, 2])));
-            toast.success(`Aadhaar already verified: ${verifiedName || "Verified"}`);
-          }
-        } catch {}
-      } else {
-        setSessionStatus("failed");
-        setAadhaarErrorMessage(parsed.message || "Failed to initiate UIDAI session.");
-        toast.error(parsed.message || "Failed to initiate UIDAI Aadhaar session.");
-      }
-    } finally {
-      setIsInitiatingDigilocker(false);
-    }
-  };
-
-  const handleResetAadhaarSession = async () => {
-    stopAadhaarPolling();
-    setOtpSent(false);
-    setDigilockerSessionId(null);
-    setAadhaarVerified(false);
-    setSessionStatus("idle");
-    setAadhaarErrorMessage("");
-    try {
-      await getAadhaarVerificationStatus();
-    } catch {}
-    toast.info("Session reset. You can now request a new Aadhaar verification.");
-  };
-
   // Step 3: PAN Verification
   const handleVerifyPan = async () => {
     const panRegex = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
     const cleanPan = String(formData.panNumber || "").trim().toUpperCase();
-    if (!cleanPan || !panRegex.test(cleanPan)) {
-      toast.error("Invalid PAN format. Must be 5 uppercase letters, 4 digits, and 1 letter (e.g. ABCDE1234F).");
+
+    if (!panRegex.test(cleanPan)) {
+      setPanError("Invalid PAN format. Must be 5 uppercase letters, 4 digits, and 1 letter (e.g. ABCDE1234F).");
       return;
     }
+
     setPanLoading(true);
     setPanError("");
 
     try {
-      const res = await verifyPanDetails({ panNumber: cleanPan, consent: true });
+      const res = await verifyPanDetails({
+        pan: cleanPan,
+        name: formData.fullName?.trim() || undefined,
+      });
+
       const data = res?.data || {};
 
-      // Requirement: Reject development_unverified as real verification success
-      if (data.status === "development_unverified" || data.verificationStatus === "development_unverified") {
+      if (data.matched === false) {
         setPanVerified(false);
-        const msg = "PAN returned development_unverified from mock provider; this result cannot be accepted as real compliance verification.";
+        const msg = data.reason || "PAN name does not match your registered identity name. Please recheck.";
         setPanError(msg);
-        toast.warning(msg);
+        toast.error(msg);
         return;
       }
 
-      // Check if backend confirmed verification
       const isVerified =
         data.status === "VERIFIED" ||
         data.status === "verified" ||
@@ -861,7 +282,6 @@ export function KycVerificationPage() {
 
     try {
       await uploadKycMedia(file, assetType);
-      // ONLY mark as uploaded upon backend confirmation
       setUploadStates((prev) => ({
         ...prev,
         [stateKey]: { status: "uploaded", name: file.name, error: null },
@@ -998,7 +418,7 @@ export function KycVerificationPage() {
           ifscCode: cleanIfsc,
         }));
 
-toast.success("Bank details saved successfully.");
+        toast.success("Bank details saved successfully.");
         setCompletedSteps((prev) => Array.from(new Set([...prev, 4])));
         setCurrentStep(5);
         window.scrollTo({ top: 0, behavior: "smooth" });
@@ -1125,7 +545,7 @@ toast.success("Bank details saved successfully.");
         setReferenceId(`AQP-${String(caseId).padStart(6, "0")}`);
       }
 
-            if (storedUser) {
+      if (storedUser) {
         const updatedUser = {
           ...storedUser,
           kyc: { ...(storedUser.kyc || {}), status: "submitted" },
@@ -1333,8 +753,8 @@ toast.success("Bank details saved successfully.");
             {currentStep === 6 && (
               <Step6Agreements
                 isStepCompleted={completedSteps.includes(6)}
-                formData={formData} 
-                onChange={handleChange} 
+                formData={formData}
+                onChange={handleChange}
                 onNext={handleNextStep}
                 isSavingStep={isSavingStep}
               />

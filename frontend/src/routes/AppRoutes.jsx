@@ -1,30 +1,33 @@
-import React from "react";
+import React, { lazy, Suspense } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 
-// Auth Pages
-import LoginPage from "../pages/auth/LoginPage";
-import ForgotPasswordPage from "../pages/auth/ForgotPasswordPage";
-
-// Route Guards
+// Layouts & Guards
 import AdminProtectedRoute from "./AdminProtectedRoute";
 import UserProtectedRoute from "./UserProtectedRoute";
-
-// Layouts
 import AdminLayout from "../layouts/AdminLayout";
 import UserLayout from "../layouts/UserLayout";
+import RouteLoadingFallback from "@/components/feedback/RouteLoadingFallback";
 
-// Admin Pages
-import ExistingAdminDashboard from "../pages/admin/ExistingAdminDashboard";
+// Auth Pages (Lazy)
+const LoginPage = lazy(() => import("../pages/auth/LoginPage"));
+const ForgotPasswordPage = lazy(() => import("../pages/auth/ForgotPasswordPage"));
+const NotFoundPage = lazy(() => import("../pages/not-found/NotFoundPage"));
 
-// Normal User Pages
-import UserDashboard from "../pages/user/UserDashboard";
-import UserTeam from "../pages/user/UserTeam";
-import UserProfile from "../pages/user/UserProfile";
-import UserSettings from "../pages/user/UserSettings";
-import UserKyc from "../pages/user/UserKyc";
+// Admin Pages (Lazy)
+const AdminDashboardOverviewPage = lazy(() => import("@/features/admin/pages/AdminDashboardOverviewPage"));
+const AdminUsersPage = lazy(() => import("@/features/admin/pages/AdminUsersPage"));
+const AdminKycPage = lazy(() => import("@/features/admin/pages/AdminKycPage"));
+
+// Normal User Pages (Lazy)
+const UserDashboard = lazy(() => import("../pages/user/UserDashboard"));
+const UserTeam = lazy(() => import("../pages/user/UserTeam"));
+const UserProfile = lazy(() => import("@/features/users/pages/UserProfile"));
+const UserSettings = lazy(() => import("../pages/user/UserSettings"));
+const KycVerificationPage = lazy(() => import("../pages/kyc/KycVerificationPage"));
 
 export function AppRoutes() {
   return (
+    <Suspense fallback={<RouteLoadingFallback/>}>
     <Routes>
       {/* 1. Public Authentication Entry Points */}
       <Route path="/login" element={<LoginPage />} />
@@ -40,9 +43,9 @@ export function AppRoutes() {
 
       {/* 2. Standalone KYC Route (Accessible before full KYC approval) */}
       <Route element={<UserProtectedRoute requireKyc={false} />}>
-        <Route path="/kyc" element={<UserKyc />} />
-        <Route path="/user/kyc" element={<UserKyc />} />
-        <Route path="/user/kyc/*" element={<UserKyc />} />
+        <Route path="/kyc" element={<KycVerificationPage />} />
+        <Route path="/user/kyc" element={<KycVerificationPage />} />
+        <Route path="/user/kyc/*" element={<KycVerificationPage />} />
       </Route>
 
       {/* 3. Normal User Protected Routes (/user/*) */}
@@ -74,22 +77,24 @@ export function AppRoutes() {
       <Route element={<AdminProtectedRoute />}>
         <Route path="/admin" element={<AdminLayout />}>
           <Route index element={<Navigate to="/admin/dashboard" replace />} />
-          <Route path="dashboard" element={<ExistingAdminDashboard />} />
-          <Route path="users" element={<ExistingAdminDashboard />} />
-          <Route path="users/create" element={<ExistingAdminDashboard />} />
+          <Route path="dashboard" element={<AdminDashboardOverviewPage  />} />
+          <Route path="users" element={<AdminUsersPage   />} />
+          <Route path="users/create" element={<Navigate to="/admin/users" replace />} />
           <Route path="users/:id" element={<UserProfile />} />
-          <Route path="kyc" element={<ExistingAdminDashboard />} />
-          <Route path="reports" element={<ExistingAdminDashboard />} />
-          <Route path="profile" element={<UserProfile />} />
-          <Route path="settings" element={<ExistingAdminDashboard />} />
+          <Route path="kyc" element={<AdminKycPage  />} />
+          <Route path="reports" element={<Navigate to="/admin/dashboard" replace />} />
+          <Route path="profile" element={<UserProfile />} /> 
+          <Route path="settings" element={<Navigate to="/admin/dashboard" replace />} />
           <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
         </Route>
       </Route>
 
       {/* Default Fallback */}
       <Route path="/" element={<Navigate to="/login" replace />} />
-      <Route path="*" element={<Navigate to="/login" replace />} />
+      <Route path="/404" element={<NotFoundPage />} />
+      <Route path="*" element={<NotFoundPage />} />
     </Routes>
+    </Suspense >
   );
 }
 

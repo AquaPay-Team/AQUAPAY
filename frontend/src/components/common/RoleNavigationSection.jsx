@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { ChevronDown, Users } from "lucide-react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
-import { fetchBackendDescendantRoles } from "../../features/admin/services/adminApi";
+import { fetchBackendDescendantRoles } from "../../features/users/api/usersApi";
 
 export function RoleNavigationSection({
   collapsed = false,

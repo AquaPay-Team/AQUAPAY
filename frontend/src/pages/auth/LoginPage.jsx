@@ -27,11 +27,12 @@ const SLIDES = [
 ];
 
 export const LoginPage = () => {
+  const navigate = useNavigate();
   const [showPw, setShowPw] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [apiError, setApiError] = useState(null);
-  const navigate = useNavigate();
+  // const navigate = useNavigate();
     const { login } = useAuth();
 
   const {
@@ -209,7 +210,8 @@ export const LoginPage = () => {
                 </div>
                 <button
                     type="button"
-                    onClick={handleForgotPassword}
+                    // onClick={handleForgotPassword}
+                    onClick={() => navigate("/forgot-password")}
                     className="text-[12.5px] text-[#3b82f6] hover:text-blue-700 hover:underline font-normal transition-colors cursor-pointer"
                   >
                     Forgot password?

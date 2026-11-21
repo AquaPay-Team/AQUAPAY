@@ -24,7 +24,9 @@ export function RoleNavigationSection({
     if (!isExpanded) return undefined;
 
     let active = true;
-    setLoadState("loading");
+    Promise.resolve().then(() => {
+      if (active) setLoadState("loading");
+    });
     fetchBackendDescendantRoles()
       .then((response) => {
         if (!active) return;

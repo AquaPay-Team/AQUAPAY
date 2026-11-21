@@ -21,8 +21,9 @@ export function Step5MediaUploads({
   onPrev, 
   isSavingStep,
   uploadStates = {}, // { selfie: { status, error, name }, video: { status, error, name }, shop: { status, error, name } }
-  onRetryUpload,
+  _onRetryUpload,
 }) {
+
   const [activeTab, setActiveTab] = useState("consent"); // "consent" | "upload"
 
   const selfieInputRef = useRef(null);
@@ -39,8 +40,7 @@ export function Step5MediaUploads({
     e.stopPropagation();
     setDragActive((prev) => ({ ...prev, [target]: status }));
   };
-
-  const validateAndUpload = (file, assetType, fieldName, target) => {
+  const validateAndUpload = (file, assetType, fieldName, _target) => {
     if (!file) return;
 
     // File validation

@@ -22,6 +22,7 @@ import UserTeam from "../pages/user/UserTeam";
 import UserProfile from "../pages/user/UserProfile";
 import UserSettings from "../pages/user/UserSettings";
 import UserKyc from "../pages/user/UserKyc";
+import NotFoundPage from "../pages/not-found/NotFoundPage";
 
 export function AppRoutes() {
   return (
@@ -88,7 +89,8 @@ export function AppRoutes() {
 
       {/* Default Fallback */}
       <Route path="/" element={<Navigate to="/login" replace />} />
-      <Route path="*" element={<Navigate to="/login" replace />} />
+      <Route path="/404" element={<NotFoundPage />} />
+      <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );
 }

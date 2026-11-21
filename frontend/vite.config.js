@@ -9,7 +9,12 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "./src"),
+      "cn": path.resolve(import.meta.dirname,"./src/lib/utils")
     },
     dedupe: ["react", "react-dom"],
+  },
+  test: {
+    globals: true,
+    environment: "node",
   },
 });

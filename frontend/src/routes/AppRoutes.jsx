@@ -23,7 +23,7 @@ const UserDashboard = lazy(() => import("../pages/user/UserDashboard"));
 const UserTeam = lazy(() => import("../pages/user/UserTeam"));
 const UserProfile = lazy(() => import("@/features/users/pages/UserProfile"));
 const UserSettings = lazy(() => import("../pages/user/UserSettings"));
-const UserKyc = lazy(() => import("../pages/user/UserKyc"));
+const KycVerificationPage = lazy(() => import("../pages/kyc/KycVerificationPage"));
 
 export function AppRoutes() {
   return (
@@ -43,9 +43,9 @@ export function AppRoutes() {
 
       {/* 2. Standalone KYC Route (Accessible before full KYC approval) */}
       <Route element={<UserProtectedRoute requireKyc={false} />}>
-        <Route path="/kyc" element={<UserKyc />} />
-        <Route path="/user/kyc" element={<UserKyc />} />
-        <Route path="/user/kyc/*" element={<UserKyc />} />
+        <Route path="/kyc" element={<KycVerificationPage />} />
+        <Route path="/user/kyc" element={<KycVerificationPage />} />
+        <Route path="/user/kyc/*" element={<KycVerificationPage />} />
       </Route>
 
       {/* 3. Normal User Protected Routes (/user/*) */}

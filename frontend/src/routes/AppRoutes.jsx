@@ -1,5 +1,6 @@
-import React, { lazy, Suspense } from "react";
+import React, { Suspense } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
+import { lazyWithRetry as lazy } from "@/utils/lazyWithRetry";
 
 // Layouts & Guards
 import AdminProtectedRoute from "./AdminProtectedRoute";
@@ -94,7 +95,7 @@ export function AppRoutes() {
       <Route path="/404" element={<NotFoundPage />} />
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
-    </Suspense >
+    </Suspense>
   );
 }
 

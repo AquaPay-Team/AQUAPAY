@@ -7,7 +7,6 @@ export function CommandSearchModal({
   setShowCommandModal,
   cmdSearchQuery,
   setCmdSearchQuery,
-  setActiveTab,
 }) {
   const navigate = useNavigate();
   if (!showCommandModal) return null;
@@ -59,10 +58,9 @@ export function CommandSearchModal({
                 const Icon = item.icon;
                 return (
                   <button
-                    key={item.tab}
+                    key={item.path}
                     onClick={() => {
-                      if (item.path) navigate(item.path);
-                      else if (item.tab) setActiveTab(item.tab);
+                      navigate(item.path);
                       setShowCommandModal(false);
                     }}
                     className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-slate-50 text-slate-700 font-medium flex items-center justify-between transition-colors cursor-pointer group"
@@ -82,11 +80,6 @@ export function CommandSearchModal({
               })}
             </div>
           </div>
-        </div>
-
-        <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-100 text-[11px] text-slate-400 flex items-center justify-between">
-          <span>Tip: Press <kbd className="px-1 py-0.5 bg-white border border-slate-200 rounded text-[10px]">Ctrl</kbd> + <kbd className="px-1 py-0.5 bg-white border border-slate-200 rounded text-[10px]">K</kbd> anywhere to open</span>
-          <span>AquaPay Admin Console</span>
         </div>
       </div>
     </div>

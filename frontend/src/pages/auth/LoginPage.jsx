@@ -1,15 +1,19 @@
+import { useAuth } from "../../features/auth/useAuth";
+import { isKycComplete } from "../../features/kyc/model/kycStatus";
+import { ROUTES } from "../../routes/paths";
 import React, { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Eye, EyeOff, ChevronLeft, ChevronRight } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { LightAnimatedBackground } from "../../components/common/LightAnimatedBackground";
 import { ErrorAlert } from "../../components/common/ErrorAlert";
 import { parseApiError } from "../../utils/errorHandler";
-import { authenticateWithMe, getCurrentUser } from "../../api/auth.api";
+import { authenticateWithMe } from "../../api/auth.api";
 import { isAdminRole, isNormalUserRole } from "../../constants/roles";
+import { AuthSlideshow } from "@/features/auth";
 
 const schema = z.object({
   email: z.string().min(1, "Please enter your email or username"),
@@ -17,18 +21,13 @@ const schema = z.object({
   rememberMe: z.boolean().optional(),
 });
 
-const SLIDES = [
-  "/slide-utility-pay.jpg",
-  "/slide-merchant-analytics.jpg",
-  "/slide-bulk-batch.jpg",
-];
-
 export const LoginPage = () => {
+  const navigate = useNavigate();
   const [showPw, setShowPw] = useState(false);
-  const [currentSlide, setCurrentSlide] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [apiError, setApiError] = useState(null);
-  const navigate = useNavigate();
+  // const navigate = useNavigate();
+    const { login } = useAuth();
 
   const {
     register,
@@ -42,41 +41,30 @@ export const LoginPage = () => {
       rememberMe: true,
     },
   });
-
-  // Auto-play slideshow timer (every 3.5 seconds)
+  // Redirect if already authenticated
+  const { isAuthenticated, isAdmin, user } = useAuth();
   useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentSlide((prev) => (prev + 1) % SLIDES.length);
-    }, 2500);
-    return () => clearInterval(timer);
-  }, []);
-
-  // Verify existing sessions from the server and route by the authoritative role.
-  useEffect(() => {
-    const token = localStorage.getItem("accessToken");
-    if (!token) return;
-    getCurrentUser().then((response) => {
-      const user = response?.data || response;
-      if (isAdminRole(user)) navigate("/admin/dashboard", { replace: true });
-      else if (isNormalUserRole(user)) {
-        const kycDone = ["approved", "completed", "verified", "submitted"].includes(String(user?.kyc?.status || "").toLowerCase());
-        navigate(kycDone ? "/user/dashboard" : "/kyc", { replace: true });
-      }
-    }).catch(() => {});
-  }, [navigate]);
+    if (!isAuthenticated || !user) return;
+    if (isAdmin) {
+      navigate(ROUTES.ADMIN_DASHBOARD, { replace: true });
+    } else {
+      const kycDone = isKycComplete(user?.kyc?.status);
+      navigate(kycDone ? ROUTES.USER_DASHBOARD : ROUTES.KYC, { replace: true });
+    }
+  }, [isAuthenticated, isAdmin, user, navigate]);
 
   const onSubmit = async (data) => {
     try {
       setIsLoading(true);
       setApiError(null);
 
-      // 1. Shared authentication via POST /api/auth/login + GET /api/auth/me
-      const { accessToken, user } = await authenticateWithMe({
+      // Shared authentication via POST /api/auth/login + GET /api/auth/me
+      const { accessToken, user: authUser } = await authenticateWithMe({
         identifier: data.email.trim(),
         password: data.password,
       });
 
-      if (!isAdminRole(user) && !isNormalUserRole(user)) {
+      if (!isAdminRole(authUser) && !isNormalUserRole(authUser)) {
         const msg = "Access Denied: Unrecognized account role. Please contact system support.";
         setApiError({
           title: "Access Denied",
@@ -86,36 +74,24 @@ export const LoginPage = () => {
         return;
       }
 
-      if (accessToken) {
-        localStorage.setItem("accessToken", accessToken);
-      }
-      if (user) {
-        localStorage.setItem("user", JSON.stringify(user));
-      }
-      if (isAdminRole(user)) localStorage.setItem("adminUser", JSON.stringify(user));
-      else localStorage.removeItem("adminUser");
+      // Hand over session management to AuthContext
+      login({ token: accessToken, user: authUser });
 
       toast.success(
-        `Welcome back, ${user?.name || "User"}! Signed in successfully.`
+        `Welcome back, ${authUser?.name || "User"}! Signed in successfully.`
       );
 
-      if (isAdminRole(user)) {
-        navigate("/admin/dashboard", { replace: true });
+      if (isAdminRole(authUser)) {
+        navigate(ROUTES.ADMIN_DASHBOARD, { replace: true });
         return;
       }
 
-      // KYC Status Check for normal users
-      const isKycDone =
-        user?.kyc &&
-        ["approved", "completed", "verified", "submitted"].includes(
-          String(user.kyc.status || "").toLowerCase()
-        );
-
-      if (!isKycDone) {
+      // Unified KYC check
+      if (!isKycComplete(authUser?.kyc?.status)) {
         toast.info("Please complete your KYC verification to access your dashboard.");
-        navigate("/kyc", { replace: true });
+        navigate(ROUTES.KYC, { replace: true });
       } else {
-        navigate("/user/dashboard", { replace: true });
+        navigate(ROUTES.USER_DASHBOARD, { replace: true });
       }
     } catch (err) {
       const parsed = parseApiError(err);
@@ -127,7 +103,7 @@ export const LoginPage = () => {
   };
 
   const handleForgotPassword = () => {
-    navigate("/forgot-password");
+    navigate(ROUTES.FORGOT_PASSWORD);
   };
 
   const handleTerms = () => {
@@ -224,7 +200,8 @@ export const LoginPage = () => {
                 </div>
                 <button
                     type="button"
-                    onClick={handleForgotPassword}
+                    // onClick={handleForgotPassword}
+                    onClick={() => navigate("/forgot-password")}
                     className="text-[12.5px] text-[#3b82f6] hover:text-blue-700 hover:underline font-normal transition-colors cursor-pointer"
                   >
                     Forgot password?
@@ -284,61 +261,7 @@ export const LoginPage = () => {
         </div>
 
         {/* Right Column: Clean Visual Image Slideshow */}
-        <div className="w-full lg:w-1/2 relative min-h-[460px] sm:min-h-[520px] lg:min-h-[600px] overflow-hidden bg-gradient-to-br from-[#f8fbfe] via-white to-[#edf5fc] flex items-center justify-center p-6 sm:p-10 group select-none">
-          {/* Slide Visual Images with Crossfade and Full Visibility */}
-          {SLIDES.map((imgSrc, idx) => (
-            <div
-              key={imgSrc}
-              className={`absolute inset-0 flex items-center justify-center p-6 sm:p-10 transition-all duration-700 ease-in-out ${
-                idx === currentSlide
-                  ? "opacity-100 scale-100 z-10"
-                  : "opacity-0 scale-95 pointer-events-none z-0"
-              }`}
-            >
-              <img
-                src={imgSrc}
-                alt={`Slideshow illustration ${idx + 1}`}
-                className="max-w-full max-h-[440px] sm:max-h-[480px] lg:max-h-[520px] w-auto h-auto object-contain rounded-2xl drop-shadow-[0_16px_36px_rgba(56,104,176,0.14)] select-none"
-              />
-            </div>
-          ))}
-
-          {/* Left / Right Arrow Navigation Buttons */}
-          <button
-            type="button"
-            onClick={() => setCurrentSlide((prev) => (prev - 1 + SLIDES.length) % SLIDES.length)}
-            className="absolute left-4 z-20 w-9 h-9 rounded-full bg-white/90 hover:bg-white text-slate-700 hover:text-slate-900 border border-slate-200/80 shadow-md flex items-center justify-center transition-all opacity-0 group-hover:opacity-100 cursor-pointer"
-            title="Previous slide"
-          >
-            <ChevronLeft size={18} />
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setCurrentSlide((prev) => (prev + 1) % SLIDES.length)}
-            className="absolute right-4 z-20 w-9 h-9 rounded-full bg-white/90 hover:bg-white text-slate-700 hover:text-slate-900 border border-slate-200/80 shadow-md flex items-center justify-center transition-all opacity-0 group-hover:opacity-100 cursor-pointer"
-            title="Next slide"
-          >
-            <ChevronRight size={18} />
-          </button>
-
-          {/* Minimal Navigation Progress Indicators / Dots */}
-          <div className="absolute bottom-6 z-20 flex items-center gap-2 bg-white/80 backdrop-blur-md px-3 py-1.5 rounded-full border border-slate-200/60 shadow-xs">
-            {SLIDES.map((imgSrc, idx) => (
-              <button
-                key={imgSrc}
-                type="button"
-                onClick={() => setCurrentSlide(idx)}
-                className={`h-2 rounded-full transition-all duration-300 cursor-pointer ${
-                  idx === currentSlide
-                    ? "w-7 bg-blue-600 shadow-xs"
-                    : "w-2 bg-slate-300 hover:bg-slate-400"
-                }`}
-                title={`Go to slide ${idx + 1}`}
-              />
-            ))}
-          </div>
-        </div>
+        <AuthSlideshow />
 
       </div>
     </div>

@@ -1,8 +1,6 @@
 import React, { useState } from 'react';
 import {
   Menu,
-  Search,
-  CreditCard,
   Bell,
   CheckCircle2,
 } from 'lucide-react';
@@ -13,7 +11,6 @@ export function AdminHeader({
   sidebarCollapsed,
   setSidebarCollapsed,
   setMobileSidebarOpen,
-  setShowCommandModal,
 }) {
   const navigate = useNavigate();
   const [notificationOpen, setNotificationOpen] = useState(false);
@@ -30,7 +27,7 @@ export function AdminHeader({
 
   return (
     <header className="h-[68px] bg-white border-b border-slate-200 sticky top-0 z-30 px-4 md:px-6 flex items-center justify-between shadow-2xs relative">
-      {/* Left: Sidebar Toggle & Search Bar */}
+      {/* Left: Sidebar Toggle */}
       <div className="flex items-center gap-4">
         <button
           onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
@@ -46,31 +43,10 @@ export function AdminHeader({
         >
           <Menu className="w-5 h-5" />
         </button>
-
-        {/* Global Search Bar (opens Ctrl+K modal on click) */}
-        <button
-          onClick={() => setShowCommandModal(true)}
-          className="relative hidden sm:flex items-center gap-2 pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs w-64 md:w-80 text-slate-400 hover:border-slate-300 hover:bg-white transition-all cursor-pointer text-left"
-        >
-          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <span>Search users, menus, reports...</span>
-          <kbd className="ml-auto text-[10px] font-semibold bg-white border border-slate-200 text-slate-400 px-1.5 py-0.5 rounded">
-            Ctrl K
-          </kbd>
-        </button>
       </div>
 
       {/* Right: Quick Actions & Admin Profile */}
       <div className="flex items-center gap-3">
-        {/* Balance / Wallet Pill */}
-        <button
-          onClick={() => navigate("/admin/kyc")}
-          className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer border border-slate-200"
-        >
-          <CreditCard className="w-3.5 h-3.5 text-blue-600" />
-          <span>KYC Approvals</span>
-        </button>
-
         {/* Notification Dropdown */}
         <div className="relative">
           <button
@@ -89,16 +65,13 @@ export function AdminHeader({
             <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-xl border border-slate-100 p-4 z-50 animate-in fade-in slide-in-from-top-2 ">
               <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                 <span className="font-bold text-slate-800">System Notifications</span>
-                <span className="text-[10px] bg-blue-50 text-blue-600 font-bold px-2 py-0.5 rounded-full">
-                 1 New
-                </span>
               </div>
               <div className="py-3 space-y-2.5">
                 <div className="flex items-start gap-2.5 p-2 rounded-xl bg-slate-50 hover:bg-slate-100/70 transition-colors cursor-pointer">
-                <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                 <div>
                    <div className="text-xs font-semibold text-slate-800">
-                   Cloud database & Redis cache connected.
+                   View live API and dependency readiness in Server & Reports.
                   </div>
                 </div>
               </div>

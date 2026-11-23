@@ -48,7 +48,6 @@ export function AdminLayout() {
           sidebarCollapsed={sidebarCollapsed}
           setSidebarCollapsed={setSidebarCollapsed}
           setMobileSidebarOpen={setMobileSidebarOpen}
-          setShowCommandModal={setShowCommandModal}
         />
 
         {/* Dynamic Nested Route View */}

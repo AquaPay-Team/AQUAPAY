@@ -1,16 +1,16 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   AlertCircle,
   ChevronLeft,
   ChevronRight,
-  ClipboardCheck,
   FileCheck2,
   FileText,
   Filter,
   Loader2,
   RefreshCw,
   Search,
-  ShieldCheck,
+  ChevronDown,
 } from "lucide-react";
 import { toast } from "sonner";
 import { parseApiError } from "@/lib/errors";
@@ -24,9 +24,9 @@ import {
 import { KycInspectionModal } from "./KycInspectionModal";
 
 const FILTERS = [
-  { value: "", label: "Awaiting review" },
+  { value: "", label: "Awaiting Admin Decision" },
   { value: "submitted", label: "Submitted" },
-  { value: "under_review", label: "Under review" },
+  { value: "under_review", label: "Under Review" },
   { value: "approved", label: "Approved" },
   { value: "rejected", label: "Rejected" },
 ];
@@ -89,9 +89,21 @@ function SectionTitle({ icon: Icon, title, subtitle }) {
 }
 
 export default function AdminKycReview() {
-  const [status, setStatus] = useState("");
+  const [searchParams] = useSearchParams();
+  const routeStatus = searchParams.get("status");
+  const routeCaseId = searchParams.get("caseId");
+  const resolvedRouteCaseId = /^\d+$/.test(routeCaseId || "")
+    ? routeCaseId
+    : null;
+  const resolvedRouteStatus = FILTERS.some((filter) => filter.value === routeStatus)
+    ? routeStatus
+    : "";
+  const [status, setStatus] = useState(resolvedRouteStatus);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
+  const [submittedFrom, setSubmittedFrom] = useState("");
+  const [submittedTo, setSubmittedTo] = useState("");
+  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
   const [applications, setApplications] = useState([]);
   const [pagination, setPagination] = useState({});
   const [loading, setLoading] = useState(true);
@@ -104,13 +116,29 @@ export default function AdminKycReview() {
   const [busy, setBusy] = useState(false);
   const listRequestRef = useRef(0);
   const detailRequestRef = useRef(0);
+  const openedRouteCaseRef = useRef(null);
+
+  useEffect(() => {
+    setStatus(resolvedRouteStatus);
+    setPage(1);
+    setSearch("");
+    setSubmittedFrom("");
+    setSubmittedTo("");
+  }, [resolvedRouteStatus]);
 
   const loadList = useCallback(async () => {
     const requestId = ++listRequestRef.current;
     setLoading(true);
     setListError("");
     try {
-      const result = await listAdminKycApplications({ ...(status ? { status } : {}), page, limit: 10 });
+      const result = await listAdminKycApplications({
+        ...(status ? { status } : {}),
+        ...(search ? { search } : {}),
+        ...(submittedFrom ? { submittedFrom } : {}),
+        ...(submittedTo ? { submittedTo } : {}),
+        page,
+        limit: 10,
+      });
       if (requestId !== listRequestRef.current) return;
       setApplications(Array.isArray(result?.applications) ? result.applications : []);
       setPagination(result?.pagination || {});
@@ -121,7 +149,7 @@ export default function AdminKycReview() {
     } finally {
       if (requestId === listRequestRef.current) setLoading(false);
     }
-  }, [page, status]);
+  }, [page, status, search, submittedFrom, submittedTo]);
 
   useEffect(() => {
     loadList();
@@ -137,7 +165,7 @@ export default function AdminKycReview() {
     setReason("");
   };
 
-  const openCase = async (caseId) => {
+  const openCase = useCallback(async (caseId) => {
     const requestId = ++detailRequestRef.current;
     setSelectedId(caseId);
     setDetails(null);
@@ -155,7 +183,19 @@ export default function AdminKycReview() {
     } finally {
       if (requestId === detailRequestRef.current) setDetailLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (
+      !resolvedRouteCaseId ||
+      openedRouteCaseRef.current === resolvedRouteCaseId
+    ) {
+      return;
+    }
+
+    openedRouteCaseRef.current = resolvedRouteCaseId;
+    openCase(resolvedRouteCaseId);
+  }, [openCase, resolvedRouteCaseId]);
 
   const viewDocument = async (assetId) => {
     // Open the tab from the click event to avoid popup blocking after the API response.
@@ -203,13 +243,6 @@ export default function AdminKycReview() {
     setReason("");
   };
 
-  const visibleApplications = applications.filter((item) => {
-    const query = search.trim().toLowerCase();
-    return !query || [item.case_id, item.user_id, item.name, item.email, item.mobile]
-      .some((value) => String(value ?? "").toLowerCase().includes(query));
-  });
-  const selectedFilter = FILTERS.find((item) => item.value === status)?.label || "Awaiting review";
-
   return (
     <section className="mx-auto max-w-7xl space-y-5 pb-10">
       {/* AquaPay dashboard breadcrumb and title */}
@@ -223,26 +256,11 @@ export default function AdminKycReview() {
           </h1>
           <p className="mt-0.5 text-xs text-slate-400">Review merchant submissions and verify supporting information.</p>
         </div>
-        <button type="button" className={secondaryButton} onClick={loadList} disabled={loading}>
-          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Refresh applications
-        </button>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="flex items-center gap-3 rounded-2xl border border-blue-100/80 bg-blue-50/60 p-5 shadow-2xs">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-600"><ClipboardCheck className="h-5 w-5" /></span>
-          <div>
-            <p className="text-[11px] font-semibold text-slate-500">Applications in selected filter</p>
-            <p className="mt-1 text-2xl font-bold text-slate-900">{loading ? "—" : (pagination.total ?? 0)}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700"><ShieldCheck className="h-5 w-5" /></span>
-          <div>
-            <p className="text-[11px] font-semibold text-slate-500">Current queue</p>
-            <p className="mt-1 text-sm font-bold text-slate-900">{selectedFilter}</p>
-            <p className="mt-0.5 text-[11px] text-slate-400">Live backend KYC records</p>
-          </div>
+        <div className="flex flex-wrap gap-2">
+          <Link to="/admin/kyc/approval-history" className={secondaryButton}>Approval history</Link>
+          <button type="button" className={secondaryButton} onClick={loadList} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Refresh applications
+          </button>
         </div>
       </div>
 
@@ -260,18 +278,36 @@ export default function AdminKycReview() {
           <div className="relative max-w-md flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input value={search} onChange={(event) => setSearch(event.target.value)} type="search"
-              aria-label="Search applications on this page" placeholder="Search name, email, mobile or ID on this page..."
+              aria-label="Search KYC applications" placeholder="Search case ID, user ID, name, email or mobile..."
               className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-xs text-slate-800 outline-none placeholder:text-slate-400 focus:border-blue-500" />
           </div>
           <div className="flex items-center gap-2 text-xs text-slate-500">
             <Filter className="h-4 w-4 text-slate-400" />
             <label htmlFor="admin-kyc-filter" className="font-medium">Status</label>
-            <select id="admin-kyc-filter" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); setSearch(""); }}
+            <select id="admin-kyc-filter" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); setSearch(""); setSubmittedFrom(""); setSubmittedTo(""); }}
               className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:border-blue-500">
               {FILTERS.map((filter) => <option key={filter.value} value={filter.value}>{filter.label}</option>)}
             </select>
+            <button type="button" onClick={() => setAdvancedFiltersOpen((open) => !open)}
+              className="ml-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors" aria-label="Advanced filters" title="Advanced filters">
+              <ChevronDown className={`h-4 w-4 ${advancedFiltersOpen ? "rotate-180" : ""} transition-transform`} />
+            </button>
           </div>
         </div>
+        {advancedFiltersOpen && (
+          <div className="border-b border-slate-100 bg-slate-50 p-4 sm:flex-row sm:items-center sm:gap-3">
+            <div className="flex items-center gap-2 text-xs text-slate-500">
+              <span className="font-medium text-slate-700">Submitted From</span>
+              <input type="date" value={submittedFrom} onChange={(e) => setSubmittedFrom(e.target.value)}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 outline-none focus:border-blue-500" />
+            </div>
+            <div className="flex items-center gap-2 text-xs text-slate-500">
+              <span className="font-medium text-slate-700">Submitted Through</span>
+              <input type="date" value={submittedTo} onChange={(e) => setSubmittedTo(e.target.value)}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 outline-none focus:border-blue-500" />
+            </div>
+          </div>
+        )}
 
         {listError && (
           <div role="alert" className="m-5 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-medium text-rose-700">
@@ -292,13 +328,13 @@ export default function AdminKycReview() {
             <tbody className="divide-y divide-slate-100 text-xs">
               {loading ? (
                 <tr><td colSpan={5} className="px-5 py-12 text-center text-slate-400"><Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin text-blue-600" />Loading KYC applications...</td></tr>
-              ) : !visibleApplications.length ? (
+              ) : !applications.length ? (
                 <tr><td colSpan={5} className="px-5 py-12 text-center">
                   <FileCheck2 className="mx-auto mb-2 h-8 w-8 text-slate-300" />
                   <p className="text-sm font-semibold text-slate-700">No KYC applications found</p>
-                  <p className="mt-1 text-xs text-slate-400">{search ? "Try a different search on this page." : "Try another status filter or refresh the list."}</p>
+                  <p className="mt-1 text-xs text-slate-400">{search ? "Try a different search." : "Try another status filter or refresh the list."}</p>
                 </td></tr>
-              ) : visibleApplications.map((item) => (
+              ) : applications.map((item) => (
                 <tr key={item.case_id} className="transition-colors hover:bg-slate-50/80">
                   <td className="px-5 py-4 font-bold text-slate-700">#{item.case_id}</td>
                   <td className="px-5 py-4">

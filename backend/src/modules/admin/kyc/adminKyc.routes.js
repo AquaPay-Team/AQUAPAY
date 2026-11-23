@@ -17,6 +17,15 @@ router.get(
   adminKycController.getKycApplicationsController,
 );
 
+// Fetch recent submitted KYC applications for the dashboard.
+// This route must precede /:caseId so "recent" is not parsed as an ID.
+router.get(
+  "/recent",
+  requireAuth,
+  requireAdmin,
+  adminKycController.getRecentKycApplicationsController,
+);
+
 // Fetch details of one KYC application
 router.get(
   "/:caseId",

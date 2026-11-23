@@ -128,6 +128,66 @@ async function findAllUsers(options = {}) {
   return rows.map(formatUserRow);
 }
 
+/**
+ * Fetches an Admin-only, paginated user directory. The caller is responsible
+ * for Admin authorization; this model deliberately reuses the established
+ * safe projection and formatter used by the existing user-read APIs.
+ */
+async function findAdminUsersPage(options = {}) {
+  const conditions = [];
+  const filterParams = [];
+
+  if (options.userId !== undefined && options.userId !== null) {
+    conditions.push("u.id = ?");
+    filterParams.push(options.userId);
+  } else if (options.nameSearch) {
+    conditions.push("u.name LIKE ?");
+    filterParams.push(`%${options.nameSearch}%`);
+  }
+
+  if (options.status) {
+    conditions.push("u.status = ?");
+    filterParams.push(options.status);
+  }
+
+  if (options.roleId) {
+    conditions.push("u.role_id = ?");
+    filterParams.push(options.roleId);
+  }
+
+  if (options.registeredFrom) {
+    conditions.push("u.created_at >= ?");
+    filterParams.push(options.registeredFrom);
+  }
+
+  if (options.registeredTo) {
+    conditions.push("u.created_at < ?");
+    filterParams.push(options.registeredTo);
+  }
+
+  const whereClause = conditions.length
+    ? ` WHERE ${conditions.join(" AND ")}`
+    : "";
+
+  const [countRows] = await pool.execute(
+    `SELECT COUNT(*) AS total FROM users u${whereClause}`,
+    filterParams,
+  );
+
+  const offset = (options.page - 1) * options.limit;
+  const [rows] = await pool.execute(
+    `${USER_PROJECTION}${whereClause}
+     ORDER BY u.created_at DESC, u.id DESC
+     LIMIT ? OFFSET ?`,
+    [...filterParams, options.limit, offset],
+  );
+
+  return {
+    users: rows.map(formatUserRow),
+    total: Number(countRows[0]?.total || 0),
+  };
+}
+
 async function findUsersInDescendantScope(actorId, roleId, options = {}) {
   const conditions = ["u.role_id = ?", "scope.id <> ?"];
   const params = [actorId, roleId, actorId];
@@ -231,6 +291,7 @@ export {
   findDescendantRoles,
   findUsersInDescendantScope,
   findAllUsers,
+  findAdminUsersPage,
   findUserById,
   findChildrenByParentId,
   findChildByIdAndParentId,
@@ -243,6 +304,7 @@ export default {
   findDescendantRoles,
   findUsersInDescendantScope,
   findAllUsers,
+  findAdminUsersPage,
   findUserById,
   findChildrenByParentId,
   findChildByIdAndParentId,

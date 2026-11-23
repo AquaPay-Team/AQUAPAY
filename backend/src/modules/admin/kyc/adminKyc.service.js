@@ -14,7 +14,9 @@ const DEFAULT_STATUSES = ["submitted", "under_review"];
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 10;
+const RECENT_DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 100;
+const ISO_INSTANT = /^(\d{4})-(\d{2})-(\d{2})T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,3})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/;
 
 const DOCUMENT_URL_TTL_SECONDS = 5 * 60;
 
@@ -53,7 +55,102 @@ function parsePositiveId(value, fieldName) {
   return parsed;
 }
 
-async function getKycApplications({ status, page, limit } = {}) {
+function validationError(message) {
+  return new ApiError(400, message, [], "VALIDATION_ERROR");
+}
+
+function readSingleQueryValue(value, fieldName) {
+  if (Array.isArray(value)) {
+    throw validationError(`${fieldName} must be provided once`);
+  }
+  return value;
+}
+
+function parsePositiveQueryInteger(value, fieldName, { defaultValue, max } = {}) {
+  const raw = readSingleQueryValue(value, fieldName);
+  if (raw === undefined || raw === "") return defaultValue;
+
+  if (
+    typeof raw !== "string" ||
+    !/^\d+$/.test(raw) ||
+    !Number.isSafeInteger(Number(raw)) ||
+    Number(raw) < 1 ||
+    (max !== undefined && Number(raw) > max)
+  ) {
+    throw validationError(
+      max === undefined
+        ? `${fieldName} must be a positive integer`
+        : `${fieldName} must be a positive integer no greater than ${max}`,
+    );
+  }
+
+  return Number(raw);
+}
+
+function parseOptionalIsoInstant(value, fieldName) {
+  const raw = readSingleQueryValue(value, fieldName);
+  if (raw === undefined || raw === "") return null;
+  if (typeof raw !== "string") {
+    throw validationError(`${fieldName} must be an ISO-8601 instant`);
+  }
+
+  const match = raw.match(ISO_INSTANT);
+  if (!match) throw validationError(`${fieldName} must be an ISO-8601 instant`);
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const calendarDate = new Date(Date.UTC(year, month - 1, day));
+  if (
+    calendarDate.getUTCFullYear() !== year ||
+    calendarDate.getUTCMonth() !== month - 1 ||
+    calendarDate.getUTCDate() !== day
+  ) {
+    throw validationError(`${fieldName} must be an ISO-8601 instant`);
+  }
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    throw validationError(`${fieldName} must be an ISO-8601 instant`);
+  }
+  return parsed;
+}
+
+function parseRecentSearch(value) {
+  const raw = readSingleQueryValue(value, "search");
+  if (raw === undefined || raw === "") {
+    return { numericSearch: null, nameSearch: null };
+  }
+  if (typeof raw !== "string") throw validationError("search must be a string");
+
+  const search = raw.trim();
+  if (!search) return { numericSearch: null, nameSearch: null };
+  if (search.length > 100) throw validationError("search must not exceed 100 characters");
+
+  if (/^\d+$/.test(search)) {
+    const numericSearch = Number(search);
+    if (!Number.isSafeInteger(numericSearch) || numericSearch < 1) {
+      throw validationError("search ID must be a positive integer");
+    }
+    return { numericSearch, nameSearch: null };
+  }
+
+  return { numericSearch: null, nameSearch: search };
+}
+
+function getPagination(page, limit, total) {
+  const totalPages = Math.ceil(total / limit);
+  return {
+    page,
+    limit,
+    total,
+    totalPages,
+    hasNextPage: page < totalPages,
+    hasPreviousPage: page > 1,
+  };
+}
+
+async function getKycApplications({ status, page, limit, search, submittedFrom, submittedTo } = {}) {
   let statuses = DEFAULT_STATUSES;
 
   if (status !== undefined && status !== "") {
@@ -94,6 +191,13 @@ async function getKycApplications({ status, page, limit } = {}) {
     );
   }
 
+  if (search && typeof search !== "string") {
+    throw new ApiError(400, "search must be a string", [], "VALIDATION_ERROR");
+  }
+  if (search && search.length > 100) {
+    throw new ApiError(400, "search must not exceed 100 characters", [], "VALIDATION_ERROR");
+  }
+
   const offset = (parsedPage - 1) * parsedLimit;
 
   const [applications, total] = await Promise.all([
@@ -101,8 +205,15 @@ async function getKycApplications({ status, page, limit } = {}) {
       statuses,
       limit: parsedLimit,
       offset,
+      search,
+      submittedFrom,
+      submittedTo,
     }),
-    adminKycModel.countKycApplications(statuses),
+    adminKycModel.countKycApplications(statuses, {
+      search,
+      submittedFrom,
+      submittedTo,
+    }),
   ]);
 
   const totalPages = Math.ceil(total / parsedLimit);
@@ -119,6 +230,69 @@ async function getKycApplications({ status, page, limit } = {}) {
     },
     filters: {
       statuses,
+    },
+  };
+}
+
+async function getRecentKycApplications(query = {}) {
+  const status = readSingleQueryValue(query.status, "status");
+  let statuses = ALLOWED_STATUSES;
+  if (status !== undefined && status !== "") {
+    if (typeof status !== "string" || !ALLOWED_STATUSES.includes(status)) {
+      throw validationError("Invalid KYC status filter");
+    }
+    statuses = [status];
+  }
+  const page = parsePositiveQueryInteger(query.page, "page", {
+    defaultValue: DEFAULT_PAGE,
+  });
+  const limit = parsePositiveQueryInteger(query.limit, "limit", {
+    defaultValue: RECENT_DEFAULT_LIMIT,
+    max: MAX_LIMIT,
+  });
+  const { numericSearch, nameSearch } = parseRecentSearch(query.search);
+  const submittedFrom = parseOptionalIsoInstant(
+    query.submittedFrom,
+    "submittedFrom",
+  );
+  const submittedTo = parseOptionalIsoInstant(query.submittedTo, "submittedTo");
+  const reviewedFrom = parseOptionalIsoInstant(query.reviewedFrom, "reviewedFrom");
+  const reviewedTo = parseOptionalIsoInstant(query.reviewedTo, "reviewedTo");
+
+  if (submittedFrom && submittedTo && submittedFrom >= submittedTo) {
+    throw validationError("submittedFrom must be before submittedTo");
+  }
+  if (reviewedFrom && reviewedTo && reviewedFrom >= reviewedTo) {
+    throw validationError("reviewedFrom must be before reviewedTo");
+  }
+  if ((reviewedFrom || reviewedTo) && (statuses.length !== 1 || statuses[0] !== "approved")) {
+    throw validationError("reviewedFrom and reviewedTo require status=approved");
+  }
+
+  const offset = (page - 1) * limit;
+  const filters = {
+    statuses,
+    numericSearch,
+    nameSearch,
+    submittedFrom,
+    submittedTo,
+    reviewedFrom,
+    reviewedTo,
+  };
+  const [applications, total] = await Promise.all([
+    adminKycModel.findRecentKycApplications({ ...filters, limit, offset }),
+    adminKycModel.countRecentKycApplications(filters),
+  ]);
+
+  return {
+    applications,
+    pagination: getPagination(page, limit, total),
+    filters: {
+      statuses,
+      ...(submittedFrom ? { submittedFrom: submittedFrom.toISOString() } : {}),
+      ...(submittedTo ? { submittedTo: submittedTo.toISOString() } : {}),
+      ...(reviewedFrom ? { reviewedFrom: reviewedFrom.toISOString() } : {}),
+      ...(reviewedTo ? { reviewedTo: reviewedTo.toISOString() } : {}),
     },
   };
 }
@@ -469,6 +643,7 @@ async function rejectKycApplication(caseId, actorUserId, rejectionReason) {
 
 const adminKycService = {
   getKycApplications,
+  getRecentKycApplications,
   getKycApplicationDetails,
   getKycDocumentAccess,
   approveKycApplication,
@@ -477,6 +652,7 @@ const adminKycService = {
 
 export {
   getKycApplications,
+  getRecentKycApplications,
   getKycApplicationDetails,
   getKycDocumentAccess,
   approveKycApplication,

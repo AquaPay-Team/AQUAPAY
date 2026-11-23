@@ -1,8 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import jwt from "jsonwebtoken";
 import adminKycModel from "./adminKyc.model.js";
+import app from "../../../app.js";
+import authModel from "../../auth/auth.model.js";
+import { getAuthConfig, JWT_AUDIENCE, JWT_ISSUER } from "../../../config/auth.js";
 import {
   getKycApplications,
+  getRecentKycApplications,
   getKycDocumentAccess,
   approveKycApplication,
   rejectKycApplication,
@@ -289,6 +294,153 @@ test("adminKyc.service: reports no next page on the final page", async () => {
     adminKycModel.findKycApplications = originalFind;
     adminKycModel.countKycApplications = originalCount;
   }
+});
+
+// ---------------------------------------------------------
+// RECENT KYC APPLICATIONS
+// ---------------------------------------------------------
+
+test("adminKyc.service: recent applications default to 25 and all submitted statuses", async (t) => {
+  const originalFind = adminKycModel.findRecentKycApplications;
+  const originalCount = adminKycModel.countRecentKycApplications;
+  let capturedFilters;
+
+  adminKycModel.findRecentKycApplications = async (filters) => {
+    capturedFilters = filters;
+    return [{ case_id: 14, user_id: 8, kyc_status: "submitted" }];
+  };
+  adminKycModel.countRecentKycApplications = async () => 26;
+
+  t.after(() => {
+    adminKycModel.findRecentKycApplications = originalFind;
+    adminKycModel.countRecentKycApplications = originalCount;
+  });
+
+  const result = await getRecentKycApplications();
+
+  assert.deepEqual(capturedFilters.statuses, [
+    "submitted",
+    "under_review",
+    "approved",
+    "rejected",
+  ]);
+  assert.equal(capturedFilters.limit, 25);
+  assert.equal(capturedFilters.offset, 0);
+  assert.deepEqual(result.pagination, {
+    page: 1,
+    limit: 25,
+    total: 26,
+    totalPages: 2,
+    hasNextPage: true,
+    hasPreviousPage: false,
+  });
+});
+
+test("adminKyc.service: recent applications validate filters, search, and date boundaries", async (t) => {
+  const originalFind = adminKycModel.findRecentKycApplications;
+  const originalCount = adminKycModel.countRecentKycApplications;
+  let capturedFilters;
+
+  adminKycModel.findRecentKycApplications = async (filters) => {
+    capturedFilters = filters;
+    return [];
+  };
+  adminKycModel.countRecentKycApplications = async () => 0;
+
+  t.after(() => {
+    adminKycModel.findRecentKycApplications = originalFind;
+    adminKycModel.countRecentKycApplications = originalCount;
+  });
+
+  const result = await getRecentKycApplications({
+    status: "approved",
+    page: "2",
+    limit: "100",
+    search: " 42 ",
+    submittedFrom: "2026-11-01T00:00:00.000Z",
+    submittedTo: "2026-12-01T00:00:00+00:00",
+    reviewedFrom: "2026-11-02T00:00:00.000Z",
+    reviewedTo: "2026-11-03T00:00:00+00:00",
+  });
+
+  assert.deepEqual(capturedFilters.statuses, ["approved"]);
+  assert.equal(capturedFilters.numericSearch, 42);
+  assert.equal(capturedFilters.nameSearch, null);
+  assert.equal(capturedFilters.offset, 100);
+  assert.equal(capturedFilters.submittedFrom.toISOString(), "2026-11-01T00:00:00.000Z");
+  assert.equal(capturedFilters.submittedTo.toISOString(), "2026-12-01T00:00:00.000Z");
+  assert.equal(result.filters.submittedFrom, "2026-11-01T00:00:00.000Z");
+  assert.equal(result.filters.submittedTo, "2026-12-01T00:00:00.000Z");
+  assert.equal(capturedFilters.reviewedFrom.toISOString(), "2026-11-02T00:00:00.000Z");
+  assert.equal(capturedFilters.reviewedTo.toISOString(), "2026-11-03T00:00:00.000Z");
+  assert.equal(result.filters.reviewedFrom, "2026-11-02T00:00:00.000Z");
+  assert.equal(result.filters.reviewedTo, "2026-11-03T00:00:00.000Z");
+});
+
+test("adminKyc.service: recent applications search names and reject invalid query values", async (t) => {
+  const originalFind = adminKycModel.findRecentKycApplications;
+  const originalCount = adminKycModel.countRecentKycApplications;
+  let capturedFilters;
+
+  adminKycModel.findRecentKycApplications = async (filters) => {
+    capturedFilters = filters;
+    return [];
+  };
+  adminKycModel.countRecentKycApplications = async () => 0;
+
+  t.after(() => {
+    adminKycModel.findRecentKycApplications = originalFind;
+    adminKycModel.countRecentKycApplications = originalCount;
+  });
+
+  await getRecentKycApplications({ search: "  Asha Sharma " });
+  assert.equal(capturedFilters.numericSearch, null);
+  assert.equal(capturedFilters.nameSearch, "Asha Sharma");
+
+  const invalidQueries = [
+    [{ page: "0" }, /page must be a positive integer/],
+    [{ limit: "101" }, /limit must be a positive integer no greater than 100/],
+    [{ status: "pending" }, /Invalid KYC status filter/],
+    [{ search: ["14", "15"] }, /search must be provided once/],
+    [{ submittedFrom: "2026-02-30T00:00:00.000Z" }, /submittedFrom must be an ISO-8601 instant/],
+    [{ submittedFrom: "2026-12-01T00:00:00.000Z", submittedTo: "2026-12-01T00:00:00.000Z" }, /submittedFrom must be before submittedTo/],
+    [{ reviewedFrom: "2026-11-02T00:00:00.000Z" }, /reviewedFrom and reviewedTo require status=approved/],
+    [{ status: "approved", reviewedFrom: "2026-12-01T00:00:00.000Z", reviewedTo: "2026-12-01T00:00:00.000Z" }, /reviewedFrom must be before reviewedTo/],
+  ];
+
+  for (const [query, message] of invalidQueries) {
+    await assert.rejects(getRecentKycApplications(query), message);
+  }
+});
+
+test("adminKyc.routes: recent applications require authenticated Admin access", async (t) => {
+  const server = app.listen(0, "127.0.0.1");
+  t.after(() => server.close());
+  await new Promise((resolve) => server.once("listening", resolve));
+  const baseUrl = `http://127.0.0.1:${server.address().port}`;
+
+  const unauthenticated = await fetch(`${baseUrl}/api/admin/kyc/recent`);
+  assert.equal(unauthenticated.status, 401);
+
+  const originalIsUserActive = authModel.isUserActive;
+  const originalIsAdmin = authModel.isAdmin;
+  authModel.isUserActive = async () => true;
+  authModel.isAdmin = async () => false;
+  t.after(() => {
+    authModel.isUserActive = originalIsUserActive;
+    authModel.isAdmin = originalIsAdmin;
+  });
+
+  const token = jwt.sign({ sub: "2" }, getAuthConfig().secret, {
+    algorithm: "HS256",
+    issuer: JWT_ISSUER,
+    audience: JWT_AUDIENCE,
+    expiresIn: "5m",
+  });
+  const nonAdmin = await fetch(`${baseUrl}/api/admin/kyc/recent`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  assert.equal(nonAdmin.status, 403);
 });
 
 // ---------------------------------------------------------

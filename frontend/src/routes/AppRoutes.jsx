@@ -17,6 +17,8 @@ const NotFoundPage = lazy(() => import("../pages/not-found/NotFoundPage"));
 const AdminDashboardOverviewPage = lazy(() => import("@/features/admin/pages/AdminDashboardOverviewPage"));
 const AdminUsersPage = lazy(() => import("@/features/admin/pages/AdminUsersPage"));
 const AdminKycPage = lazy(() => import("@/features/admin/pages/AdminKycPage"));
+const AdminKycApprovalHistoryPage = lazy(() => import("@/features/admin/pages/AdminKycApprovalHistoryPage"));
+const AdminServerReportsPage = lazy(() => import("@/features/admin/pages/AdminServerReportsPage"));
 
 // Normal User Pages (Lazy)
 const UserDashboard = lazy(() => import("../pages/user/UserDashboard"));
@@ -82,7 +84,8 @@ export function AppRoutes() {
           <Route path="users/create" element={<Navigate to="/admin/users" replace />} />
           <Route path="users/:id" element={<UserProfile />} />
           <Route path="kyc" element={<AdminKycPage  />} />
-          <Route path="reports" element={<Navigate to="/admin/dashboard" replace />} />
+          <Route path="kyc/approval-history" element={<AdminKycApprovalHistoryPage />} />
+          <Route path="reports" element={<AdminServerReportsPage />} />
           <Route path="profile" element={<UserProfile />} /> 
           <Route path="settings" element={<Navigate to="/admin/dashboard" replace />} />
           <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />

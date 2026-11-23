@@ -6,6 +6,8 @@
 import {
   findKycApplications,
   countKycApplications,
+  findRecentKycApplications,
+  countRecentKycApplications,
   rejectKycCase,
 } from "./adminKyc.model.js";
 
@@ -104,6 +106,112 @@ import {
       /At least one KYC status is required/,
     );
   });
+
+test("adminKyc.model: recent applications use safe parameterized filters and submission ordering", async (t) => {
+  const originalExecute = pool.execute;
+  const calls = [];
+
+  pool.execute = async (sql, params) => {
+    calls.push({ sql, params });
+    if (/SELECT COUNT\(\*\) AS total/.test(sql)) return [[{ total: 14 }]];
+    return [[{ case_id: 14, user_id: 8, name: "Asha Sharma" }]];
+  };
+
+  t.after(() => {
+    pool.execute = originalExecute;
+  });
+
+  const submittedFrom = new Date("2026-11-01T00:00:00.000Z");
+  const submittedTo = new Date("2026-12-01T00:00:00.000Z");
+  const filters = {
+    statuses: ["submitted", "under_review"],
+    numericSearch: 14,
+    nameSearch: null,
+    submittedFrom,
+    submittedTo,
+    limit: 25,
+    offset: 50,
+  };
+
+  const applications = await findRecentKycApplications(filters);
+  const total = await countRecentKycApplications(filters);
+
+  assert.equal(applications.length, 1);
+  assert.equal(total, 14);
+  assert.match(calls[0].sql, /kc\.status IN \(\?, \?\)/);
+  assert.match(calls[0].sql, /kc\.submitted_at IS NOT NULL/);
+  assert.match(calls[0].sql, /\(kc\.id = \? OR kc\.user_id = \?\)/);
+  assert.match(calls[0].sql, /kc\.submitted_at >= \?/);
+  assert.match(calls[0].sql, /kc\.submitted_at < \?/);
+  assert.match(calls[0].sql, /ORDER BY kc\.submitted_at DESC, kc\.id DESC/);
+  assert.match(calls[0].sql, /LIMIT \? OFFSET \?/);
+  assert.doesNotMatch(calls[0].sql, /identity_data|account_number|storage_key|provider_reference/i);
+  assert.deepEqual(calls[0].params, ["submitted", "under_review", 14, 14, submittedFrom, submittedTo, 25, 50]);
+  assert.deepEqual(calls[1].params, ["submitted", "under_review", 14, 14, submittedFrom, submittedTo]);
+});
+
+test("adminKyc.model: recent applications parameterize name search", async (t) => {
+  const originalExecute = pool.execute;
+  let capturedSql = "";
+  let capturedParams = [];
+  pool.execute = async (sql, params) => {
+    capturedSql = sql;
+    capturedParams = params;
+    return [[]];
+  };
+  t.after(() => {
+    pool.execute = originalExecute;
+  });
+
+  await findRecentKycApplications({
+    statuses: ["approved"],
+    numericSearch: null,
+    nameSearch: "Asha",
+    submittedFrom: null,
+    submittedTo: null,
+    limit: 25,
+    offset: 0,
+  });
+
+  assert.match(capturedSql, /u\.name LIKE \?/);
+  assert.deepEqual(capturedParams, ["approved", "%Asha%", 25, 0]);
+});
+
+test("adminKyc.model: approved review-date filters require review timestamps and order by approval date", async (t) => {
+  const originalExecute = pool.execute;
+  const calls = [];
+  pool.execute = async (sql, params) => {
+    calls.push({ sql, params });
+    return [[{ total: 1 }]];
+  };
+  t.after(() => {
+    pool.execute = originalExecute;
+  });
+
+  const reviewedFrom = new Date("2026-11-22T18:30:00.000Z");
+  const reviewedTo = new Date("2026-11-23T18:30:00.000Z");
+  const filters = {
+    statuses: ["approved"],
+    numericSearch: null,
+    nameSearch: null,
+    submittedFrom: null,
+    submittedTo: null,
+    reviewedFrom,
+    reviewedTo,
+    limit: 25,
+    offset: 0,
+  };
+
+  await findRecentKycApplications(filters);
+  await countRecentKycApplications(filters);
+
+  assert.match(calls[0].sql, /kc\.reviewed_at IS NOT NULL/);
+  assert.match(calls[0].sql, /kc\.reviewed_at >= \?/);
+  assert.match(calls[0].sql, /kc\.reviewed_at < \?/);
+  assert.match(calls[0].sql, /ORDER BY kc\.reviewed_at DESC, kc\.id DESC/);
+  assert.deepEqual(calls[0].params, ["approved", reviewedFrom, reviewedTo, 25, 0]);
+  assert.deepEqual(calls[1].params, ["approved", reviewedFrom, reviewedTo]);
+});
 
 //
 // ADMIN KYC REJECTION MODEL TESTS

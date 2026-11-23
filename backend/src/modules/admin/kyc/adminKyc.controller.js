@@ -7,17 +7,38 @@ import adminKycService from "./adminKyc.service.js";
  */
 async function getKycApplicationsController(req, res, next) {
   try {
-    const { status, page, limit } = req.query;
+    const { status, page, limit, search, submittedFrom, submittedTo } = req.query;
 
     const result = await adminKycService.getKycApplications({
       status,
       page,
       limit,
+      search,
+      submittedFrom,
+      submittedTo,
     });
 
     return res.status(200).json({
       success: true,
       message: "KYC applications fetched successfully",
+      data: result,
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+/**
+ * GET /api/admin/kyc/recent
+ * Fetch recent submitted KYC applications for the admin dashboard.
+ */
+async function getRecentKycApplicationsController(req, res, next) {
+  try {
+    const result = await adminKycService.getRecentKycApplications(req.query);
+
+    return res.status(200).json({
+      success: true,
+      message: "Recent KYC applications fetched successfully",
       data: result,
     });
   } catch (error) {
@@ -117,6 +138,7 @@ async function rejectKycApplicationController(req, res, next) {
 
 const adminKycController = {
   getKycApplicationsController,
+  getRecentKycApplicationsController,
   getKycApplicationDetailsController,
   getKycDocumentAccessController,
   approveKycApplicationController,
@@ -125,6 +147,7 @@ const adminKycController = {
 
 export {
   getKycApplicationsController,
+  getRecentKycApplicationsController,
   getKycApplicationDetailsController,
   getKycDocumentAccessController,
   approveKycApplicationController,

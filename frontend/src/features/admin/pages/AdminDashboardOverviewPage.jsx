@@ -1,17 +1,19 @@
-import React, { useMemo } from "react";
+import React from "react";
 import { DashboardOverview } from "../components/DashboardOverview";
-import { useUsers, computeUserStats } from "../hooks/useAdminUsers";
+import { useAdminDashboardSummary } from "../hooks/useAdminDashboardSummary";
 
 export default function AdminDashboardOverviewPage() {
-  const { data: users = [], isLoading, refetch } = useUsers();
-
-  const stats = useMemo(() => computeUserStats(users), [users]);
+  const summaryQuery = useAdminDashboardSummary();
 
   return (
     <DashboardOverview
-      stats={stats}
-      loadUsers={refetch}
-      isLoadingUsers={isLoading}
+      summary={summaryQuery.data}
+      isLoading={summaryQuery.isLoading}
+      isError={summaryQuery.isError}
+      error={summaryQuery.error}
+      isFetching={summaryQuery.isFetching}
+      dataUpdatedAt={summaryQuery.dataUpdatedAt}
+      refresh={summaryQuery.refetch}
     />
   );
 }

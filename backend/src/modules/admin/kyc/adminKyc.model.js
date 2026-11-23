@@ -2,15 +2,146 @@
 import pool from "../../../config/db.js";
 
 /**
- * Fetch KYC applications with pagination and status filtering.
+ * Fetch KYC applications with pagination, status, search and submission-date filtering.
+ * Search matches case ID, user ID, name, email and mobile across all records.
  */
-async function findKycApplications({ statuses, limit, offset }) {
+async function findKycApplications({ statuses, limit, offset, search, submittedFrom, submittedTo }) {
   if (!Array.isArray(statuses) || statuses.length === 0) {
     throw new Error("At least one KYC status is required");
   }
 
-  const placeholders = statuses.map(() => "?").join(", ");
+  const conditions = [`kc.status IN (${statuses.map(() => "?").join(", ")})`];
+  const params = [...statuses];
 
+  if (search) {
+    conditions.push(`(kc.id = ? OR kc.user_id = ? OR u.name LIKE ? OR u.email LIKE ? OR u.mobile LIKE ?)`);
+    const numeric = /^\d+$/.test(search) ? Number(search) : null;
+    const like = `%${search}%`;
+    params.push(numeric, numeric, like, like, like);
+  }
+
+  if (submittedFrom) {
+    conditions.push("kc.submitted_at >= ?");
+    params.push(submittedFrom);
+  }
+  if (submittedTo) {
+    conditions.push("kc.submitted_at < ?");
+    params.push(submittedTo);
+  }
+
+  const [rows] = await pool.execute(
+    `SELECT
+       kc.id AS case_id,
+       u.id AS user_id,
+       u.name,
+       u.email,
+       u.mobile,
+       u.status AS user_status,
+       kc.status AS kyc_status,
+       kc.submitted_at,
+       kc.reviewed_at,
+       kc.created_at
+      FROM kyc_cases kc
+      INNER JOIN users u ON u.id = kc.user_id
+      WHERE ${conditions.join(" AND ")}
+      ORDER BY kc.submitted_at DESC, kc.id DESC
+      LIMIT ? OFFSET ?`,
+    [...params, limit, offset],
+  );
+
+  return rows;
+}
+
+/**
+ * Count KYC applications matching the selected statuses, search and submission-date filters.
+ */
+async function countKycApplications(statuses, { search, submittedFrom, submittedTo } = {}) {
+  if (!Array.isArray(statuses) || statuses.length === 0) {
+    throw new Error("At least one KYC status is required");
+  }
+
+  const conditions = [`status IN (${statuses.map(() => "?").join(", ")})`];
+  const params = [...statuses];
+
+  if (search) {
+    conditions.push(`(id = ? OR user_id = ? OR name LIKE ? OR email LIKE ? OR mobile LIKE ?)`);
+    const numeric = /^\d+$/.test(search) ? Number(search) : null;
+    const like = `%${search}%`;
+    params.push(numeric, numeric, like, like, like);
+  }
+
+  if (submittedFrom) {
+    conditions.push("submitted_at >= ?");
+    params.push(submittedFrom);
+  }
+  if (submittedTo) {
+    conditions.push("submitted_at < ?");
+    params.push(submittedTo);
+  }
+
+  const [rows] = await pool.execute(
+    `SELECT COUNT(*) AS total
+     FROM kyc_cases
+     WHERE ${conditions.join(" AND ")}`,
+    params,
+  );
+
+  return Number(rows[0].total);
+}
+
+function buildRecentKycConditions({
+  statuses,
+  numericSearch,
+  nameSearch,
+  submittedFrom,
+  submittedTo,
+  reviewedFrom,
+  reviewedTo,
+}) {
+  if (!Array.isArray(statuses) || statuses.length === 0) {
+    throw new Error("At least one KYC status is required");
+  }
+
+  const conditions = [
+    `kc.status IN (${statuses.map(() => "?").join(", ")})`,
+    "kc.submitted_at IS NOT NULL",
+  ];
+  const params = [...statuses];
+
+  if (numericSearch !== null && numericSearch !== undefined) {
+    conditions.push("(kc.id = ? OR kc.user_id = ?)");
+    params.push(numericSearch, numericSearch);
+  } else if (nameSearch) {
+    conditions.push("u.name LIKE ?");
+    params.push(`%${nameSearch}%`);
+  }
+
+  if (submittedFrom) {
+    conditions.push("kc.submitted_at >= ?");
+    params.push(submittedFrom);
+  }
+  if (submittedTo) {
+    conditions.push("kc.submitted_at < ?");
+    params.push(submittedTo);
+  }
+  if (reviewedFrom || reviewedTo) {
+    conditions.push("kc.reviewed_at IS NOT NULL");
+  }
+  if (reviewedFrom) {
+    conditions.push("kc.reviewed_at >= ?");
+    params.push(reviewedFrom);
+  }
+  if (reviewedTo) {
+    conditions.push("kc.reviewed_at < ?");
+    params.push(reviewedTo);
+  }
+
+  return { whereClause: conditions.join(" AND "), params };
+}
+
+/** Fetches recent, submitted KYC application summaries for the dashboard. */
+async function findRecentKycApplications(filters) {
+  const { whereClause, params } = buildRecentKycConditions(filters);
   const [rows] = await pool.execute(
     `SELECT
        kc.id AS case_id,
@@ -25,33 +156,25 @@ async function findKycApplications({ statuses, limit, offset }) {
        kc.created_at
      FROM kyc_cases kc
      INNER JOIN users u ON u.id = kc.user_id
-     WHERE kc.status IN (${placeholders})
-     ORDER BY kc.submitted_at DESC, kc.id DESC
+     WHERE ${whereClause}
+     ORDER BY ${filters.reviewedFrom || filters.reviewedTo ? "kc.reviewed_at" : "kc.submitted_at"} DESC, kc.id DESC
      LIMIT ? OFFSET ?`,
-    [...statuses, limit, offset],
+    [...params, filters.limit, filters.offset],
   );
-
   return rows;
 }
 
-/**
- * Count KYC applications matching the selected statuses.
- */
-async function countKycApplications(statuses) {
-  if (!Array.isArray(statuses) || statuses.length === 0) {
-    throw new Error("At least one KYC status is required");
-  }
-
-  const placeholders = statuses.map(() => "?").join(", ");
-
+/** Counts the same filtered, submitted KYC application set as the page query. */
+async function countRecentKycApplications(filters) {
+  const { whereClause, params } = buildRecentKycConditions(filters);
   const [rows] = await pool.execute(
     `SELECT COUNT(*) AS total
-     FROM kyc_cases
-     WHERE status IN (${placeholders})`,
-    statuses,
+     FROM kyc_cases kc
+     INNER JOIN users u ON u.id = kc.user_id
+     WHERE ${whereClause}`,
+    params,
   );
-
-  return Number(rows[0].total);
+  return Number(rows[0]?.total || 0);
 }
 
 /**
@@ -299,6 +422,8 @@ async function insertStatusHistory(
 const adminKycModel = {
   findKycApplications,
   countKycApplications,
+  findRecentKycApplications,
+  countRecentKycApplications,
   findKycCaseById,
   findKycStepsByCaseId,
   findVerificationsByCaseId,
@@ -316,6 +441,8 @@ const adminKycModel = {
 export {
   findKycApplications,
   countKycApplications,
+  findRecentKycApplications,
+  countRecentKycApplications,
   findKycCaseById,
   findKycStepsByCaseId,
   findVerificationsByCaseId,

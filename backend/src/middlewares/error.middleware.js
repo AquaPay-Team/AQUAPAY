@@ -1,3 +1,5 @@
+import { recordApplicationError } from "../monitoring/operationsMonitor.js";
+
 function notFound(req, res, next) {
   res.status(404).json({
     success: false,
@@ -52,6 +54,7 @@ function errorHandler(err, req, res, next) {
     }
 
     console.error("[AquaPay Error]", logEntry);
+    recordApplicationError(req, statusCode);
   }
 
   const response = {

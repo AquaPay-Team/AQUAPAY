@@ -12,6 +12,11 @@ export async function getAdminKycDetails(caseId) {
   return data.data;
 }
 
+export async function getAdminKycDetailsByUserId(userId) {
+  const { data } = await api.get(`${root}/user/${userId}`);
+  return data.data;
+}
+
 export async function getAdminKycDocument(caseId, assetId) {
   const { data } = await api.get(`${root}/${caseId}/documents/${assetId}`);
   return data.data;

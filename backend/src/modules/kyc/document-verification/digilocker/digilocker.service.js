@@ -160,14 +160,6 @@ function validReferenceResponse(response, now = Date.now()) {
   return diagnoseReferenceResponse(response, now).valid;
 }
 
-function assertOptionalProviderSuccess(response) {
-  // Some IDTO tenant responses omit a status field. Preserve those documented/observed
-  // responses, but never continue when the provider explicitly reports a non-success.
-  if (response && Object.hasOwn(response, "status") && response.status !== "success") {
-    throw new Error("IDTO_OPERATION_FAILED");
-  }
-}
-
 function stackLocation(error) {
   if (typeof error?.stack !== "string") return null;
   for (const line of error.stack.split("\n").slice(1)) {

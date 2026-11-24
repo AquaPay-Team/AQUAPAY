@@ -1,5 +1,6 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/features/auth";
 import {
   Users,
   UserCheck,
@@ -22,17 +23,8 @@ export function DashboardOverview({
 }) {
   const navigate = useNavigate();
   const openDirectory = () => navigate("/admin/users");
-  const currentUser = (() => {
-    try {
-      return JSON.parse(
-        localStorage.getItem("adminUser") ||
-          localStorage.getItem("user") ||
-          "{}"
-      );
-    } catch {
-      return {};
-    }
-  })();
+  const { user } = useAuth();
+  const currentUser = user || {};
 
   const roleId = Number(currentUser.role_id) || 1;
   const isSuperAdmin = roleId === 1;

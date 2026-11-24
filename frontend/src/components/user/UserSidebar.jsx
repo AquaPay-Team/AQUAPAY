@@ -35,14 +35,8 @@ export function UserSidebar({
 }) {
   const navigate = useNavigate();
   const location = useLocation();
-
-  const currentUser = (() => {
-    try {
-      return JSON.parse(localStorage.getItem("user") || "{}");
-    } catch {
-      return {};
-    }
-  })();
+  const { user, logout } = useAuth();
+  const currentUser = user || {};
 
   const roleMeta = getRoleMeta(currentUser) || {
     name: currentUser.role_name || "Partner",
@@ -65,7 +59,6 @@ export function UserSidebar({
     setOpenGroups((prev) => ({ ...prev, [groupId]: !prev[groupId] }));
   };
 
-  const { logout } = useAuth();
   const handleLogout = () => {
     toast.info("Signed out successfully");
     logout();

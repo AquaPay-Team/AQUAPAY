@@ -67,21 +67,14 @@ async function updateUser({ actorId, targetUserId, fields }) {
       );
     }
 
-    // 4. Reject an email that is unchanged from the current email.
-    if (fields.email !== undefined) {
-      const newEmail = fields.email.trim().toLowerCase();
-      const currentEmail = String(currentUser.email || "")
-        .trim()
-        .toLowerCase();
-
-      if (newEmail === currentEmail) {
-        throw new ApiError(
-          httpStatus.BAD_REQUEST,
-          "New email must be different from the current email",
-          [],
-          "VALIDATION_ERROR",
-        );
-      }
+    //4. Prevent an administartor from deactivating their own account
+    if(Number(actorId) === targetId && fields.status === "inactive"){
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        "Administrators cannot deactivate their own account",
+        [],
+        "VALIDATION_ERROR",
+      );
     }
 
     // 5. Check email and mobile uniqueness, excluding this user.

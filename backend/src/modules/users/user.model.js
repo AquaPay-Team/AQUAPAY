@@ -159,6 +159,7 @@ async function updateUserFields(userId, fields, connection) {
     "state",
     "city",
     "pincode",
+    "status",
   ];
 
   const entries = Object.entries(fields);

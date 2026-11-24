@@ -9,12 +9,13 @@ function validatePanVerificationInput(input) {
   }
 
   const keys = Object.keys(input);
-  if (keys.some((key) => !["panNumber", "consent"].includes(key))) {
+  if (keys.some((key) => !["panNumber", "pan", "consent"].includes(key))) {
     throw new ApiError(httpStatus.BAD_REQUEST, "Invalid PAN verification request", [], "VALIDATION_ERROR");
   }
 
-  const panNumber = typeof input.panNumber === "string"
-    ? input.panNumber.trim().toUpperCase()
+  const rawPan = input.panNumber || input.pan;
+  const panNumber = typeof rawPan === "string"
+    ? rawPan.trim().toUpperCase()
     : "";
   if (!PAN_NUMBER_PATTERN.test(panNumber)) {
     throw new ApiError(httpStatus.BAD_REQUEST, "A valid PAN number is required", [], "PAN_NUMBER_INVALID");

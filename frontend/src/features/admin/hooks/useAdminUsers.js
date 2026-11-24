@@ -56,6 +56,8 @@ export function useUsers(roleId = "") {
       const response = await fetchBackendUsers(roleId ? { roleId } : {});
       return Array.isArray(response?.data) ? response.data : [];
     },
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 }
 

@@ -388,24 +388,18 @@ test("update-user service: updates permitted fields and commits", async () => {
   }
 });
 
-test("update-user service: rejects an unchanged email", async () => {
+test("update-user service: permits unchanged email", async () => {
   const mock = mockUpdateUserDependencies();
 
   try {
-    await assert.rejects(
-      updateUserService.updateUser({
-        actorId: 1,
-        targetUserId: 10,
-        fields: { email: "OLD@example.com" },
-      }),
-      (error) => {
-        assert.equal(error.statusCode, 400);
-        assert.equal(error.code, "VALIDATION_ERROR");
-        return true;
-      },
-    );
+    const result = await updateUserService.updateUser({
+      actorId: 1,
+      targetUserId: 10,
+      fields: { email: "old@example.com", name: "Updated Name" },
+    });
 
-    assert.deepEqual(mock.calls, ["begin", "rollback", "release"]);
+    assert.equal(result.email, "old@example.com");
+    assert.deepEqual(mock.calls, ["begin", "commit", "release"]);
   } finally {
     mock.restore();
   }
@@ -539,7 +533,7 @@ test("update-user validator: converts empty optional fields to null", () => {
 });
 test("update-user validator: rejects protected and unknown fields", () => {
   const protectedFields = [
-    { status: "inactive" },
+    { status: "invalid_status" },
     { company_id: 2 },
     { parent_id: 5 },
     { role_id: 1 },

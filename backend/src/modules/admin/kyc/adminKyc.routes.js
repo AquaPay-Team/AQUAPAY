@@ -17,6 +17,14 @@ router.get(
   adminKycController.getKycApplicationsController,
 );
 
+// Fetch details of KYC application by User ID (MUST precede /:caseId)
+router.get(
+  "/user/:userId",
+  requireAuth,
+  requireAdmin,
+  adminKycController.getKycApplicationByUserIdController,
+);
+
 // Fetch details of one KYC application
 router.get(
   "/:caseId",

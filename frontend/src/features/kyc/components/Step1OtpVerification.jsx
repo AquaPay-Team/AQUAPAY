@@ -1,3 +1,4 @@
+import React, { useRef } from "react";
 import { ShieldCheck, AlertCircle, Loader2, ArrowLeft } from "lucide-react";
 /**
  * Step 1 OTP Verification Card

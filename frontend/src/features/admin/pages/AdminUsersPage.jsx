@@ -2,7 +2,6 @@ import React, { useState, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { AdminUserTable } from "../components/AdminUserTable";
-import { ActionModal } from "../modals/ActionModal";
 import { AddAgentModal } from "@/features/users/components/AddAgentModal";
 import {
   useUsers,
@@ -21,11 +20,12 @@ export default function AdminUsersPage() {
 
   // Local filtering state
   const [memberSearch, setMemberSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("All");
+  const [kycFilter, setKycFilter] = useState("All");
+  const [accountFilter, setAccountFilter] = useState("All");
 
   // Modals state
-  const [actionModalUser, setActionModalUser] = useState(null);
   const [addAgentModalOpen, setAddAgentModalOpen] = useState(false);
+  const [updatingUserId, setUpdatingUserId] = useState(null);
 
   // Mutations
   const createUserMutation = useCreateUser();
@@ -42,9 +42,22 @@ export default function AdminUsersPage() {
     return "All Users";
   };
 
+  const hasActiveFilters = Boolean(
+    memberSearch.trim() ||
+    kycFilter !== "All" ||
+    accountFilter !== "All"
+  );
+
+  const resetAllFilters = () => {
+    setMemberSearch("");
+    setKycFilter("All");
+    setAccountFilter("All");
+  };
+
   // Filtered members list
   const filteredMembers = useMemo(() => {
     return users.filter((u) => {
+      // 1. Text Search
       const q = memberSearch.toLowerCase().trim();
       const searchMatch =
         !q ||
@@ -54,16 +67,25 @@ export default function AdminUsersPage() {
         (u.shopname && u.shopname.toLowerCase().includes(q)) ||
         String(u.id).includes(q);
 
-      const statusMatch =
-        statusFilter === "All"
-          ? true
-          : statusFilter === "Active"
-          ? u.status === "active"
-          : u.status !== "active";
+      if (!searchMatch) return false;
 
-      return searchMatch && statusMatch;
+      // 2. Account Status Filter
+      const accountStatus = String(u.status || "active").toLowerCase();
+      if (accountFilter === "Active" && accountStatus !== "active") return false;
+      if (accountFilter === "Inactive" && accountStatus === "active") return false;
+
+      // 3. KYC Status Filter
+      const rawKyc = u.kyc?.status || u.kyc_status || (typeof u.kyc === "string" ? u.kyc : "");
+      const kycStatus = String(rawKyc || "pending").toLowerCase();
+
+      if (kycFilter === "Pending" && kycStatus !== "pending") return false;
+      if (kycFilter === "Under Review" && kycStatus !== "under_review" && kycStatus !== "submitted") return false;
+      if (kycFilter === "Verified" && kycStatus !== "approved" && kycStatus !== "verified" && kycStatus !== "completed") return false;
+      if (kycFilter === "Rejected" && kycStatus !== "rejected" && accountStatus !== "rejected") return false;
+
+      return true;
     });
-  }, [users, memberSearch, statusFilter]);
+  }, [users, memberSearch, kycFilter, accountFilter]);
 
   // Export users to CSV
   const handleExportCSV = (filename, dataRows) => {
@@ -113,37 +135,50 @@ export default function AdminUsersPage() {
     }
   };
 
-  const handleUpdateMemberDetails = async (userId, updatedFields) => {
+  const handleToggleStatus = async (user) => {
+    if (!user || updatingUserId) return;
+    const currentActive = (user.status || "active").toLowerCase() === "active";
+    const nextStatus = currentActive ? "inactive" : "active";
+
     try {
-      await updateUserMutation.mutateAsync({ userId, fields: updatedFields });
-      toast.success("User profile updated successfully.");
-      setActionModalUser(null);
+      setUpdatingUserId(user.id);
+      await updateUserMutation.mutateAsync({
+        userId: user.id,
+        fields: { status: nextStatus },
+      });
+      toast.success(
+        `User ${user.name || `#${user.id}`} ${
+          nextStatus === "active" ? "activated" : "deactivated"
+        } successfully.`
+      );
     } catch (err) {
-      const errMsg = err.response?.data?.message || err.message || "Failed to update agent details";
+      const errMsg =
+        err.response?.data?.message || err.message || "Failed to update account status";
       toast.error(errMsg);
+    } finally {
+      setUpdatingUserId(null);
     }
   };
-
+  
   return (
     <>
       <AdminUserTable
         getCurrentRoleTitle={getCurrentRoleTitle}
         memberSearch={memberSearch}
         setMemberSearch={setMemberSearch}
-        statusFilter={statusFilter}
-        setStatusFilter={setStatusFilter}
+        kycFilter={kycFilter}
+        setKycFilter={setKycFilter}
+        accountFilter={accountFilter}
+        setAccountFilter={setAccountFilter}
+        hasActiveFilters={hasActiveFilters}
+        resetAllFilters={resetAllFilters}
         filteredMembers={filteredMembers}
         handleExportCSV={handleExportCSV}
         setAddAgentModalOpen={setAddAgentModalOpen}
-        setActionModalUser={setActionModalUser}
         isLoadingUsers={isLoadingUsers}
         selectedRoleId={selectedRoleId}
-      />
-
-      <ActionModal
-        actionModalUser={actionModalUser}
-        setActionModalUser={setActionModalUser}
-        handleUpdateMemberDetails={handleUpdateMemberDetails}
+        onToggleStatus={handleToggleStatus}
+        updatingUserId={updatingUserId}
       />
 
       <AddAgentModal

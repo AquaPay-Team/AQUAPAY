@@ -73,12 +73,6 @@ export const ROLE_NAVIGATION = {
     },
     { id: "admin-roles", isDynamicRoles: true },
     {
-      id: "admin-kyc",
-      label: "KYC Management",
-      path: "/admin/kyc",
-      icon: "ShieldCheck",
-    },
-    {
       id: "admin-reports",
       label: "Server & Reports",
       path: "/admin/reports",

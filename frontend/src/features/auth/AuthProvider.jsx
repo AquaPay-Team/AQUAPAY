@@ -2,6 +2,7 @@ import React, { createContext, useState, useEffect, useCallback, useRef } from "
 import { getCurrentUser } from "../../api/auth.api";
 import { isAdminRole, isNormalUserRole } from "../../constants/roles";
 import { getToken, getCachedUser, setSession, clearSession, updateCachedUser } from "./session";
+import { queryClient } from "@/lib/queryClient";
 
 export const AuthContext = createContext(null);
 
@@ -10,6 +11,11 @@ export function AuthProvider({ children }) {
   const [isLoading, setIsLoading] = useState(true);
   const verifyingRef = useRef(false);
   const lastVerifiedAtRef = useRef(0);
+  const userRef = useRef(user);
+
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
 
   /**
    * Verify session via GET /api/auth/me (throttled to avoid redundant calls)
@@ -24,12 +30,12 @@ export function AuthProvider({ children }) {
 
     const now = Date.now();
     // Throttle checks to once every 15 seconds unless forced
-    if (!force && now - lastVerifiedAtRef.current < 15000 && user) {
+    if (!force && now - lastVerifiedAtRef.current < 15000 && userRef.current) {
       setIsLoading(false);
-      return user;
+      return userRef.current;
     }
 
-    if (verifyingRef.current) return user;
+    if (verifyingRef.current) return userRef.current;
     verifyingRef.current = true;
 
     try {
@@ -58,7 +64,7 @@ export function AuthProvider({ children }) {
       verifyingRef.current = false;
       return null;
     }
-  }, [user]);
+  }, []);
 
   // Initial boot verification
   useEffect(() => {
@@ -90,7 +96,11 @@ export function AuthProvider({ children }) {
   const logout = useCallback(() => {
     clearSession();
     setUser(null);
-    window.location.href = "/login";
+    setIsLoading(false);
+    try {
+      queryClient.clear();
+    } catch {}
+    window.location.replace("/login");
   }, []);
 
   const updateUser = useCallback((updatedFields) => {

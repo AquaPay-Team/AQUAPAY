@@ -77,6 +77,7 @@ export function useStep1Otp({ setCompletedSteps, setCurrentStep }) {
     isRequestingStep1Otp,
     isVerifyingStep1Otp,
     step1OtpError,
+    setStep1OtpError,
     handleRequestStep1Otp,
     handleVerifyStep1Otp,
   };

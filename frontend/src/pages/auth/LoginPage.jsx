@@ -42,16 +42,16 @@ export const LoginPage = () => {
     },
   });
   // Redirect if already authenticated
-  const { isAuthenticated, isAdmin, user } = useAuth();
+  const { isAuthenticated, isAdmin, user, isLoading: authLoading } = useAuth();
   useEffect(() => {
-    if (!isAuthenticated || !user) return;
+    if (authLoading || !isAuthenticated || !user) return;
     if (isAdmin) {
       navigate(ROUTES.ADMIN_DASHBOARD, { replace: true });
     } else {
       const kycDone = isKycComplete(user?.kyc?.status);
       navigate(kycDone ? ROUTES.USER_DASHBOARD : ROUTES.KYC, { replace: true });
     }
-  }, [isAuthenticated, isAdmin, user, navigate]);
+  }, [authLoading, isAuthenticated, isAdmin, user, navigate]);
 
   const onSubmit = async (data) => {
     try {

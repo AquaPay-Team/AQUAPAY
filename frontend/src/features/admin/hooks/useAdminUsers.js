@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   fetchBackendUsers,
   fetchBackendDescendantRoles,
+  fetchBackendUserStats,
   createBackendUser,
   updateBackendUser,
 } from "@/features/users/api/usersApi";
@@ -15,9 +16,18 @@ export const adminQueryKeys = {
 /**
  * Pure function to derive network stats from user records
  */
-export function computeUserStats(users = []) {
-  const safeUsers = Array.isArray(users) ? users : [];
-  const total = safeUsers.length;
+export function computeUserStats(input = []) {
+  let safeUsers = [];
+  let total = 0;
+
+  if (Array.isArray(input)) {
+    safeUsers = input;
+    total = input.length;
+  } else if (input && typeof input === "object") {
+    safeUsers = Array.isArray(input.users) ? input.users : [];
+    total = Number(input.pagination?.total) || safeUsers.length;
+  }
+
   const active = safeUsers.filter((u) => u.status === "active").length;
   const retailers = safeUsers.filter(
     (u) =>
@@ -49,13 +59,52 @@ export function computeUserStats(users = []) {
   };
 }
 
-export function useUsers(roleId = "") {
+export function useUsers(args = {}) {
+  const options = typeof args === "object" && args !== null ? args : { roleId: args };
+  const { roleId = "", page = 1, limit = 100, search = "", status = "", kycStatus = "" } = options;
+
+  const queryParams = {
+    ...(roleId ? { roleId } : {}),
+    page,
+    limit,
+    ...(search ? { search } : {}),
+    ...(status ? { status } : {}),
+    ...(kycStatus ? { kycStatus } : {}),
+  };
+
   return useQuery({
-    queryKey: adminQueryKeys.list(roleId),
+    queryKey: ["users", queryParams],
     queryFn: async () => {
-      const response = await fetchBackendUsers(roleId ? { roleId } : {});
-      return Array.isArray(response?.data) ? response.data : [];
+      const response = await fetchBackendUsers(queryParams);
+      const data = response?.data;
+      if (data && typeof data === "object" && Array.isArray(data.users)) {
+        return {
+          users: data.users,
+          pagination: data.pagination || {
+            total: data.users.length,
+            page: 1,
+            limit: 100,
+            totalPages: 1,
+            hasNextPage: false,
+            hasPreviousPage: false,
+          },
+        };
+      }
+      const fallbackList = Array.isArray(data) ? data : [];
+      return {
+        users: fallbackList,
+        pagination: {
+          total: fallbackList.length,
+          page: 1,
+          limit: 100,
+          totalPages: 1,
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+      };
     },
+    staleTime: 30000,
+    refetchOnWindowFocus: false,
   });
 }
 
@@ -86,5 +135,25 @@ export function useUpdateUser() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: adminQueryKeys.all });
     },
+  });
+}
+
+export function useUserStats() {
+  return useQuery({
+    queryKey: ["users", "stats"],
+    queryFn: async () => {
+      const response = await fetchBackendUserStats();
+      const stats = response?.data || response;
+      return {
+        total: Number(stats?.total || 0),
+        active: Number(stats?.active || 0),
+        retailers: Number(stats?.retailers || 0),
+        distributors: Number(stats?.distributors || 0),
+        verifiedKyc: Number(stats?.verifiedKyc || 0),
+        pendingKyc: Number(stats?.pendingKyc || 0),
+      };
+    },
+    staleTime: 30000,
+    refetchOnWindowFocus: false,
   });
 }

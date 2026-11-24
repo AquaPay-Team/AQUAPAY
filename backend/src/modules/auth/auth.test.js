@@ -139,10 +139,7 @@ test("auth SQL targets original schema columns and parameterizes identifiers", a
     assert.match(sql, /WHERE u\.email = \?/);
     assert.deepEqual(values, ["user@example.com"]);
 
-    assert.doesNotMatch(
-      sql,
-      /u\.full_name|u\.parent_user_id|c\.company_name|r\.slug/,
-    );
+    assert.doesNotMatch(sql, /u\.full_name|u\.parent_user_id|c\.company_name/);
   } finally {
     pool.execute = originalExecute;
   }
@@ -551,7 +548,7 @@ test("configured recovery stores token and OTP hashes and returns a generic resp
     return new Date();
   };
   try {
-        process.env.NODE_ENV = "test";
+    process.env.NODE_ENV = "test";
     const result = await authService.forgotPassword({
       identifier: "user@example.com",
       type: "email",
@@ -563,8 +560,11 @@ test("configured recovery stores token and OTP hashes and returns a generic resp
     );
     assert.equal(
       stored.otpHash,
-      crypto.createHmac("sha256", getAuthConfig().secret)
-        .update(`aquapay:password-reset:otp:${delivered.token}:${delivered.otp}`)
+      crypto
+        .createHmac("sha256", getAuthConfig().secret)
+        .update(
+          `aquapay:password-reset:otp:${delivered.token}:${delivered.otp}`,
+        )
         .digest("hex"),
     );
     assert.equal(stored.otpTtlMinutes, 5);
@@ -608,16 +608,25 @@ test("development recovery returns only the reset token and logs only the OTP", 
     const otp = terminal[0].slice(-6);
     assert.equal(
       stored.tokenHash,
-      crypto.createHash("sha256").update(result.developmentResetToken).digest("hex"),
+      crypto
+        .createHash("sha256")
+        .update(result.developmentResetToken)
+        .digest("hex"),
     );
     assert.equal(
       stored.otpHash,
-      crypto.createHmac("sha256", getAuthConfig().secret)
-        .update(`aquapay:password-reset:otp:${result.developmentResetToken}:${otp}`)
+      crypto
+        .createHmac("sha256", getAuthConfig().secret)
+        .update(
+          `aquapay:password-reset:otp:${result.developmentResetToken}:${otp}`,
+        )
         .digest("hex"),
     );
     assert.equal(JSON.stringify(result).includes(otp), false);
-    assert.equal(terminal.join(" ").includes(result.developmentResetToken), false);
+    assert.equal(
+      terminal.join(" ").includes(result.developmentResetToken),
+      false,
+    );
   } finally {
     process.env.NODE_ENV = previousNodeEnv;
     authModel.findUserByIdentifier = originalFind;
@@ -666,7 +675,9 @@ test("production recovery delivers credentials without returning or logging eith
   let delivered;
   process.env.NODE_ENV = "production";
   recoveryDelivery.isConfigured = () => true;
-  recoveryDelivery.sendPasswordReset = async (payload) => { delivered = payload; };
+  recoveryDelivery.sendPasswordReset = async (payload) => {
+    delivered = payload;
+  };
   authModel.findUserByIdentifier = async () => activeUser();
   authModel.createPasswordReset = async () => new Date();
   console.info = (message) => terminal.push(message);
@@ -728,11 +739,14 @@ test("production recovery delivery requires secure provider URLs and never logs 
     assert.equal(recoveryDelivery.isConfigured("email"), false);
   } finally {
     process.env.NODE_ENV = previousNodeEnv;
-    if (previousEndpoint === undefined) delete process.env.AUTH_RECOVERY_EMAIL_URL;
+    if (previousEndpoint === undefined)
+      delete process.env.AUTH_RECOVERY_EMAIL_URL;
     else process.env.AUTH_RECOVERY_EMAIL_URL = previousEndpoint;
-    if (previousApiKey === undefined) delete process.env.AUTH_RECOVERY_EMAIL_API_KEY;
+    if (previousApiKey === undefined)
+      delete process.env.AUTH_RECOVERY_EMAIL_API_KEY;
     else process.env.AUTH_RECOVERY_EMAIL_API_KEY = previousApiKey;
-    if (previousBaseUrl === undefined) delete process.env.AUTH_RECOVERY_BASE_URL;
+    if (previousBaseUrl === undefined)
+      delete process.env.AUTH_RECOVERY_BASE_URL;
     else process.env.AUTH_RECOVERY_BASE_URL = previousBaseUrl;
     globalThis.fetch = originalFetch;
     console.info = originalInfo;
@@ -757,9 +771,13 @@ test("forgot-password controller exposes the reset token only in development", a
         return this;
       },
     };
-    await authController.forgotPassword({ validatedBody: {} }, response, (error) => {
-      throw error;
-    });
+    await authController.forgotPassword(
+      { validatedBody: {} },
+      response,
+      (error) => {
+        throw error;
+      },
+    );
     return response;
   };
 
@@ -771,7 +789,10 @@ test("forgot-password controller exposes the reset token only in development", a
     process.env.NODE_ENV = "production";
     const productionResponse = await invokeController();
     assert.equal(productionResponse.body.data, null);
-    assert.equal(JSON.stringify(productionResponse.body).includes("A".repeat(43)), false);
+    assert.equal(
+      JSON.stringify(productionResponse.body).includes("A".repeat(43)),
+      false,
+    );
   } finally {
     process.env.NODE_ENV = previousNodeEnv;
     authService.forgotPassword = originalForgotPassword;
@@ -792,7 +813,8 @@ test("reset validates before hashing and only one concurrent request consumes a 
   let currentPasswordHash = await bcrypt.hash("old-password", 4);
   authModel.findUserByIdentifier = async () =>
     activeUser({ password_hash: currentPasswordHash });
-  authModel.checkPasswordResetCredentials = async ({ tokenHash: hash }) => hash === tokenHash;
+  authModel.checkPasswordResetCredentials = async ({ tokenHash: hash }) =>
+    hash === tokenHash;
   authModel.consumePasswordReset = async ({
     tokenHash: hash,
     otpHash,
@@ -919,7 +941,16 @@ test("password-reset OTP failures increment a token-scoped counter and stop at f
       if (sql.startsWith("SELECT id FROM users")) return [[{ id: 42 }], []];
       if (sql.includes("SELECT id, user_id, expires_at")) {
         return active && params[0] === tokenHash
-          ? [[{ id: 10, user_id: 42, expires_at: new Date(Date.now() + 60000) }], []]
+          ? [
+              [
+                {
+                  id: 10,
+                  user_id: 42,
+                  expires_at: new Date(Date.now() + 60000),
+                },
+              ],
+              [],
+            ]
           : [[], []];
       }
       if (sql.includes("SELECT request_count")) {
@@ -939,9 +970,15 @@ test("password-reset OTP failures increment a token-scoped counter and stop at f
       }
       throw new Error(`Unexpected SQL in OTP attempt test: ${sql}`);
     },
-    async commit() { commits += 1; },
-    async rollback() { throw new Error("Unexpected rollback"); },
-    release() { releases += 1; },
+    async commit() {
+      commits += 1;
+    },
+    async rollback() {
+      throw new Error("Unexpected rollback");
+    },
+    release() {
+      releases += 1;
+    },
   });
 
   try {
@@ -1114,16 +1151,40 @@ test("self-service password validation requires current, new, matching confirmat
   const run = (body) => {
     const req = { body };
     let error;
-    validateChangePassword(req, {}, (nextError) => { error = nextError; });
+    validateChangePassword(req, {}, (nextError) => {
+      error = nextError;
+    });
     return { req, error };
   };
   assert.equal(run({}).error.code, "VALIDATION_ERROR");
-  assert.equal(run({ currentPassword: "old-password", newPassword: "new-password", confirmPassword: "different-password" }).error.code, "VALIDATION_ERROR");
-  assert.equal(run({ currentPassword: "old-password", newPassword: "new-password", confirmPassword: "new-password", userId: 1 }).error.code, "VALIDATION_ERROR");
-  assert.deepEqual(run({ currentPassword: "old-password", newPassword: "new-password", confirmPassword: "new-password" }).req.validatedBody, {
-    currentPassword: "old-password",
-    newPassword: "new-password",
-  });
+  assert.equal(
+    run({
+      currentPassword: "old-password",
+      newPassword: "new-password",
+      confirmPassword: "different-password",
+    }).error.code,
+    "VALIDATION_ERROR",
+  );
+  assert.equal(
+    run({
+      currentPassword: "old-password",
+      newPassword: "new-password",
+      confirmPassword: "new-password",
+      userId: 1,
+    }).error.code,
+    "VALIDATION_ERROR",
+  );
+  assert.deepEqual(
+    run({
+      currentPassword: "old-password",
+      newPassword: "new-password",
+      confirmPassword: "new-password",
+    }).req.validatedBody,
+    {
+      currentPassword: "old-password",
+      newPassword: "new-password",
+    },
+  );
 });
 
 test("self-service password change verifies current password and updates only authenticated account transactionally", async () => {
@@ -1144,24 +1205,38 @@ test("self-service password change verifies current password and updates only au
       assert.equal(userId, "42");
       return { id: 42, password_hash: previousHash };
     };
-    authModel.updatePasswordHash = async (_connection, userId, passwordHash) => {
+    authModel.updatePasswordHash = async (
+      _connection,
+      userId,
+      passwordHash,
+    ) => {
       assert.equal(userId, "42");
       updatedHash = passwordHash;
       return true;
     };
 
     await assert.rejects(
-      authService.changePassword("42", { currentPassword: "wrong-current-password", newPassword: "new-password-123" }),
-      (error) => error.code === "CURRENT_PASSWORD_INVALID" && error.statusCode === 400,
+      authService.changePassword("42", {
+        currentPassword: "wrong-current-password",
+        newPassword: "new-password-123",
+      }),
+      (error) =>
+        error.code === "CURRENT_PASSWORD_INVALID" && error.statusCode === 400,
     );
     assert.equal(updatedHash, undefined);
     assert.equal(calls.includes("rollback"), true);
     calls.length = 0;
 
-    const result = await authService.changePassword("42", { currentPassword: "correct-current-password", newPassword: "new-password-123" });
+    const result = await authService.changePassword("42", {
+      currentPassword: "correct-current-password",
+      newPassword: "new-password-123",
+    });
     assert.deepEqual(result, { message: "Password changed successfully" });
     assert.equal(await bcrypt.compare("new-password-123", updatedHash), true);
-    assert.equal(await bcrypt.compare("correct-current-password", updatedHash), false);
+    assert.equal(
+      await bcrypt.compare("correct-current-password", updatedHash),
+      false,
+    );
     assert.equal(JSON.stringify(result).includes(updatedHash), false);
     assert.deepEqual(calls, ["begin", "commit", "release"]);
   } finally {
@@ -1178,11 +1253,18 @@ test("mounted self-service password endpoint rejects unauthenticated requests", 
       server.once("listening", resolve);
       server.once("error", reject);
     });
-    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/auth/change-password`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ currentPassword: "old-password", newPassword: "new-password", confirmPassword: "new-password" }),
-    });
+    const response = await fetch(
+      `http://127.0.0.1:${server.address().port}/api/auth/change-password`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          currentPassword: "old-password",
+          newPassword: "new-password",
+          confirmPassword: "new-password",
+        }),
+      },
+    );
     const body = await response.json();
     assert.equal(response.status, 401);
     assert.equal(body.code, "UNAUTHORIZED");

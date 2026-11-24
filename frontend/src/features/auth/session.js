@@ -62,6 +62,7 @@ export function clearSession() {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
     localStorage.removeItem(ADMIN_USER_KEY);
+    sessionStorage.clear();
   } catch (err) {
     console.error("Failed to clear session storage:", err);
   }

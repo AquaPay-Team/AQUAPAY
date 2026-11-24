@@ -20,6 +20,11 @@ export const fetchBackendUserById = async (id) => {
   return response.data;
 };
 
+export const fetchBackendUserStats = async () => {
+  const response = await httpClient.get("/users/stats");
+  return response.data;
+};
+
 export const createBackendUser = async (userData) => {
   const response = await httpClient.post("/users", userData);
   return response.data;

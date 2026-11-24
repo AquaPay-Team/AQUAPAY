@@ -65,6 +65,7 @@ function safeUser(user) {
     city: user.city,
     pincode: user.pincode,
     role_id: user.role_id,
+    role_slug: user.role_slug || null,
     company_id: user.company_id,
     parent_id: user.parent_id,
     status: user.status,

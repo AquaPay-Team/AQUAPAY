@@ -23,17 +23,24 @@ function getActorId(req) {
 
 const getUsers = asyncHandler(async (req, res) => {
   const actorId = getActorId(req);
-  const { kyc_status, kycStatus, search, roleId } = req.query || {};
+  const { kyc_status, kycStatus, status, search, roleId, page, limit } = req.query || {};
 
   const result = await service.getUsers(actorId, {
     kycStatus: kyc_status || kycStatus,
+    status,
     search,
     roleId,
+    page: page !== undefined ? page : 1,
+    limit: limit !== undefined ? limit : 100,
   });
+
+  const usersCount = result?.users
+    ? result.users.length
+    : (Array.isArray(result) ? result.length : 0);
 
   let message = "Users fetched successfully";
 
-  if (result.length === 0) {
+  if (usersCount === 0) {
     const isAdmin = req.user?.role_id === 1 || req.user?.role_slug === "AD";
 
     message = isAdmin
@@ -64,5 +71,12 @@ const getDescendantRoles = asyncHandler(async (req, res) => {
   );
 });
 
-export { getUsers, getUserById, getDescendantRoles };
-export default { getUsers, getUserById, getDescendantRoles };
+const getUserStats = asyncHandler(async (req, res) => {
+  const stats = await service.getUserStats(getActorId(req));
+  return res.status(httpStatus.OK).json(
+    new ApiResponse(httpStatus.OK, stats, "User statistics retrieved successfully"),
+  );
+});
+
+export { getUsers, getUserById, getDescendantRoles, getUserStats };
+export default { getUsers, getUserById, getDescendantRoles, getUserStats };

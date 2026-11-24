@@ -36,7 +36,9 @@ export const getAadhaarVerificationStatus = async (sessionId) => {
   return response.data;
 };
 
-export const verifyPanDetails = async ({ panNumber, consent = true }) => {
+export const verifyPanDetails = async (payload = {}) => {
+  const panNumber = (payload.panNumber || payload.pan || "").trim().toUpperCase();
+  const consent = payload.consent !== undefined ? payload.consent : true;
   const response = await api.post(
     "/kyc/pan/verify",
     { panNumber, consent },

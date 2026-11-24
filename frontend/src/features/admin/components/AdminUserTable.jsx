@@ -12,6 +12,9 @@ import {
 import { Link } from "react-router-dom";
 
 export function AdminUserTable({
+  scope = "admin",
+  basePath = "/admin/users",
+  canCreateUser = true,
   getCurrentRoleTitle = () => "All Users",
   memberSearch = "",
   setMemberSearch = () => {},
@@ -21,23 +24,38 @@ export function AdminUserTable({
   setAccountFilter = () => {},
   hasActiveFilters = false,
   resetAllFilters = () => {},
+  visibleMembers = [],
   filteredMembers = [],
+  totalUsers = 0,
+  uiPage = 1,
+  setUiPage = () => {},
+  totalUiPages = 1,
+  pageSize = 25,
   handleExportCSV = () => {},
   setAddAgentModalOpen = () => {},
   isLoadingUsers = false,
   selectedRoleId = "",
-  onToggleStatus = () => {},
+  onToggleStatus = null,
   updatingUserId = null,
 }) {
+  const displayMembers = visibleMembers.length > 0 ? visibleMembers : filteredMembers;
+
+  const visiblePageNumbers = React.useMemo(() => {
+    if (totalUiPages <= 5) {
+      return Array.from({ length: totalUiPages }, (_, i) => i + 1);
+    }
+    const start = Math.max(1, Math.min(uiPage - 2, totalUiPages - 4));
+    return Array.from({ length: 5 }, (_, i) => start + i);
+  }, [uiPage, totalUiPages]);
   return (
     <div className="space-y-5 max-w-7xl mx-auto pb-10">
       {/* ── Breadcrumb & Page Title ───────────────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <div className="text-xs text-slate-400 flex items-center gap-2 mb-1">
-            <span>Admin</span>
+            <span>{scope === "admin" ? "Admin" : "User"}</span>
             <span>/</span>
-            <span>Directory</span>
+            <span>{scope === "admin" ? "Directory" : "Team"}</span>
             <span>/</span>
             <span className="font-semibold text-slate-700 capitalize">
               {getCurrentRoleTitle()}
@@ -53,7 +71,7 @@ export function AdminUserTable({
 
         <button
           onClick={() => setAddAgentModalOpen(true)}
-          disabled={!selectedRoleId}
+          disabled={canCreateUser === false}
           className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs px-4 py-2 rounded-xl transition shadow-2xs flex items-center gap-2 cursor-pointer self-start sm:self-auto disabled:opacity-50"
         >
           <Plus className="w-4 h-4 text-white" strokeWidth={2.25} />
@@ -69,12 +87,12 @@ export function AdminUserTable({
             <h3 className="text-base font-bold text-slate-900">
               {getCurrentRoleTitle()} Records
             </h3>
-            <p className="text-xs text-slate-400 mt-1">{filteredMembers.length} accounts in this directory</p>
+            <p className="text-xs text-slate-400 mt-1">{totalUsers.toLocaleString()} accounts in this directory</p>
           </div>
 
           <div className="flex items-center gap-2.5 flex-wrap">
             <span className="px-3 py-2 bg-blue-50 text-blue-700 border border-blue-200/80 font-bold rounded-xl text-xs">
-              {filteredMembers.length} Found
+              {totalUsers.toLocaleString()} Found
             </span>
 
             <button
@@ -177,21 +195,23 @@ export function AdminUserTable({
                     </div>
                   </td>
                 </tr>
-              ) : filteredMembers.length === 0 ? (
+              ) : displayMembers.length === 0 ? (
                 <tr>
                   <td colSpan="6" className="text-center py-12 text-slate-400">
                     <div className="max-w-sm mx-auto space-y-1.5">
                       <p className="font-semibold text-slate-700 text-sm">
-                        {selectedRoleId ? `No ${getCurrentRoleTitle()} users found` : "Choose a role directory"}
+                        No {getCurrentRoleTitle()} accounts found
                       </p>
                       <p className="text-xs text-slate-400">
-                        {selectedRoleId ? "Try adjusting your search criteria." : "Select a permitted role from the Roles section in the sidebar."}
+                        {hasActiveFilters
+                          ? "Try adjusting your search criteria."
+                          : "No users created in this directory yet. Click Create User to onboard an agent."}
                       </p>
                     </div>
                   </td>
                 </tr>
               ) : (
-                filteredMembers.map((m) => {
+                displayMembers.map((m) => {
                   const isActive = (m.status || "active").toLowerCase() === "active";
                   const rawKyc = m.kyc?.status || m.kyc_status || (typeof m.kyc === "string" ? m.kyc : "");
                   const kycStatus = String(rawKyc || "pending").toLowerCase();
@@ -207,28 +227,43 @@ export function AdminUserTable({
                       key={m.id}
                       className="hover:bg-slate-50/80 transition-colors group"
                     >
-                      {/* Status Toggle */}
+                      {/* Status Toggle or Badge */}
                       <td className="py-4 px-5 text-center align-middle">
-                        <button
-                          type="button"
-                          onClick={() => onToggleStatus(m)}
-                          disabled={updatingUserId === m.id}
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${isActive
-                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200/80 hover:bg-emerald-100"
-                              : "bg-slate-100 text-slate-600 border border-slate-200 hover:bg-slate-200"
-                            }`}
-                          title={`Click to ${isActive ? "deactivate" : "activate"} account`}
-                        >
-                          {updatingUserId === m.id ? (
-                            <Loader2 className="w-3 h-3 animate-spin text-slate-500" />
-                          ) : (
+                        {onToggleStatus ? (
+                          <button
+                            type="button"
+                            onClick={() => onToggleStatus(m)}
+                            disabled={updatingUserId === m.id}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${isActive
+                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200/80 hover:bg-emerald-100"
+                                : "bg-slate-100 text-slate-600 border border-slate-200 hover:bg-slate-200"
+                              }`}
+                            title={`Click to ${isActive ? "deactivate" : "activate"} account`}
+                          >
+                            {updatingUserId === m.id ? (
+                              <Loader2 className="w-3 h-3 animate-spin text-slate-500" />
+                            ) : (
+                              <span
+                                className={`w-1.5 h-1.5 rounded-full ${isActive ? "bg-emerald-500" : "bg-slate-400"
+                                  }`}
+                              />
+                            )}
+                            <span>{isActive ? "Active" : "Inactive"}</span>
+                          </button>
+                        ) : (
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold ${isActive
+                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200/80"
+                                : "bg-slate-100 text-slate-600 border border-slate-200"
+                              }`}
+                          >
                             <span
                               className={`w-1.5 h-1.5 rounded-full ${isActive ? "bg-emerald-500" : "bg-slate-400"
                                 }`}
                             />
-                          )}
-                          <span>{isActive ? "Active" : "Inactive"}</span>
-                        </button>
+                            <span>{isActive ? "Active" : "Inactive"}</span>
+                          </span>
+                        )}
                       </td>
 
                       {/* Agent & Contact */}
@@ -304,7 +339,7 @@ export function AdminUserTable({
                                             {/* Action Button */}
                       <td className="py-4 px-5 text-center align-middle">
                         <Link
-                          to={`/admin/users/${m.id}?roleId=${encodeURIComponent(selectedRoleId)}`}
+                          to={`${basePath}/${m.id}?roleId=${encodeURIComponent(selectedRoleId)}`}
                           className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition border border-slate-200 inline-flex items-center justify-center cursor-pointer shadow-2xs hover:shadow-xs"
                           title="Manage User Profile & Settings"
                         >
@@ -317,6 +352,60 @@ export function AdminUserTable({
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* ── Table Footer Pagination ─────────────────────────────── */}
+        <div className="p-4 sm:px-6 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500 bg-white">
+          <div>
+            Showing{" "}
+            <span className="font-semibold text-slate-800">
+              {totalUsers === 0 ? 0 : (uiPage - 1) * pageSize + 1}
+            </span>
+            –
+            <span className="font-semibold text-slate-800">
+              {Math.min(uiPage * pageSize, totalUsers)}
+            </span>{" "}
+            of{" "}
+            <span className="font-semibold text-slate-800">
+              {totalUsers.toLocaleString()}
+            </span>{" "}
+            users
+          </div>
+
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setUiPage((p) => Math.max(1, p - 1))}
+              disabled={uiPage <= 1}
+              className="px-3 py-1.5 rounded-xl border border-slate-200 font-semibold text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer shadow-2xs"
+            >
+              Previous
+            </button>
+
+            {visiblePageNumbers.map((num) => (
+              <button
+                key={num}
+                type="button"
+                onClick={() => setUiPage(num)}
+                className={`w-8 h-8 rounded-xl font-bold transition cursor-pointer text-xs ${
+                  uiPage === num
+                    ? "bg-blue-600 text-white shadow-2xs"
+                    : "border border-slate-200 text-slate-700 bg-white hover:bg-slate-50"
+                }`}
+              >
+                {num}
+              </button>
+            ))}
+
+            <button
+              type="button"
+              onClick={() => setUiPage((p) => Math.min(totalUiPages, p + 1))}
+              disabled={uiPage >= totalUiPages}
+              className="px-3 py-1.5 rounded-xl border border-slate-200 font-semibold text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer shadow-2xs"
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
     </div>

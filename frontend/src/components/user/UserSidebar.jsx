@@ -45,24 +45,7 @@ export function UserSidebar({
 
   const navItems = getRoleNavigation(currentUser);
 
-  const [openGroups, setOpenGroups] = useState({
-    "sa-team": true,
-    "nsm-team": true,
-    "sh-team": true,
-    "cnf-team": true,
-    "md-team": true,
-    "dt-team": true,
-    "rt-kyc": true,
-  });
-
-  const toggleGroup = (groupId) => {
-    setOpenGroups((prev) => ({ ...prev, [groupId]: !prev[groupId] }));
-  };
-
-  const handleLogout = () => {
-    toast.info("Signed out successfully");
-    logout();
-  };
+  const [openGroups, setOpenGroups] = useState({});
 
   const isCurrentActive = (item) => {
     if (!item.path) return false;
@@ -71,6 +54,20 @@ export function UserSidebar({
       return true;
     }
     return false;
+  };
+
+  const isGroupActive = (item) => {
+    if (!item.children || !item.children.length) return false;
+    return item.children.some((child) => isCurrentActive(child));
+  };
+
+  const toggleGroup = (groupId, currentOpenState) => {
+    setOpenGroups((prev) => ({ ...prev, [groupId]: !currentOpenState }));
+  };
+
+  const handleLogout = () => {
+    toast.info("Signed out successfully");
+    logout();
   };
 
   const handleNavClick = (item) => {
@@ -173,12 +170,14 @@ export function UserSidebar({
           const IconComp = getIcon(item.icon);
 
           if (item.children && item.children.length > 0) {
-            const isGroupOpen = openGroups[item.id];
+            const isGroupOpen = openGroups[item.id] !== undefined
+              ? Boolean(openGroups[item.id])
+              : isGroupActive(item);
             return (
               <div key={item.id} className="py-0.5">
                 <button
                   type="button"
-                  onClick={() => toggleGroup(item.id)}
+                  onClick={() => toggleGroup(item.id, isGroupOpen)}
                   className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors cursor-pointer"
                 >
                   <div className="flex items-center gap-3">

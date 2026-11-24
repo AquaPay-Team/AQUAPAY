@@ -3,7 +3,7 @@ import pool from "../../config/db.js";
 
 const SAFE_USER_FIELDS = `u.id, u.name AS name, u.email, u.mobile,
   u.role_id, u.company_id, u.parent_id AS parent_id, u.status,
-  r.name AS role_name, c.name AS company_name`;
+  r.name AS role_name, r.slug AS role_slug, c.name AS company_name`;
 const RESET_OTP_ATTEMPT_WINDOW_START = "2000-01-01 00:00:00";
 const RESET_OTP_MAX_ATTEMPTS = 5;
 

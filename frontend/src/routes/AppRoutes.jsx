@@ -25,6 +25,7 @@ const UserTeam = lazy(() => import("../pages/user/UserTeam"));
 const UserProfile = lazy(() => import("@/features/users/pages/UserProfile"));
 const UserSettings = lazy(() => import("../pages/user/UserSettings"));
 const KycVerificationPage = lazy(() => import("../pages/kyc/KycVerificationPage"));
+const UserOperationPage = lazy(() => import("../pages/user/UserOperationPage"));
 
 export function AppRoutes() {
   return (
@@ -57,6 +58,10 @@ export function AppRoutes() {
           <Route path="team" element={<UserTeam />} />
           <Route path="team/create" element={<Navigate to="/user/team" replace />} />
           <Route path="team/:id" element={<UserProfile />} />
+          <Route path="fund/*" element={<UserOperationPage />} />
+          <Route path="services/*" element={<UserOperationPage />} />
+          <Route path="reports/*" element={<UserOperationPage />} />
+          <Route path="statement" element={<UserOperationPage />} />
           <Route path="*" element={<Navigate to="/user/dashboard" replace />} />
         </Route>
 

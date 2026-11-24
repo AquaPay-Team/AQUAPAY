@@ -10,18 +10,41 @@ import {
   useUpdateUser,
 } from "../hooks/useAdminUsers";
 
+const EMPTY_USERS = [];
+
 export default function AdminUsersPage() {
   const [searchParams] = useSearchParams();
   const selectedRoleId = searchParams.get("roleId") || "";
 
-  // Data fetching via TanStack Query
-  const { data: users = [], isLoading: isLoadingUsers } = useUsers(selectedRoleId);
-  const { data: permittedRoles = [] } = useDescendantRoles();
+  // Pagination state (UI page displays 25 users, backend fetches in batches of 100)
+  const UI_PAGE_SIZE = 25;
+  const [uiPage, setUiPage] = useState(1);
+  const backendBatch = Math.max(1, Math.ceil(uiPage / 4));
 
   // Local filtering state
   const [memberSearch, setMemberSearch] = useState("");
   const [kycFilter, setKycFilter] = useState("All");
   const [accountFilter, setAccountFilter] = useState("All");
+
+  // Data fetching via TanStack Query with server-side pagination & filters
+  const { data: usersData, isLoading: isLoadingUsers } = useUsers({
+    roleId: selectedRoleId,
+    page: backendBatch,
+    limit: 100,
+    search: memberSearch.trim(),
+    status: accountFilter === "All" ? "" : accountFilter.toLowerCase(),
+    kycStatus: kycFilter === "All" ? "" : kycFilter.toLowerCase(),
+  });
+
+  const users = usersData?.users || EMPTY_USERS;
+  const pagination = usersData?.pagination || {
+    total: users.length,
+    page: backendBatch,
+    limit: 100,
+    totalPages: 1,
+  };
+
+  const { data: permittedRoles = [] } = useDescendantRoles();
 
   // Modals state
   const [addAgentModalOpen, setAddAgentModalOpen] = useState(false);
@@ -48,44 +71,36 @@ export default function AdminUsersPage() {
     accountFilter !== "All"
   );
 
+  const handleSearchChange = (val) => {
+    setMemberSearch(val);
+    setUiPage(1);
+  };
+
+  const handleKycFilterChange = (val) => {
+    setKycFilter(val);
+    setUiPage(1);
+  };
+
+  const handleAccountFilterChange = (val) => {
+    setAccountFilter(val);
+    setUiPage(1);
+  };
+
   const resetAllFilters = () => {
     setMemberSearch("");
     setKycFilter("All");
     setAccountFilter("All");
+    setUiPage(1);
   };
 
-  // Filtered members list
-  const filteredMembers = useMemo(() => {
-    return users.filter((u) => {
-      // 1. Text Search
-      const q = memberSearch.toLowerCase().trim();
-      const searchMatch =
-        !q ||
-        (u.name && u.name.toLowerCase().includes(q)) ||
-        (u.mobile && u.mobile.includes(q)) ||
-        (u.email && u.email.toLowerCase().includes(q)) ||
-        (u.shopname && u.shopname.toLowerCase().includes(q)) ||
-        String(u.id).includes(q);
+  // Slices 25 users per UI page from the 100-user batch loaded in memory
+  const visibleMembers = useMemo(() => {
+    const sliceStart = ((uiPage - 1) % 4) * UI_PAGE_SIZE;
+    return users.slice(sliceStart, sliceStart + UI_PAGE_SIZE);
+  }, [users, uiPage]);
 
-      if (!searchMatch) return false;
-
-      // 2. Account Status Filter
-      const accountStatus = String(u.status || "active").toLowerCase();
-      if (accountFilter === "Active" && accountStatus !== "active") return false;
-      if (accountFilter === "Inactive" && accountStatus === "active") return false;
-
-      // 3. KYC Status Filter
-      const rawKyc = u.kyc?.status || u.kyc_status || (typeof u.kyc === "string" ? u.kyc : "");
-      const kycStatus = String(rawKyc || "pending").toLowerCase();
-
-      if (kycFilter === "Pending" && kycStatus !== "pending") return false;
-      if (kycFilter === "Under Review" && kycStatus !== "under_review" && kycStatus !== "submitted") return false;
-      if (kycFilter === "Verified" && kycStatus !== "approved" && kycStatus !== "verified" && kycStatus !== "completed") return false;
-      if (kycFilter === "Rejected" && kycStatus !== "rejected" && accountStatus !== "rejected") return false;
-
-      return true;
-    });
-  }, [users, memberSearch, kycFilter, accountFilter]);
+  const totalUsers = pagination.total || 0;
+  const totalUiPages = Math.max(1, Math.ceil(totalUsers / UI_PAGE_SIZE));
 
   // Export users to CSV
   const handleExportCSV = (filename, dataRows) => {
@@ -165,14 +180,20 @@ export default function AdminUsersPage() {
       <AdminUserTable
         getCurrentRoleTitle={getCurrentRoleTitle}
         memberSearch={memberSearch}
-        setMemberSearch={setMemberSearch}
+        setMemberSearch={handleSearchChange}
         kycFilter={kycFilter}
-        setKycFilter={setKycFilter}
+        setKycFilter={handleKycFilterChange}
         accountFilter={accountFilter}
-        setAccountFilter={setAccountFilter}
+        setAccountFilter={handleAccountFilterChange}
         hasActiveFilters={hasActiveFilters}
         resetAllFilters={resetAllFilters}
-        filteredMembers={filteredMembers}
+        filteredMembers={users}
+        visibleMembers={visibleMembers}
+        uiPage={uiPage}
+        setUiPage={setUiPage}
+        totalUsers={totalUsers}
+        totalUiPages={totalUiPages}
+        pageSize={UI_PAGE_SIZE}
         handleExportCSV={handleExportCSV}
         setAddAgentModalOpen={setAddAgentModalOpen}
         isLoadingUsers={isLoadingUsers}

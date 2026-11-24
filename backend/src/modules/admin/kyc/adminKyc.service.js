@@ -12,8 +12,7 @@ const ALLOWED_STATUSES = [
 
 const DEFAULT_STATUSES = ["submitted", "under_review"];
 
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 10;
+const DEFAULT_LIMIT = 25;
 const RECENT_DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 100;
 const ISO_INSTANT = /^(\d{4})-(\d{2})-(\d{2})T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,3})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/;
@@ -70,12 +69,11 @@ function parsePositiveQueryInteger(value, fieldName, { defaultValue, max } = {})
   const raw = readSingleQueryValue(value, fieldName);
   if (raw === undefined || raw === "") return defaultValue;
 
+  const parsed = typeof raw === "number" ? raw : /^\d+$/.test(String(raw)) ? Number(raw) : NaN;
   if (
-    typeof raw !== "string" ||
-    !/^\d+$/.test(raw) ||
-    !Number.isSafeInteger(Number(raw)) ||
-    Number(raw) < 1 ||
-    (max !== undefined && Number(raw) > max)
+    !Number.isSafeInteger(parsed) ||
+    parsed < 1 ||
+    (max !== undefined && parsed > max)
   ) {
     throw validationError(
       max === undefined
@@ -84,7 +82,7 @@ function parsePositiveQueryInteger(value, fieldName, { defaultValue, max } = {})
     );
   }
 
-  return Number(raw);
+  return parsed;
 }
 
 function parseOptionalIsoInstant(value, fieldName) {
@@ -138,19 +136,32 @@ function parseRecentSearch(value) {
   return { numericSearch: null, nameSearch: search };
 }
 
-function getPagination(page, limit, total) {
-  const totalPages = Math.ceil(total / limit);
+function readCursor(cursor) {
+  const raw = readSingleQueryValue(cursor, "cursor");
+  if (raw === undefined || raw === "") return null;
+  if (typeof raw !== "string") throw validationError("cursor must be a string");
+  if (raw.length > 512) throw validationError("cursor is invalid");
+  try {
+    adminKycModel.decodeCursor(raw);
+  } catch {
+    throw validationError("Invalid cursor");
+  }
+  return raw;
+}
+
+function buildCursorPagination(applications, limit, hasMore, sortColumn) {
+  const last = applications[applications.length - 1];
+  // Previous navigation is stateless on the client: it reuses the nextCursor
+  // returned with the preceding page. A server-generated prevCursor would
+  // require an extra reverse-order query and is intentionally omitted.
   return {
-    page,
     limit,
-    total,
-    totalPages,
-    hasNextPage: page < totalPages,
-    hasPreviousPage: page > 1,
+    hasMore,
+    nextCursor: last ? adminKycModel.encodeCursor(last[sortColumn], last.case_id) : null,
   };
 }
 
-async function getKycApplications({ status, page, limit, search, submittedFrom, submittedTo } = {}) {
+async function getKycApplications({ status, limit, cursor, search, submittedFrom, submittedTo } = {}) {
   let statuses = DEFAULT_STATUSES;
 
   if (status !== undefined && status !== "") {
@@ -166,30 +177,11 @@ async function getKycApplications({ status, page, limit, search, submittedFrom, 
     statuses = [status];
   }
 
-  const parsedPage = page === undefined ? DEFAULT_PAGE : Number(page);
-  const parsedLimit = limit === undefined ? DEFAULT_LIMIT : Number(limit);
-
-  if (!Number.isInteger(parsedPage) || parsedPage < 1) {
-    throw new ApiError(
-      400,
-      "Page must be a positive integer",
-      [],
-      "VALIDATION_ERROR",
-    );
-  }
-
-  if (
-    !Number.isInteger(parsedLimit) ||
-    parsedLimit < 1 ||
-    parsedLimit > MAX_LIMIT
-  ) {
-    throw new ApiError(
-      400,
-      `Limit must be between 1 and ${MAX_LIMIT}`,
-      [],
-      "VALIDATION_ERROR",
-    );
-  }
+  const parsedLimit = parsePositiveQueryInteger(limit, "limit", {
+    defaultValue: DEFAULT_LIMIT,
+    max: MAX_LIMIT,
+  });
+  const parsedCursor = readCursor(cursor);
 
   if (search && typeof search !== "string") {
     throw new ApiError(400, "search must be a string", [], "VALIDATION_ERROR");
@@ -198,36 +190,21 @@ async function getKycApplications({ status, page, limit, search, submittedFrom, 
     throw new ApiError(400, "search must not exceed 100 characters", [], "VALIDATION_ERROR");
   }
 
-  const offset = (parsedPage - 1) * parsedLimit;
+  const rows = await adminKycModel.findKycApplicationsCursor({
+    statuses,
+    limit: parsedLimit,
+    cursor: parsedCursor,
+    search,
+    submittedFrom,
+    submittedTo,
+  });
 
-  const [applications, total] = await Promise.all([
-    adminKycModel.findKycApplications({
-      statuses,
-      limit: parsedLimit,
-      offset,
-      search,
-      submittedFrom,
-      submittedTo,
-    }),
-    adminKycModel.countKycApplications(statuses, {
-      search,
-      submittedFrom,
-      submittedTo,
-    }),
-  ]);
-
-  const totalPages = Math.ceil(total / parsedLimit);
+  const hasMore = rows.length > parsedLimit;
+  const applications = rows.slice(0, parsedLimit);
 
   return {
     applications,
-    pagination: {
-      page: parsedPage,
-      limit: parsedLimit,
-      total,
-      totalPages,
-      hasNextPage: parsedPage < totalPages,
-      hasPreviousPage: parsedPage > 1,
-    },
+    pagination: buildCursorPagination(applications, parsedLimit, hasMore, "submitted_at"),
     filters: {
       statuses,
     },
@@ -243,13 +220,11 @@ async function getRecentKycApplications(query = {}) {
     }
     statuses = [status];
   }
-  const page = parsePositiveQueryInteger(query.page, "page", {
-    defaultValue: DEFAULT_PAGE,
-  });
   const limit = parsePositiveQueryInteger(query.limit, "limit", {
     defaultValue: RECENT_DEFAULT_LIMIT,
     max: MAX_LIMIT,
   });
+  const parsedCursor = readCursor(query.cursor);
   const { numericSearch, nameSearch } = parseRecentSearch(query.search);
   const submittedFrom = parseOptionalIsoInstant(
     query.submittedFrom,
@@ -269,7 +244,6 @@ async function getRecentKycApplications(query = {}) {
     throw validationError("reviewedFrom and reviewedTo require status=approved");
   }
 
-  const offset = (page - 1) * limit;
   const filters = {
     statuses,
     numericSearch,
@@ -278,15 +252,18 @@ async function getRecentKycApplications(query = {}) {
     submittedTo,
     reviewedFrom,
     reviewedTo,
+    cursor: parsedCursor,
+    limit,
   };
-  const [applications, total] = await Promise.all([
-    adminKycModel.findRecentKycApplications({ ...filters, limit, offset }),
-    adminKycModel.countRecentKycApplications(filters),
-  ]);
+  const rows = await adminKycModel.findRecentKycApplicationsCursor(filters);
+
+  const hasMore = rows.length > limit;
+  const applications = rows.slice(0, limit);
+  const sortColumn = reviewedFrom || reviewedTo ? "reviewed_at" : "submitted_at";
 
   return {
     applications,
-    pagination: getPagination(page, limit, total),
+    pagination: buildCursorPagination(applications, limit, hasMore, sortColumn),
     filters: {
       statuses,
       ...(submittedFrom ? { submittedFrom: submittedFrom.toISOString() } : {}),

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   AlertCircle,
@@ -22,6 +23,9 @@ import {
   rejectAdminKyc,
 } from "../services/adminKycApi";
 import { KycInspectionModal } from "./KycInspectionModal";
+
+const PAGE_SIZE = 25;
+const SEARCH_DEBOUNCE_MS = 300;
 
 const FILTERS = [
   { value: "", label: "Awaiting Admin Decision" },
@@ -99,62 +103,82 @@ export default function AdminKycReview() {
     ? routeStatus
     : "";
   const [status, setStatus] = useState(resolvedRouteStatus);
-  const [page, setPage] = useState(1);
+  const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [submittedFrom, setSubmittedFrom] = useState("");
   const [submittedTo, setSubmittedTo] = useState("");
   const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
-  const [applications, setApplications] = useState([]);
-  const [pagination, setPagination] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [listError, setListError] = useState("");
+  const [cursorHistory, setCursorHistory] = useState([null]);
+  const [historyIndex, setHistoryIndex] = useState(0);
   const [selectedId, setSelectedId] = useState(null);
   const [details, setDetails] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [reason, setReason] = useState("");
   const [decision, setDecision] = useState(null);
   const [busy, setBusy] = useState(false);
-  const listRequestRef = useRef(0);
   const detailRequestRef = useRef(0);
   const openedRouteCaseRef = useRef(null);
 
   useEffect(() => {
     setStatus(resolvedRouteStatus);
-    setPage(1);
+    setSearchInput("");
     setSearch("");
     setSubmittedFrom("");
     setSubmittedTo("");
+    setCursorHistory([null]);
+    setHistoryIndex(0);
   }, [resolvedRouteStatus]);
 
-  const loadList = useCallback(async () => {
-    const requestId = ++listRequestRef.current;
-    setLoading(true);
-    setListError("");
-    try {
-      const result = await listAdminKycApplications({
-        ...(status ? { status } : {}),
-        ...(search ? { search } : {}),
-        ...(submittedFrom ? { submittedFrom } : {}),
-        ...(submittedTo ? { submittedTo } : {}),
-        page,
-        limit: 10,
-      });
-      if (requestId !== listRequestRef.current) return;
-      setApplications(Array.isArray(result?.applications) ? result.applications : []);
-      setPagination(result?.pagination || {});
-    } catch (error) {
-      if (requestId !== listRequestRef.current) return;
-      setListError(errorText(error));
-      setApplications([]);
-    } finally {
-      if (requestId === listRequestRef.current) setLoading(false);
-    }
-  }, [page, status, search, submittedFrom, submittedTo]);
-
+  // Debounce text search so the list query fires once the user pauses typing.
   useEffect(() => {
-    loadList();
-    return () => { listRequestRef.current += 1; };
-  }, [loadList]);
+    const timer = setTimeout(() => setSearch(searchInput.trim()), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  // Any filter change invalidates the cursor chain — restart from the first page.
+  useEffect(() => {
+    setCursorHistory([null]);
+    setHistoryIndex(0);
+  }, [status, search, submittedFrom, submittedTo]);
+
+  const cursor = cursorHistory[historyIndex];
+
+  const listQuery = useQuery({
+    queryKey: ["admin", "kyc", "applications", {
+      status, search, submittedFrom, submittedTo, cursor, limit: PAGE_SIZE,
+    }],
+    queryFn: () => listAdminKycApplications({
+      ...(status ? { status } : {}),
+      ...(search ? { search } : {}),
+      ...(submittedFrom ? { submittedFrom } : {}),
+      ...(submittedTo ? { submittedTo } : {}),
+      ...(cursor ? { cursor } : {}),
+      limit: PAGE_SIZE,
+    }),
+    staleTime: 60_000,
+    placeholderData: (previousData) => previousData,
+  });
+
+  const applications = listQuery.data?.applications || [];
+  const pagination = listQuery.data?.pagination || {};
+  const loading = listQuery.isFetching;
+  const listError = listQuery.isError ? errorText(listQuery.error) : "";
+
+  const goNextPage = () => {
+    if (!pagination.nextCursor) return;
+    const nextIndex = historyIndex + 1;
+    setCursorHistory((previous) => {
+      const updated = [...previous];
+      updated[nextIndex] = pagination.nextCursor;
+      return updated;
+    });
+    setHistoryIndex(nextIndex);
+  };
+
+  const goPreviousPage = () => {
+    if (historyIndex === 0) return;
+    setHistoryIndex((current) => current - 1);
+  };
 
   const closeCase = () => {
     if (busy) return;
@@ -227,7 +251,7 @@ export default function AdminKycReview() {
       else await rejectAdminKyc(selectedId, trimmedReason);
       toast.success(decision === "approve" ? "KYC application approved." : "KYC application rejected.");
       closeCaseAfterDecision();
-      await loadList();
+      await listQuery.refetch();
     } catch (error) {
       toast.error(errorText(error));
     } finally {
@@ -258,7 +282,7 @@ export default function AdminKycReview() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Link to="/admin/kyc/approval-history" className={secondaryButton}>Approval history</Link>
-          <button type="button" className={secondaryButton} onClick={loadList} disabled={loading}>
+          <button type="button" className={secondaryButton} onClick={() => listQuery.refetch()} disabled={loading}>
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Refresh applications
           </button>
         </div>
@@ -271,20 +295,20 @@ export default function AdminKycReview() {
             <p className="mt-1 text-xs text-slate-400">Select an application to review its verification and document history.</p>
           </div>
           <span className="self-start rounded-xl border border-blue-200/80 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 sm:self-auto">
-            {pagination.total ?? 0} Records
+            Showing {applications.length} of this page
           </span>
         </div>
         <div className="flex flex-col justify-between gap-3 border-b border-slate-100 bg-slate-50/40 p-4 sm:flex-row sm:items-center sm:p-5">
           <div className="relative max-w-md flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input value={search} onChange={(event) => setSearch(event.target.value)} type="search"
+            <input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} type="search"
               aria-label="Search KYC applications" placeholder="Search case ID, user ID, name, email or mobile..."
               className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-xs text-slate-800 outline-none placeholder:text-slate-400 focus:border-blue-500" />
           </div>
           <div className="flex items-center gap-2 text-xs text-slate-500">
             <Filter className="h-4 w-4 text-slate-400" />
             <label htmlFor="admin-kyc-filter" className="font-medium">Status</label>
-            <select id="admin-kyc-filter" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); setSearch(""); setSubmittedFrom(""); setSubmittedTo(""); }}
+            <select id="admin-kyc-filter" value={status} onChange={(event) => { setStatus(event.target.value); setSearchInput(""); setSearch(""); setSubmittedFrom(""); setSubmittedTo(""); }}
               className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:border-blue-500">
               {FILTERS.map((filter) => <option key={filter.value} value={filter.value}>{filter.label}</option>)}
             </select>
@@ -354,12 +378,12 @@ export default function AdminKycReview() {
           </table>
         </div>
         <div className="flex flex-col justify-between gap-3 border-t border-slate-100 px-5 py-4 text-xs text-slate-500 sm:flex-row sm:items-center">
-          <p>{pagination.total ?? 0} total records · Page {pagination.page ?? page} of {Math.max(1, pagination.totalPages || 1)}</p>
+          <p>Page {historyIndex + 1} {pagination.hasMore ? "· More results available" : "· End of results"}</p>
           <div className="flex gap-2">
-            <button type="button" className={secondaryButton} disabled={loading || !pagination.hasPreviousPage} onClick={() => setPage((current) => Math.max(1, current - 1))}>
+            <button type="button" className={secondaryButton} disabled={loading || historyIndex === 0} onClick={goPreviousPage}>
               <ChevronLeft className="h-3.5 w-3.5" /> Previous
             </button>
-            <button type="button" className={secondaryButton} disabled={loading || !pagination.hasNextPage} onClick={() => setPage((current) => current + 1)}>
+            <button type="button" className={secondaryButton} disabled={loading || !pagination.nextCursor} onClick={goNextPage}>
               Next <ChevronRight className="h-3.5 w-3.5" />
             </button>
           </div>

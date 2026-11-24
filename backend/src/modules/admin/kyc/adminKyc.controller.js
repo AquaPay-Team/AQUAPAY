@@ -7,12 +7,12 @@ import adminKycService from "./adminKyc.service.js";
  */
 async function getKycApplicationsController(req, res, next) {
   try {
-    const { status, page, limit, search, submittedFrom, submittedTo } = req.query;
+    const { status, limit, cursor, search, submittedFrom, submittedTo } = req.query;
 
     const result = await adminKycService.getKycApplications({
       status,
-      page,
       limit,
+      cursor,
       search,
       submittedFrom,
       submittedTo,

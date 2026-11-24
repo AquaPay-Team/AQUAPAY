@@ -52,12 +52,14 @@ function formatApprovalDate(value) {
 
 export default function AdminKycApprovalHistoryPage() {
   const [date, setDate] = useState(indiaDateToday);
-  const [page, setPage] = useState(1);
+  const [cursorHistory, setCursorHistory] = useState([null]);
+  const [historyIndex, setHistoryIndex] = useState(0);
   const bounds = useMemo(() => approvalDayBounds(date), [date]);
+  const cursor = cursorHistory[historyIndex];
   const query = useRecentAdminKycApplications({
     status: "approved",
-    page,
     limit: LIMIT,
+    ...(cursor ? { cursor } : {}),
     ...bounds,
   });
   const applications = query.data?.applications || [];
@@ -80,7 +82,7 @@ export default function AdminKycApprovalHistoryPage() {
             <h2 className="text-base font-bold text-slate-900">Approvals for selected day</h2>
             <p className="mt-1 text-xs text-slate-400">Provider verification timestamps are not used.</p>
           </div>
-          <label className="text-xs font-semibold text-slate-600">Approval date (Asia/Kolkata)<input type="date" value={date} onChange={(event) => { setDate(event.target.value || indiaDateToday()); setPage(1); }} className="mt-1.5 block rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 outline-none focus:border-blue-500" /></label>
+          <label className="text-xs font-semibold text-slate-600">Approval date (Asia/Kolkata)<input type="date" value={date} onChange={(event) => { setDate(event.target.value || indiaDateToday()); setCursorHistory([null]); setHistoryIndex(0); }} className="mt-1.5 block rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 outline-none focus:border-blue-500" /></label>
         </div>
 
         <div className="overflow-x-auto">
@@ -107,8 +109,8 @@ export default function AdminKycApprovalHistoryPage() {
         </div>
 
         <div className="flex flex-col justify-between gap-3 border-t border-slate-100 px-5 py-4 text-xs text-slate-500 sm:flex-row sm:items-center">
-          <p>{pagination?.total ?? 0} total approvals · Page {pagination?.page || 1} of {Math.max(1, pagination?.totalPages || 1)}</p>
-          <div className="flex gap-2"><button type="button" className={button} disabled={query.isFetching || !pagination?.hasPreviousPage} onClick={() => setPage((current) => Math.max(1, current - 1))}><ChevronLeft className="h-3.5 w-3.5" /> Previous</button><button type="button" className={button} disabled={query.isFetching || !pagination?.hasNextPage} onClick={() => setPage((current) => current + 1)}>Next <ChevronRight className="h-3.5 w-3.5" /></button></div>
+          <p>Page {historyIndex + 1} {pagination?.hasMore ? "· More results available" : "· End of results"}</p>
+          <div className="flex gap-2"><button type="button" className={button} disabled={query.isFetching || historyIndex === 0} onClick={() => setHistoryIndex((current) => current - 1)}><ChevronLeft className="h-3.5 w-3.5" /> Previous</button><button type="button" className={button} disabled={query.isFetching || !pagination?.nextCursor} onClick={() => { const nextIndex = historyIndex + 1; setCursorHistory((previous) => { const updated = [...previous]; updated[nextIndex] = pagination.nextCursor; return updated; }); setHistoryIndex(nextIndex); }}>Next <ChevronRight className="h-3.5 w-3.5" /></button></div>
         </div>
       </div>
     </section>

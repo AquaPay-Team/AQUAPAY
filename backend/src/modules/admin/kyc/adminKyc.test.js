@@ -136,55 +136,44 @@ function mockApprovalDependencies(
 // EXISTING TESTS — KYC APPLICATION LISTING
 // ---------------------------------------------------------
 
-test("adminKyc.service: uses submitted and under_review by default", async () => {
-  const originalFind = adminKycModel.findKycApplications;
-  const originalCount = adminKycModel.countKycApplications;
+test("adminKyc.service: uses submitted and under_review by default with cursor pagination", async () => {
+  const originalFind = adminKycModel.findKycApplicationsCursor;
 
   try {
-    let capturedStatuses = null;
     let capturedOptions = null;
 
-    adminKycModel.findKycApplications = async (options) => {
+    adminKycModel.findKycApplicationsCursor = async (options) => {
       capturedOptions = options;
-      capturedStatuses = options.statuses;
-      return [{ case_id: 1, kyc_status: "submitted" }];
-    };
-
-    adminKycModel.countKycApplications = async (statuses) => {
-      assert.deepEqual(statuses, ["submitted", "under_review"]);
-      return 1;
+      return [{ case_id: 1, kyc_status: "submitted", submitted_at: "2026-11-01T00:00:00.000Z" }];
     };
 
     const result = await getKycApplications();
 
-    assert.deepEqual(capturedStatuses, ["submitted", "under_review"]);
-    assert.equal(capturedOptions.limit, 10);
-    assert.equal(capturedOptions.offset, 0);
+    assert.deepEqual(capturedOptions.statuses, ["submitted", "under_review"]);
+    assert.equal(capturedOptions.limit, 25);
+    assert.equal(capturedOptions.cursor, null);
 
     assert.equal(result.applications.length, 1);
-    assert.equal(result.pagination.page, 1);
-    assert.equal(result.pagination.limit, 10);
-    assert.equal(result.pagination.total, 1);
-    assert.equal(result.pagination.totalPages, 1);
+    assert.deepEqual(result.pagination, {
+      limit: 25,
+      hasMore: false,
+      nextCursor: adminKycModel.encodeCursor("2026-11-01T00:00:00.000Z", 1),
+    });
   } finally {
-    adminKycModel.findKycApplications = originalFind;
-    adminKycModel.countKycApplications = originalCount;
+    adminKycModel.findKycApplicationsCursor = originalFind;
   }
 });
 
 test("adminKyc.service: filters by a valid individual status", async () => {
-  const originalFind = adminKycModel.findKycApplications;
-  const originalCount = adminKycModel.countKycApplications;
+  const originalFind = adminKycModel.findKycApplicationsCursor;
 
   try {
     let capturedStatuses = null;
 
-    adminKycModel.findKycApplications = async ({ statuses }) => {
+    adminKycModel.findKycApplicationsCursor = async ({ statuses }) => {
       capturedStatuses = statuses;
       return [];
     };
-
-    adminKycModel.countKycApplications = async () => 0;
 
     const result = await getKycApplications({
       status: "approved",
@@ -193,8 +182,7 @@ test("adminKyc.service: filters by a valid individual status", async () => {
     assert.deepEqual(capturedStatuses, ["approved"]);
     assert.deepEqual(result.filters.statuses, ["approved"]);
   } finally {
-    adminKycModel.findKycApplications = originalFind;
-    adminKycModel.countKycApplications = originalCount;
+    adminKycModel.findKycApplicationsCursor = originalFind;
   }
 });
 
@@ -210,22 +198,22 @@ test("adminKyc.service: rejects invalid status filters", async () => {
   );
 });
 
-test("adminKyc.service: rejects invalid page numbers", async () => {
-  const invalidPages = [0, -1, 1.5, "abc"];
+test("adminKyc.service: rejects malformed cursors", async () => {
+  const invalidCursors = ["abc", "not-base64!!", Buffer.from('{"v":1,"s":"bad"}').toString("base64url"), 123];
 
-  for (const page of invalidPages) {
+  for (const cursor of invalidCursors) {
     await assert.rejects(
-      getKycApplications({ page }),
+      getKycApplications({ cursor }),
       (error) => {
         assert.equal(error.statusCode, 400);
-        assert.equal(error.message, "Page must be a positive integer");
+        assert.equal(error.code, "VALIDATION_ERROR");
         return true;
       },
     );
   }
 });
 
-test("adminKyc.service: rejects invalid page limits", async () => {
+test("adminKyc.service: rejects invalid limits", async () => {
   const invalidLimits = [0, -1, 1.5, 101, "abc"];
 
   for (const limit of invalidLimits) {
@@ -233,66 +221,56 @@ test("adminKyc.service: rejects invalid page limits", async () => {
       getKycApplications({ limit }),
       (error) => {
         assert.equal(error.statusCode, 400);
-        assert.match(error.message, /Limit must be between 1 and 100/);
+        assert.match(error.message, /limit must be a positive integer no greater than 100/);
         return true;
       },
     );
   }
 });
 
-test("adminKyc.service: calculates pagination correctly", async () => {
-  const originalFind = adminKycModel.findKycApplications;
-  const originalCount = adminKycModel.countKycApplications;
+test("adminKyc.service: forwards the cursor and returns hasMore from the extra row", async () => {
+  const originalFind = adminKycModel.findKycApplicationsCursor;
 
   try {
-    let capturedOffset = null;
-    let capturedLimit = null;
+    let capturedOptions = null;
 
-    adminKycModel.findKycApplications = async (options) => {
-      capturedOffset = options.offset;
-      capturedLimit = options.limit;
-      return [];
+    adminKycModel.findKycApplicationsCursor = async (options) => {
+      capturedOptions = options;
+      return [
+        { case_id: 30, submitted_at: "2026-11-03T00:00:00.000Z" },
+        { case_id: 20, submitted_at: "2026-11-02T00:00:00.000Z" },
+        { case_id: 10, submitted_at: "2026-11-01T00:00:00.000Z" },
+      ];
     };
 
-    adminKycModel.countKycApplications = async () => 45;
+    const cursor = adminKycModel.encodeCursor("2026-11-04T00:00:00.000Z", 40);
+    const result = await getKycApplications({ cursor, limit: "2" });
 
-    const result = await getKycApplications({
-      page: 2,
-      limit: 10,
-    });
-
-    assert.equal(capturedOffset, 10);
-    assert.equal(capturedLimit, 10);
-
-    assert.equal(result.pagination.page, 2);
-    assert.equal(result.pagination.total, 45);
-    assert.equal(result.pagination.totalPages, 5);
-    assert.equal(result.pagination.hasNextPage, true);
-    assert.equal(result.pagination.hasPreviousPage, true);
+    assert.equal(capturedOptions.cursor, cursor);
+    assert.equal(capturedOptions.limit, 2);
+    assert.equal(result.applications.length, 2);
+    assert.deepEqual(result.applications.map((row) => row.case_id), [30, 20]);
+    assert.equal(result.pagination.hasMore, true);
+    assert.equal(result.pagination.nextCursor, adminKycModel.encodeCursor("2026-11-02T00:00:00.000Z", 20));
   } finally {
-    adminKycModel.findKycApplications = originalFind;
-    adminKycModel.countKycApplications = originalCount;
+    adminKycModel.findKycApplicationsCursor = originalFind;
   }
 });
 
-test("adminKyc.service: reports no next page on the final page", async () => {
-  const originalFind = adminKycModel.findKycApplications;
-  const originalCount = adminKycModel.countKycApplications;
+test("adminKyc.service: reports no next cursor on the final page", async () => {
+  const originalFind = adminKycModel.findKycApplicationsCursor;
 
   try {
-    adminKycModel.findKycApplications = async () => [];
-    adminKycModel.countKycApplications = async () => 20;
+    adminKycModel.findKycApplicationsCursor = async () => [
+      { case_id: 10, submitted_at: "2026-11-01T00:00:00.000Z" },
+    ];
 
-    const result = await getKycApplications({
-      page: 2,
-      limit: 10,
-    });
+    const result = await getKycApplications({ limit: "2" });
 
-    assert.equal(result.pagination.hasNextPage, false);
-    assert.equal(result.pagination.hasPreviousPage, true);
+    assert.equal(result.pagination.hasMore, false);
+    assert.equal(result.pagination.nextCursor, adminKycModel.encodeCursor("2026-11-01T00:00:00.000Z", 10));
   } finally {
-    adminKycModel.findKycApplications = originalFind;
-    adminKycModel.countKycApplications = originalCount;
+    adminKycModel.findKycApplicationsCursor = originalFind;
   }
 });
 
@@ -301,19 +279,16 @@ test("adminKyc.service: reports no next page on the final page", async () => {
 // ---------------------------------------------------------
 
 test("adminKyc.service: recent applications default to 25 and all submitted statuses", async (t) => {
-  const originalFind = adminKycModel.findRecentKycApplications;
-  const originalCount = adminKycModel.countRecentKycApplications;
+  const originalFind = adminKycModel.findRecentKycApplicationsCursor;
   let capturedFilters;
 
-  adminKycModel.findRecentKycApplications = async (filters) => {
+  adminKycModel.findRecentKycApplicationsCursor = async (filters) => {
     capturedFilters = filters;
-    return [{ case_id: 14, user_id: 8, kyc_status: "submitted" }];
+    return [{ case_id: 14, user_id: 8, kyc_status: "submitted", submitted_at: "2026-11-01T00:00:00.000Z" }];
   };
-  adminKycModel.countRecentKycApplications = async () => 26;
 
   t.after(() => {
-    adminKycModel.findRecentKycApplications = originalFind;
-    adminKycModel.countRecentKycApplications = originalCount;
+    adminKycModel.findRecentKycApplicationsCursor = originalFind;
   });
 
   const result = await getRecentKycApplications();
@@ -325,36 +300,31 @@ test("adminKyc.service: recent applications default to 25 and all submitted stat
     "rejected",
   ]);
   assert.equal(capturedFilters.limit, 25);
-  assert.equal(capturedFilters.offset, 0);
+  assert.equal(capturedFilters.cursor, null);
   assert.deepEqual(result.pagination, {
-    page: 1,
     limit: 25,
-    total: 26,
-    totalPages: 2,
-    hasNextPage: true,
-    hasPreviousPage: false,
+    hasMore: false,
+    nextCursor: adminKycModel.encodeCursor("2026-11-01T00:00:00.000Z", 14),
   });
 });
 
 test("adminKyc.service: recent applications validate filters, search, and date boundaries", async (t) => {
-  const originalFind = adminKycModel.findRecentKycApplications;
-  const originalCount = adminKycModel.countRecentKycApplications;
+  const originalFind = adminKycModel.findRecentKycApplicationsCursor;
   let capturedFilters;
 
-  adminKycModel.findRecentKycApplications = async (filters) => {
+  adminKycModel.findRecentKycApplicationsCursor = async (filters) => {
     capturedFilters = filters;
     return [];
   };
-  adminKycModel.countRecentKycApplications = async () => 0;
 
   t.after(() => {
-    adminKycModel.findRecentKycApplications = originalFind;
-    adminKycModel.countRecentKycApplications = originalCount;
+    adminKycModel.findRecentKycApplicationsCursor = originalFind;
   });
 
+  const cursor = adminKycModel.encodeCursor("2026-11-04T00:00:00.000Z", 99);
   const result = await getRecentKycApplications({
     status: "approved",
-    page: "2",
+    cursor,
     limit: "100",
     search: " 42 ",
     submittedFrom: "2026-11-01T00:00:00.000Z",
@@ -366,7 +336,8 @@ test("adminKyc.service: recent applications validate filters, search, and date b
   assert.deepEqual(capturedFilters.statuses, ["approved"]);
   assert.equal(capturedFilters.numericSearch, 42);
   assert.equal(capturedFilters.nameSearch, null);
-  assert.equal(capturedFilters.offset, 100);
+  assert.equal(capturedFilters.cursor, cursor);
+  assert.equal(capturedFilters.limit, 100);
   assert.equal(capturedFilters.submittedFrom.toISOString(), "2026-11-01T00:00:00.000Z");
   assert.equal(capturedFilters.submittedTo.toISOString(), "2026-12-01T00:00:00.000Z");
   assert.equal(result.filters.submittedFrom, "2026-11-01T00:00:00.000Z");
@@ -378,19 +349,16 @@ test("adminKyc.service: recent applications validate filters, search, and date b
 });
 
 test("adminKyc.service: recent applications search names and reject invalid query values", async (t) => {
-  const originalFind = adminKycModel.findRecentKycApplications;
-  const originalCount = adminKycModel.countRecentKycApplications;
+  const originalFind = adminKycModel.findRecentKycApplicationsCursor;
   let capturedFilters;
 
-  adminKycModel.findRecentKycApplications = async (filters) => {
+  adminKycModel.findRecentKycApplicationsCursor = async (filters) => {
     capturedFilters = filters;
     return [];
   };
-  adminKycModel.countRecentKycApplications = async () => 0;
 
   t.after(() => {
-    adminKycModel.findRecentKycApplications = originalFind;
-    adminKycModel.countRecentKycApplications = originalCount;
+    adminKycModel.findRecentKycApplicationsCursor = originalFind;
   });
 
   await getRecentKycApplications({ search: "  Asha Sharma " });
@@ -398,7 +366,7 @@ test("adminKyc.service: recent applications search names and reject invalid quer
   assert.equal(capturedFilters.nameSearch, "Asha Sharma");
 
   const invalidQueries = [
-    [{ page: "0" }, /page must be a positive integer/],
+    [{ cursor: "invalid" }, /Invalid cursor/],
     [{ limit: "101" }, /limit must be a positive integer no greater than 100/],
     [{ status: "pending" }, /Invalid KYC status filter/],
     [{ search: ["14", "15"] }, /search must be provided once/],

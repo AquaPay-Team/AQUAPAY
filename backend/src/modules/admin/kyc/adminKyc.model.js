@@ -1,9 +1,126 @@
 
 import pool from "../../../config/db.js";
 
+const CURSOR_VERSION = 1;
+
 /**
- * Fetch KYC applications with pagination, status, search and submission-date filtering.
- * Search matches case ID, user ID, name, email and mobile across all records.
+ * Encodes a keyset cursor from the sort value and case id.
+ * @param {string} sortValueIso - ISO-8601 string of the sort column (submitted_at or reviewed_at)
+ * @param {number} caseId - kyc_cases.id
+ * @returns {string} base64url-encoded JSON cursor
+ */
+function encodeCursor(sortValueIso, caseId) {
+  const payload = JSON.stringify({ v: CURSOR_VERSION, s: sortValueIso, i: Number(caseId) });
+  return Buffer.from(payload).toString("base64url");
+}
+
+/**
+ * Decodes and validates a keyset cursor.
+ * @returns {{ sortValue: string, caseId: number } | null} null when the cursor is absent
+ * @throws {Error} when the cursor is present but malformed
+ */
+function decodeCursor(cursor) {
+  if (cursor === undefined || cursor === null || cursor === "") return null;
+  if (typeof cursor !== "string") throw new Error("cursor must be a string");
+  let payload;
+  try {
+    payload = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
+  } catch {
+    throw new Error("Invalid cursor encoding");
+  }
+  if (
+    !payload ||
+    typeof payload !== "object" ||
+    payload.v !== CURSOR_VERSION ||
+    typeof payload.s !== "string" ||
+    !Number.isSafeInteger(Number(payload.i)) ||
+    Number(payload.i) < 1
+  ) {
+    throw new Error("Invalid cursor payload");
+  }
+  const sortValue = new Date(payload.s);
+  if (Number.isNaN(sortValue.getTime())) throw new Error("Invalid cursor sort value");
+  return { sortValue: payload.s, caseId: Number(payload.i) };
+}
+
+/**
+ * Appends a keyset seek condition for DESC ordering on (sortColumn, id).
+ * Forward navigation uses the current page's nextCursor; backward navigation
+ * reuses the nextCursor returned with the preceding page from client history.
+ */
+function appendCursorCondition(conditions, params, sortColumn, cursor) {
+  const decoded = decodeCursor(cursor);
+  if (!decoded) return;
+  conditions.push(`(${sortColumn} < ? OR (${sortColumn} = ? AND kc.id < ?))`);
+  params.push(decoded.sortValue, decoded.sortValue, decoded.caseId);
+}
+
+/**
+ * Fetch KYC applications with keyset (cursor) pagination, status, search and
+ * submission-date filtering. Replaces OFFSET/LIMIT pagination. Search matches
+ * case ID, user ID, name, email and mobile across all records.
+ * Fetches limit + 1 rows so the caller can determine hasMore without a COUNT query.
+ */
+async function findKycApplicationsCursor({
+  statuses,
+  limit,
+  cursor,
+  search,
+  submittedFrom,
+  submittedTo,
+}) {
+  if (!Array.isArray(statuses) || statuses.length === 0) {
+    throw new Error("At least one KYC status is required");
+  }
+
+  const conditions = [`kc.status IN (${statuses.map(() => "?").join(", ")})`];
+  const params = [...statuses];
+
+  if (search) {
+    conditions.push(`(kc.id = ? OR kc.user_id = ? OR u.name LIKE ? OR u.email LIKE ? OR u.mobile LIKE ?)`);
+    const numeric = /^\d+$/.test(search) ? Number(search) : null;
+    const like = `%${search}%`;
+    params.push(numeric, numeric, like, like, like);
+  }
+
+  if (submittedFrom) {
+    conditions.push("kc.submitted_at >= ?");
+    params.push(submittedFrom);
+  }
+  if (submittedTo) {
+    conditions.push("kc.submitted_at < ?");
+    params.push(submittedTo);
+  }
+
+  appendCursorCondition(conditions, params, "kc.submitted_at", cursor);
+
+  const [rows] = await pool.execute(
+    `SELECT
+       kc.id AS case_id,
+       u.id AS user_id,
+       u.name,
+       u.email,
+       u.mobile,
+       u.status AS user_status,
+       kc.status AS kyc_status,
+       kc.submitted_at,
+       kc.reviewed_at,
+       kc.created_at
+      FROM kyc_cases kc
+      INNER JOIN users u ON u.id = kc.user_id
+      WHERE ${conditions.join(" AND ")}
+      ORDER BY kc.submitted_at DESC, kc.id DESC
+      LIMIT ?`,
+    [...params, limit + 1],
+  );
+
+  return rows;
+}
+
+/**
+ * Fetch KYC applications using the legacy OFFSET/LIMIT model.
+ * Retained for backward compatibility; no longer used by the list endpoint.
+ * @deprecated Use findKycApplicationsCursor instead.
  */
 async function findKycApplications({ statuses, limit, offset, search, submittedFrom, submittedTo }) {
   if (!Array.isArray(statuses) || statuses.length === 0) {
@@ -136,7 +253,7 @@ function buildRecentKycConditions({
     params.push(reviewedTo);
   }
 
-  return { whereClause: conditions.join(" AND "), params };
+  return { whereClause: conditions.join(" AND "), conditions, params };
 }
 
 /** Fetches recent, submitted KYC application summaries for the dashboard. */
@@ -175,6 +292,40 @@ async function countRecentKycApplications(filters) {
     params,
   );
   return Number(rows[0]?.total || 0);
+}
+
+/**
+ * Fetches recent KYC application summaries using keyset (cursor) pagination.
+ * Supports both the default submitted_at ordering and the reviewed_at ordering
+ * (used when reviewedFrom/reviewedTo filters are active with status=approved).
+ * Fetches limit + 1 rows so the caller can determine hasMore without a COUNT query.
+ */
+async function findRecentKycApplicationsCursor(filters) {
+  const { conditions, params } = buildRecentKycConditions(filters);
+  const sortColumn = filters.reviewedFrom || filters.reviewedTo ? "kc.reviewed_at" : "kc.submitted_at";
+
+  appendCursorCondition(conditions, params, sortColumn, filters.cursor);
+
+  const [rows] = await pool.execute(
+    `SELECT
+       kc.id AS case_id,
+       u.id AS user_id,
+       u.name,
+       u.email,
+       u.mobile,
+       u.status AS user_status,
+       kc.status AS kyc_status,
+       kc.submitted_at,
+       kc.reviewed_at,
+       kc.created_at
+      FROM kyc_cases kc
+      INNER JOIN users u ON u.id = kc.user_id
+      WHERE ${conditions.join(" AND ")}
+      ORDER BY ${sortColumn} DESC, kc.id DESC
+      LIMIT ?`,
+    [...params, filters.limit + 1],
+  );
+  return rows;
 }
 
 /**
@@ -421,9 +572,13 @@ async function insertStatusHistory(
 
 const adminKycModel = {
   findKycApplications,
+  findKycApplicationsCursor,
   countKycApplications,
   findRecentKycApplications,
+  findRecentKycApplicationsCursor,
   countRecentKycApplications,
+  encodeCursor,
+  decodeCursor,
   findKycCaseById,
   findKycStepsByCaseId,
   findVerificationsByCaseId,
@@ -440,9 +595,13 @@ const adminKycModel = {
 
 export {
   findKycApplications,
+  findKycApplicationsCursor,
   countKycApplications,
   findRecentKycApplications,
+  findRecentKycApplicationsCursor,
   countRecentKycApplications,
+  encodeCursor,
+  decodeCursor,
   findKycCaseById,
   findKycStepsByCaseId,
   findVerificationsByCaseId,

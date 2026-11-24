@@ -5,9 +5,13 @@
   import pool from "../../../config/db.js";
 import {
   findKycApplications,
+  findKycApplicationsCursor,
   countKycApplications,
   findRecentKycApplications,
+  findRecentKycApplicationsCursor,
   countRecentKycApplications,
+  encodeCursor,
+  decodeCursor,
   rejectKycCase,
 } from "./adminKyc.model.js";
 
@@ -211,6 +215,90 @@ test("adminKyc.model: approved review-date filters require review timestamps and
   assert.match(calls[0].sql, /ORDER BY kc\.reviewed_at DESC, kc\.id DESC/);
   assert.deepEqual(calls[0].params, ["approved", reviewedFrom, reviewedTo, 25, 0]);
   assert.deepEqual(calls[1].params, ["approved", reviewedFrom, reviewedTo]);
+});
+
+test("adminKyc.model: cursor list fetches limit + 1 rows with parameterized keyset seek", async (t) => {
+  const originalExecute = pool.execute;
+  let capturedSql = "";
+  let capturedParams = [];
+
+  pool.execute = async (sql, params) => {
+    capturedSql = sql;
+    capturedParams = params;
+    return [[{ case_id: 10, submitted_at: "2026-11-01T00:00:00.000Z" }]];
+  };
+  t.after(() => {
+    pool.execute = originalExecute;
+  });
+
+  const cursor = "eyJ2IjoxLCJzIjoiMjAyNi0xMS0wMVQwMDowMDowMC4wMDBaIiwiaSI6MjB9";
+  await findKycApplicationsCursor({
+    statuses: ["submitted", "under_review"],
+    limit: 25,
+    cursor,
+    search: "Asha",
+    submittedFrom: new Date("2026-11-01T00:00:00.000Z"),
+    submittedTo: new Date("2026-12-01T00:00:00.000Z"),
+  });
+
+  assert.match(capturedSql, /kc\.status IN \(\?, \?\)/);
+  assert.match(capturedSql, /\(kc\.id = \? OR kc\.user_id = \? OR u\.name LIKE \?/);
+  assert.match(capturedSql, /kc\.submitted_at >= \?/);
+  assert.match(capturedSql, /kc\.submitted_at < \?/);
+  assert.match(capturedSql, /\(kc\.submitted_at < \? OR \(kc\.submitted_at = \? AND kc\.id < \?\)\)/);
+  assert.match(capturedSql, /ORDER BY kc\.submitted_at DESC, kc\.id DESC/);
+  assert.match(capturedSql, /LIMIT \?/);
+  assert.doesNotMatch(capturedSql, /OFFSET/);
+  assert.doesNotMatch(capturedSql, /COUNT\(\*\)/);
+  assert.equal(capturedParams.at(-1), 26);
+  assert.equal(capturedParams.length, 13);
+});
+
+test("adminKyc.model: recent cursor list uses reviewed_at ordering for review-date filters", async (t) => {
+  const originalExecute = pool.execute;
+  let capturedSql = "";
+  let capturedParams = [];
+
+  pool.execute = async (sql, params) => {
+    capturedSql = sql;
+    capturedParams = params;
+    return [[]];
+  };
+  t.after(() => {
+    pool.execute = originalExecute;
+  });
+
+  await findRecentKycApplicationsCursor({
+    statuses: ["approved"],
+    numericSearch: null,
+    nameSearch: null,
+    submittedFrom: null,
+    submittedTo: null,
+    reviewedFrom: new Date("2026-11-01T00:00:00.000Z"),
+    reviewedTo: new Date("2026-12-01T00:00:00.000Z"),
+    limit: 25,
+    cursor: null,
+  });
+
+  assert.match(capturedSql, /kc\.reviewed_at IS NOT NULL/);
+  assert.match(capturedSql, /ORDER BY kc\.reviewed_at DESC, kc\.id DESC/);
+  assert.match(capturedSql, /LIMIT \?/);
+  assert.doesNotMatch(capturedSql, /OFFSET/);
+  assert.equal(capturedParams.at(-1), 26);
+});
+
+test("adminKyc.model: cursor encoding round-trips and rejects invalid payloads", () => {
+  const cursor = encodeCursor("2026-11-01T00:00:00.000Z", 42);
+  assert.deepEqual(decodeCursor(cursor), {
+    sortValue: "2026-11-01T00:00:00.000Z",
+    caseId: 42,
+  });
+  assert.equal(decodeCursor(null), null);
+  assert.throws(() => decodeCursor("not-a-cursor"), /Invalid cursor encoding/);
+  assert.throws(
+    () => decodeCursor(Buffer.from('{"v":2,"s":"2026-11-01T00:00:00.000Z","i":42}').toString("base64url")),
+    /Invalid cursor payload/,
+  );
 });
 
 //

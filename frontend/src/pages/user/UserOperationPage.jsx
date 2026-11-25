@@ -122,7 +122,8 @@ export default function UserOperationPage({ title, category }) {
             <span>/</span>
             <span className="font-semibold text-slate-700">{meta.title}</span>
           </div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+            <IconComp className="w-5 h-5 text-blue-600" />
             {meta.title}
           </h1>
           <p className="text-xs text-slate-400 mt-0.5">

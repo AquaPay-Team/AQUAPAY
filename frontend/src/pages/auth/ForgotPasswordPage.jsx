@@ -26,6 +26,7 @@ export const ForgotPasswordPage = () => {
   const [identifier, setIdentifier] = useState("");
   const [resetToken, setResetToken] = useState(tokenFromUrl);
   const [otp, setOtp] = useState("");
+  const [developmentOtp, setDevelopmentOtp] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
@@ -61,14 +62,36 @@ export const ForgotPasswordPage = () => {
       const res = await forgotPassword(cleanId);
 
       if (res?.data?.resetToken) {
-        setResetToken(res.data.resetToken);
-      }
+        if (import.meta.env.DEV && !res?.data?.developmentOtp) {
+          const err = {
+            type: "VALIDATION_ERROR",
+            title: "Account Inactive or Not Found",
+            message: "No active account found with this email/mobile, or the account is currently deactivated. Please contact your administrator.",
+          };
+          setApiError(err);
+          toast.error(err.message);
+          return;
+        }
 
-      toast.success(
-        res?.message || "Recovery code sent to your registered contact."
-      );
-      setResendCooldown(45);
-      setStep(2);
+        setResetToken(res.data.resetToken);
+        if (res?.data?.developmentOtp) {
+          setOtp(res.data.developmentOtp);
+          setDevelopmentOtp(res.data.developmentOtp);
+          toast.success(`Recovery code sent! (Dev OTP: ${res.data.developmentOtp})`);
+        } else {
+          toast.success(
+            res?.message || "Recovery code sent to your registered contact."
+          );
+        }
+        setResendCooldown(45);
+        setStep(2);
+      } else {
+        toast.success(
+          res?.message || "Recovery code sent to your registered contact."
+        );
+        setResendCooldown(45);
+        setStep(2);
+      }
     } catch (err) {
       const parsed = parseApiError(err);
       setApiError(parsed);
@@ -88,11 +111,23 @@ export const ForgotPasswordPage = () => {
       const res = await forgotPassword(identifier.trim());
 
       if (res?.data?.resetToken) {
+        if (import.meta.env.DEV && !res?.data?.developmentOtp) {
+          toast.error("Account not found or is currently inactive.");
+          return;
+        }
         setResetToken(res.data.resetToken);
+        if (res?.data?.developmentOtp) {
+          setOtp(res.data.developmentOtp);
+          setDevelopmentOtp(res.data.developmentOtp);
+          toast.success(`A fresh verification OTP has been sent! (Dev OTP: ${res.data.developmentOtp})`);
+        } else {
+          toast.success("A fresh verification OTP has been sent.");
+        }
+        setResendCooldown(45);
+      } else {
+        toast.success("A fresh verification OTP has been sent.");
+        setResendCooldown(45);
       }
-
-      toast.success("A fresh verification OTP has been sent.");
-      setResendCooldown(45);
     } catch (err) {
       const parsed = parseApiError(err);
       setApiError(parsed);
@@ -222,6 +257,7 @@ export const ForgotPasswordPage = () => {
                 identifier={identifier}
                 otp={otp}
                 setOtp={setOtp}
+                developmentOtp={developmentOtp}
                 resetToken={resetToken}
                 setResetToken={setResetToken}
                 newPassword={newPassword}

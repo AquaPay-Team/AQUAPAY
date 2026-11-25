@@ -73,6 +73,7 @@ function safeUser(user) {
     company_name: user.company_name,
     parent_name: user.parent_name,
     kyc: user.kyc ?? null,
+    kyc_status: user.kyc?.status ?? user.kyc_status ?? null,
   };
 }
 

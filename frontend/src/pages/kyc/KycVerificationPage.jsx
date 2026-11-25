@@ -16,6 +16,7 @@ import {
 import { toast } from "sonner";
 import { parseApiError } from "../../utils/errorHandler";
 import { useAuth } from "../../features/auth/useAuth";
+import { isAdminRole } from "../../constants/roles";
 
 // Reusable White-Theme Components
 import KycHeader from "../../features/kyc/components/KycHeader";
@@ -48,7 +49,7 @@ import {
 
 export function KycVerificationPage() {
   const navigate = useNavigate();
-  const { logout } = useAuth();
+  const { user, logout, updateUser, refreshUser, isAdmin } = useAuth();
 
   const storedUser = useMemo(() => {
     try {
@@ -558,6 +559,17 @@ export function KycVerificationPage() {
         localStorage.setItem("user", JSON.stringify(updatedUser));
       }
 
+      const finalStatus = res?.data?.status || "submitted";
+      if (updateUser) {
+        updateUser({
+          kyc: { ...(user?.kyc || storedUser?.kyc || {}), status: finalStatus },
+          kyc_status: finalStatus,
+        });
+      }
+      if (refreshUser) {
+        refreshUser().catch(() => {});
+      }
+
       setIsSubmitted(true);
       setKycStatus("submitted");
       setIsRestartFlow(false);
@@ -624,8 +636,19 @@ export function KycVerificationPage() {
         onCheckStatus={handleRefreshStatus}
         isCheckingStatus={isLoadingKycStatus}
         referenceId={referenceId || "—"}
-        onProceedDashboard={() => {
-          navigate("/user/dashboard");
+        onProceedDashboard={async () => {
+          const finalStatus = kycStatus || "submitted";
+          if (updateUser) {
+            updateUser({
+              kyc: { ...(user?.kyc || storedUser?.kyc || {}), status: finalStatus },
+              kyc_status: finalStatus,
+            });
+          }
+          if (refreshUser) {
+            await refreshUser().catch(() => {});
+          }
+          const destination = (isAdmin || isAdminRole(user)) ? "/admin/dashboard" : "/user/dashboard";
+          navigate(destination, { replace: true });
         }}
       />
     );

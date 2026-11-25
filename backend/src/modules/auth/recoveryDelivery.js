@@ -48,8 +48,11 @@ async function send(type, payload) {
   }
 }
 
+let latestDevOtp = null;
+
 async function sendPasswordReset({ destination, type, token, otp }) {
   if (process.env.NODE_ENV === "development") {
+    latestDevOtp = otp;
     console.info(`[AquaPay DEVELOPMENT OTP] ${otp}`);
     return;
   }
@@ -84,6 +87,16 @@ async function sendPasswordChanged(account) {
   await send(type, message);
 }
 
-export { isConfigured, sendPasswordReset, sendPasswordChanged };
+function clearLatestDevOtp() {
+  latestDevOtp = null;
+}
 
-export default { isConfigured, sendPasswordReset, sendPasswordChanged };
+function getLatestDevOtp() {
+  const otp = latestDevOtp;
+  latestDevOtp = null;
+  return otp;
+}
+
+export { isConfigured, sendPasswordReset, sendPasswordChanged, getLatestDevOtp, clearLatestDevOtp };
+
+export default { isConfigured, sendPasswordReset, sendPasswordChanged, getLatestDevOtp, clearLatestDevOtp };

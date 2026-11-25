@@ -112,6 +112,16 @@ async function insertAgreementAcceptance(
   return result.insertId || result.affectedRows > 0;
 }
 
+async function deleteAgreementAcceptanceByCaseId(connection, caseId) {
+  const [result] = await getDb(connection).execute(
+    `DELETE FROM agreement_acceptances
+      WHERE case_id = ?`,
+    [caseId],
+  );
+
+  return Number(result.affectedRows || 0);
+}
+
 async function completeStep6(connection, caseId) {
   const [result] = await getDb(connection).execute(
     `UPDATE kyc_steps
@@ -160,6 +170,7 @@ const agreementModel = {
   findAgreementAcceptance,
   findLatestAgreementAcceptance,
   insertAgreementAcceptance,
+  deleteAgreementAcceptanceByCaseId,
   completeStep6,
   updateCompletedStepsCount,
 };
@@ -174,6 +185,7 @@ export {
   findAgreementAcceptance,
   findLatestAgreementAcceptance,
   insertAgreementAcceptance,
+  deleteAgreementAcceptanceByCaseId,
   completeStep6,
   updateCompletedStepsCount,
 };

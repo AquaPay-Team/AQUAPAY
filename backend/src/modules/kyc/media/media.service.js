@@ -1,6 +1,7 @@
 ﻿import crypto from "node:crypto";
 import * as mediaModel from "./media.model.js";
 import getCloudinary from "../../../config/cloudinary.js";
+import agreementModel from "../agreement/agreement.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import httpStatus from "../../../utils/httpStatus.js";
 
@@ -472,9 +473,9 @@ async function uploadMedia(userId, assetType, file) {
  * 1. Only the authenticated KYC owner may restart.
  * 2. Case must currently be rejected.
  * 3. Steps 1-4 must remain completed.
- * 4. Old media is invalidated for the new attempt.
- * 5. Steps 5 and 7 are reset to pending.
- * 6. Step 6 remains unchanged for now.
+ * 4. Previous Step 5 media records are deleted.
+ * 5. Cloudinary cleanup jobs are queued transactionally.
+ * 6. Steps 5, 6 and 7 are reset to pending.
  * 7. Case is reopened as pending at Step 5.
  * 8. A status-history entry is recorded.
  *
@@ -580,10 +581,32 @@ async function restartRejectedKyc(userId) {
       }
     }
 
-    // Invalidate media from earlier submissions.
-    // Records and Cloudinary assets are preserved.
-    const invalidatedMediaCount =
-      await mediaModel.invalidatePreviousMedia(
+    // Lock existing media records before cleanup.
+    const previousMedia =
+      await mediaModel.findMediaByCaseIdForUpdate(
+        connection,
+        caseId,
+      );
+
+    // Queue Cloudinary cleanup jobs before deleting DB records.
+    // Both operations run inside the same MySQL transaction.
+    const cleanupJobsQueued =
+      await mediaModel.insertMediaCleanupJobs(
+        connection,
+        caseId,
+        previousMedia,
+      );
+
+    // Delete old Step 5 media records from the database.
+    const deletedMediaCount =
+      await mediaModel.deleteMediaByCaseId(
+        connection,
+        caseId,
+      );
+
+    // Delete previous agreement acceptance so Step 6 must be repeated.
+    const deletedAgreementAcceptanceCount =
+      await agreementModel.deleteAgreementAcceptanceByCaseId(
         connection,
         caseId,
       );
@@ -628,7 +651,9 @@ async function restartRejectedKyc(userId) {
       status: "pending",
       currentStep: progress.currentStep,
       stepsCompleted: progress.stepsCompleted,
-      invalidatedMediaCount,
+      deletedMediaCount,
+      deletedAgreementAcceptanceCount,
+      cleanupJobsQueued,
       requiredMedia: [
         "shop_image",
         "selfie",

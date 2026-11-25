@@ -7,10 +7,12 @@ import { restartRejectedKyc, uploadMedia } from "./media.service.js";
 import getCloudinary from "../../../config/cloudinary.js";
 
 import {
-  invalidatePreviousMedia,
+  findMediaByCaseId,
+  findMediaByCaseIdForUpdate,
+  deleteMediaByCaseId,
+  insertMediaCleanupJobs,
   hasAllRequiredMedia,
   countUploadedAssetTypes,
-  findMediaByCaseId,
 } from "./media.model.js";
 
 afterEach(() => {
@@ -33,6 +35,33 @@ function setupMockDatabase({
   const calls = [];
   const caseId = 4;
   const userId = 7;
+
+  const previousMedia = [
+    {
+      id: 1,
+      case_id: caseId,
+      asset_type: "shop_image",
+      storage_provider: "cloudinary",
+      storage_key: "aquapay/kyc/4/shop-image",
+      status: "uploaded",
+    },
+    {
+      id: 2,
+      case_id: caseId,
+      asset_type: "selfie",
+      storage_provider: "cloudinary",
+      storage_key: "aquapay/kyc/4/selfie",
+      status: "verified",
+    },
+    {
+      id: 3,
+      case_id: caseId,
+      asset_type: "consent_video",
+      storage_provider: "cloudinary",
+      storage_key: "aquapay/kyc/4/consent-video",
+      status: "uploaded",
+    },
+  ];
 
   const connection = {
     beginTransaction: mock.fn(async () => {
@@ -89,13 +118,42 @@ function setupMockDatabase({
         }]];
       }
 
-      // Invalidate old media.
-      if (query.startsWith("UPDATE media_assets")) {
-        calls.push("invalidate_media");
+      // Lock previous media records.
+      if (
+        query.includes("FROM media_assets") &&
+        query.includes("FOR UPDATE")
+      ) {
+        calls.push("lock_media");
+        return [previousMedia];
+      }
+
+      // Insert Cloudinary cleanup jobs.
+      if (
+        query.startsWith(
+          "INSERT INTO kyc_media_cleanup_outbox",
+        )
+      ) {
+        calls.push("queue_cleanup");
+        return [{ affectedRows: 1, insertId: 100 }];
+      }
+
+      // Delete previous media database records.
+      if (query.startsWith("DELETE FROM media_assets")) {
+        calls.push("delete_media");
         return [{ affectedRows: 3 }];
       }
 
-      // Reset Steps 5 and 7.
+      // Delete previous agreement acceptance.
+      if (
+        query.startsWith(
+          "DELETE FROM agreement_acceptances",
+        )
+      ) {
+        calls.push("delete_agreement");
+        return [{ affectedRows: 1 }];
+      }
+
+      // Reset Steps 5, 6 and 7.
       if (query.startsWith("UPDATE kyc_steps")) {
         calls.push("reset_steps");
         return [{ affectedRows: 3 }];
@@ -128,7 +186,9 @@ function setupMockDatabase({
 
       // Record status history.
       if (
-        query.startsWith("INSERT INTO kyc_status_history")
+        query.startsWith(
+          "INSERT INTO kyc_status_history",
+        )
       ) {
         calls.push("insert_history");
 
@@ -165,7 +225,10 @@ test("rejected KYC restarts from Step 5", async () => {
   assert.equal(result.previousStatus, "rejected");
   assert.equal(result.currentStep, 5);
   assert.equal(result.stepsCompleted, 4);
-  assert.equal(result.invalidatedMediaCount, 3);
+
+  assert.equal(result.deletedMediaCount, 3);
+  assert.equal(result.deletedAgreementAcceptanceCount, 1);
+  assert.equal(result.cleanupJobsQueued, 3);
 
   assert.deepEqual(result.requiredMedia, [
     "shop_image",
@@ -173,20 +236,27 @@ test("rejected KYC restarts from Step 5", async () => {
     "consent_video",
   ]);
 
-  assert.deepEqual(
-    calls.filter((call) => call !== "release"),
-    [
-      "begin",
-      "invalidate_media",
-      "reset_steps",
-      "update_progress",
-      "reopen_case",
-      "insert_history",
-      "commit",
-    ],
+  assert.equal(
+    calls.filter((call) => call === "queue_cleanup").length,
+    3,
   );
 
+  assert.ok(calls.includes("delete_media"));
+  assert.ok(calls.includes("delete_agreement"));
+  assert.ok(calls.includes("reset_steps"));
+  assert.ok(calls.includes("insert_history"));
+  assert.ok(calls.includes("commit"));
   assert.ok(calls.includes("release"));
+
+  assert.ok(
+    calls.indexOf("queue_cleanup") <
+    calls.indexOf("delete_media"),
+  );
+
+  assert.ok(
+    calls.indexOf("delete_media") <
+    calls.indexOf("delete_agreement"),
+  );
 });
 
 // ---------------------------------------------------------
@@ -325,42 +395,29 @@ function setupMediaModelDatabase(initialAssets = []) {
       });
 
       // ---------------------------------------------------
-      // Invalidate previously uploaded/verified media.
+      // Delete previous media records for the given case.
       // ---------------------------------------------------
 
-      if (query.startsWith("UPDATE media_assets")) {
-        assert.match(
-          query,
-          /SET status = 'rejected'/i,
-        );
-
+      if (query.startsWith("DELETE FROM media_assets")) {
         assert.match(
           query,
           /WHERE case_id = \?/i,
         );
 
-        assert.match(
-          query,
-          /status IN \('uploaded', 'verified'\)/i,
-        );
-
         const [caseId] = params;
-        let affectedRows = 0;
+        const previousLength = assets.length;
 
-        for (const asset of assets) {
-          if (
-            asset.case_id === caseId &&
-            ["uploaded", "verified"].includes(
-              asset.status,
-            )
-          ) {
-            asset.status = "rejected";
-            affectedRows += 1;
+        for (let index = assets.length - 1; index >= 0; index -= 1) {
+          if (assets[index].case_id === caseId) {
+            assets.splice(index, 1);
           }
         }
 
-        return [{ affectedRows }];
+        return [{
+          affectedRows: previousLength - assets.length,
+        }];
       }
+
 
       // ---------------------------------------------------
       // Count active distinct media asset types.
@@ -491,7 +548,7 @@ function createPreviousMedia(caseId = 14) {
 // ---------------------------------------------------------
 
 test(
-  "media.model: invalidates previous media without deleting records",
+  "media.model: deletes previous media records for the KYC case",
   async () => {
     const { connection, assets } =
       setupMediaModelDatabase([
@@ -504,26 +561,18 @@ test(
         },
       ]);
 
-    const affected = await invalidatePreviousMedia(
+    const deletedCount = await deleteMediaByCaseId(
       connection,
       14,
     );
 
-    assert.equal(affected, 3);
+    assert.equal(deletedCount, 3);
 
     const previousAssets = assets.filter(
       (asset) => asset.case_id === 14,
     );
 
-    // No previous media row was deleted.
-    assert.equal(previousAssets.length, 3);
-
-    // All previous active media are now rejected.
-    assert.ok(
-      previousAssets.every(
-        (asset) => asset.status === "rejected",
-      ),
-    );
+    assert.equal(previousAssets.length, 0);
 
     // Another merchant's media must remain unchanged.
     const otherMerchantAsset = assets.find(
@@ -534,21 +583,13 @@ test(
       otherMerchantAsset.status,
       "uploaded",
     );
-
-    // A second invalidation must not affect
-    // already rejected records.
-    const secondAttempt = await invalidatePreviousMedia(
-      connection,
-      14,
-    );
-
-    assert.equal(secondAttempt, 0);
   },
 );
 
 // ---------------------------------------------------------
 // TEST 7 — ALL THREE NEW MEDIA TYPES ARE REQUIRED
 // ---------------------------------------------------------
+
 
 test(
   "media.model: all three fresh media types required after restart",
@@ -558,47 +599,33 @@ test(
         createPreviousMedia(),
       );
 
-    // Before rejection, all three types exist.
+    // Before restart, all three old media types exist.
     assert.equal(
-      await countUploadedAssetTypes(
-        connection,
-        14,
-      ),
+      await countUploadedAssetTypes(connection, 14),
       3,
     );
 
     assert.equal(
-      await hasAllRequiredMedia(
-        connection,
-        14,
-      ),
+      await hasAllRequiredMedia(connection, 14),
       true,
     );
 
-    // Admin rejects KYC and merchant restarts.
-    // Previous assets are invalidated.
-    const invalidated =
-      await invalidatePreviousMedia(
-        connection,
-        14,
-      );
+    // Merchant restarts rejected KYC.
+    const deletedCount = await deleteMediaByCaseId(
+      connection,
+      14,
+    );
 
-    assert.equal(invalidated, 3);
+    assert.equal(deletedCount, 3);
 
     // Old media must no longer count.
     assert.equal(
-      await countUploadedAssetTypes(
-        connection,
-        14,
-      ),
+      await countUploadedAssetTypes(connection, 14),
       0,
     );
 
     assert.equal(
-      await hasAllRequiredMedia(
-        connection,
-        14,
-      ),
+      await hasAllRequiredMedia(connection, 14),
       false,
     );
 
@@ -611,18 +638,12 @@ test(
     });
 
     assert.equal(
-      await countUploadedAssetTypes(
-        connection,
-        14,
-      ),
+      await countUploadedAssetTypes(connection, 14),
       1,
     );
 
     assert.equal(
-      await hasAllRequiredMedia(
-        connection,
-        14,
-      ),
+      await hasAllRequiredMedia(connection, 14),
       false,
     );
 
@@ -635,18 +656,12 @@ test(
     });
 
     assert.equal(
-      await countUploadedAssetTypes(
-        connection,
-        14,
-      ),
+      await countUploadedAssetTypes(connection, 14),
       2,
     );
 
     assert.equal(
-      await hasAllRequiredMedia(
-        connection,
-        14,
-      ),
+      await hasAllRequiredMedia(connection, 14),
       false,
     );
 
@@ -659,18 +674,12 @@ test(
     });
 
     assert.equal(
-      await countUploadedAssetTypes(
-        connection,
-        14,
-      ),
+      await countUploadedAssetTypes(connection, 14),
       3,
     );
 
     assert.equal(
-      await hasAllRequiredMedia(
-        connection,
-        14,
-      ),
+      await hasAllRequiredMedia(connection, 14),
       true,
     );
   },
@@ -734,22 +743,22 @@ test(
 // TEST 9 — PREVIOUS MEDIA REMAIN IN DATABASE HISTORY
 // ---------------------------------------------------------
 
+
 test(
-  "media.model: rejected media remain available in case history",
+  "media.model: only fresh media remain after KYC restart",
   async () => {
     const { connection, addAsset } =
       setupMediaModelDatabase(
         createPreviousMedia(),
       );
 
-    // Invalidate previous media.
-    const invalidated =
-      await invalidatePreviousMedia(
-        connection,
-        14,
-      );
+    // Delete old media during KYC restart.
+    const deletedCount = await deleteMediaByCaseId(
+      connection,
+      14,
+    );
 
-    assert.equal(invalidated, 3);
+    assert.equal(deletedCount, 3);
 
     // Merchant uploads a new shop image.
     addAsset({
@@ -764,26 +773,12 @@ test(
       14,
     );
 
-    // Three old records + one new record.
-    assert.equal(records.length, 4);
+    // Only the new media record should remain.
+    assert.equal(records.length, 1);
 
-    const rejectedRecords = records.filter(
-      (asset) => asset.status === "rejected",
-    );
-
-    const activeRecords = records.filter(
-      (asset) => asset.status === "uploaded",
-    );
-
-    assert.equal(rejectedRecords.length, 3);
-    assert.equal(activeRecords.length, 1);
-
-    // Check the new record is separate from old media.
-    assert.equal(activeRecords[0].id, 4);
-    assert.equal(
-      activeRecords[0].asset_type,
-      "shop_image",
-    );
+    assert.equal(records[0].id, 4);
+    assert.equal(records[0].status, "uploaded");
+    assert.equal(records[0].asset_type, "shop_image");
   },
 );
 

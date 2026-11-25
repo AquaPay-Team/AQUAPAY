@@ -13,6 +13,10 @@ import { getAuthConfig } from "./config/auth.js";
 import { assertDigiLockerSignaturePolicy } from "./modules/kyc/document-verification/digilocker/digilocker.signatureConfig.js";
 import { assertIdentityEncryptionConfiguration } from "./modules/kyc/document-verification/shared/identityData.crypto.js";
 import { assertProviderSessionEncryptionConfiguration } from "./modules/kyc/document-verification/shared/providerSession.crypto.js";
+import {
+  startMediaCleanupWorker,
+  stopMediaCleanupWorker,
+} from "./modules/kyc/media/media.cleanup.worker.js";
 
 async function start() {
   try {
@@ -42,6 +46,9 @@ async function start() {
       console.warn("PAN XML verification results will be marked development-only and cryptographically unverified");
     }
 
+    // Start KYC media cleanup worker after database checks.
+      startMediaCleanupWorker();
+
     const server = app.listen(port, () => {
       console.log(
         `AquaPay API listening on port ${port}; database connection verified`,
@@ -51,6 +58,7 @@ async function start() {
     return server;
   } catch (error) {
     console.error("AquaPay startup failed:", error.message);
+    await stopMediaCleanupWorker().catch(() => {});
     // Ensure pool is closed if it was created
     await pool.end().catch(() => {});
     process.exitCode = 1;
@@ -58,18 +66,31 @@ async function start() {
   }
 }
 
+
 function installGracefulShutdown(server) {
   let shuttingDown = false;
+
   const shutdown = (signal) => {
     if (shuttingDown) return;
+
     shuttingDown = true;
     console.info(`AquaPay received ${signal}; shutting down`);
+
     server.close(async (serverError) => {
+      const workerResult = await Promise.allSettled([
+        stopMediaCleanupWorker(),
+      ]);
+
       const results = await Promise.allSettled([
         pool.end(),
         redisConnection.closeRedisConnection(),
       ]);
-      if (serverError || results.some((result) => result.status === "rejected")) {
+
+      if (
+        serverError ||
+        workerResult.some((result) => result.status === "rejected") ||
+        results.some((result) => result.status === "rejected")
+      ) {
         process.exitCode = 1;
       }
     });

@@ -207,6 +207,7 @@ export default function AdminUsersPage() {
         setAddAgentModalOpen={setAddAgentModalOpen}
         handleOnboardAgent={handleOnboardAgent}
         selectedRole={selectedRole?.slug || ""}
+        permittedRoles={permittedRoles}
       />
     </>
   );

@@ -125,7 +125,7 @@ export default function UserTeam() {
 
   const handleOnboardAgent = async (agentData) => {
     try {
-      const targetRoleSlug = selectedRole?.slug || permittedRoles[0]?.slug;
+      const targetRoleSlug = agentData.role || selectedRole?.slug || permittedRoles[0]?.slug;
       if (!targetRoleSlug) {
         toast.error("No permitted role available for onboarding");
         return null;
@@ -192,7 +192,8 @@ export default function UserTeam() {
         addAgentModalOpen={addAgentModalOpen}
         setAddAgentModalOpen={setAddAgentModalOpen}
         handleOnboardAgent={handleOnboardAgent}
-        selectedRole={selectedRole?.slug || permittedRoles[0]?.slug || ""}
+        selectedRole={selectedRole?.slug || ""}
+        permittedRoles={permittedRoles}
       />
     </>
   );

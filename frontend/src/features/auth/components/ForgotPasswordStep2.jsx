@@ -6,6 +6,7 @@ export function ForgotPasswordStep2({
   identifier,
   otp,
   setOtp,
+  developmentOtp = "",
   resetToken,
   setResetToken,
   newPassword,
@@ -44,6 +45,20 @@ export function ForgotPasswordStep2({
       </div>
 
       <form onSubmit={handleResetPassword} className="space-y-4">
+        {/* Development Mode OTP helper banner */}
+        {developmentOtp && (
+          <div className="p-3 bg-amber-50/90 border border-amber-200/80 rounded-xl flex items-center justify-between text-xs text-amber-900 animate-in fade-in">
+            <div className="flex items-center gap-2">
+              <span className="inline-block w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+              <span className="font-semibold text-amber-800">Dev OTP:</span>
+              <span className="font-mono font-bold tracking-widest text-sm bg-white px-2 py-0.5 rounded border border-amber-200 select-all text-slate-900">
+                {developmentOtp}
+              </span>
+            </div>
+            <span className="text-[11px] text-amber-700 font-medium">Auto-filled</span>
+          </div>
+        )}
+
         {/* API Error Notification */}
         <ErrorAlert error={apiError} onDismiss={() => setApiError(null)} />
 

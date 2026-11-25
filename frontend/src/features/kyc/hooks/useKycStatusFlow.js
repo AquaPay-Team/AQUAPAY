@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { parseApiError } from "@/utils/errorHandler";
 import { isAdminRole } from "@/constants/roles";
 import { interpretKycStatus, currentMediaState } from "../utils/kycFlow";
+import { updateCachedUser } from "@/features/auth/session";
 import {
   getKycStatus,
   getSubmissionStatus,
@@ -77,11 +78,19 @@ export function useKycStatusFlow({
 
         if (state.view === "approved") {
           if (restartFlagKey) localStorage.removeItem(restartFlagKey);
+          updateCachedUser({
+            kyc: { ...(storedUser?.kyc || {}), status: "approved" },
+            kyc_status: "approved",
+          });
           navigate("/user/dashboard", { replace: true });
           return;
         }
         if (state.view === "submitted") {
           if (restartFlagKey) localStorage.removeItem(restartFlagKey);
+          updateCachedUser({
+            kyc: { ...(storedUser?.kyc || {}), status: "submitted" },
+            kyc_status: "submitted",
+          });
           setIsSubmitted(true);
           setIsRestartFlow(false);
           setReferenceId(submission.caseId ? `AQP-${String(submission.caseId).padStart(6, "0")}` : "");

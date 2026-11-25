@@ -1,4 +1,5 @@
 import authService from "./auth.service.js";
+import recoveryDelivery from "./recoveryDelivery.js";
 import asyncHandler from "../../utils/asyncHandler.js";
 
 const login = asyncHandler(async (req, res) => {
@@ -12,9 +13,13 @@ const getCurrentUser = asyncHandler(async (req, res) => {
 });
 
 const forgotPassword = asyncHandler(async (req, res) => {
+  recoveryDelivery.clearLatestDevOtp();
   const result = await authService.forgotPassword(req.validatedBody);
   const data = process.env.NODE_ENV === "development" && result.developmentResetToken
-    ? { resetToken: result.developmentResetToken }
+    ? {
+        resetToken: result.developmentResetToken,
+        developmentOtp: recoveryDelivery.getLatestDevOtp(),
+      }
     : null;
   res.status(200).json({ success: true, message: result.message, data });
 });

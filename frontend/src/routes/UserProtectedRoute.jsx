@@ -2,6 +2,7 @@ import React from "react";
 import { Navigate, Outlet } from "react-router-dom";
 import { useAuth } from "../features/auth/useAuth";
 import { isKycComplete } from "../features/kyc/model/kycStatus";
+import { getCachedUser } from "../features/auth/session";
 import { Loader2 } from "lucide-react";
 
 export function UserProtectedRoute({ requireKyc = true }) {
@@ -26,8 +27,14 @@ export function UserProtectedRoute({ requireKyc = true }) {
     return <Navigate to="/admin/dashboard" replace />;
   }
 
-  // KYC verification check
-  const kycStatus = user?.kyc?.status || user?.kyc_status;
+  // KYC verification check: verify in-memory user or cached storage to prevent transition race conditions
+  const cachedUser = getCachedUser();
+  const kycStatus =
+    user?.kyc?.status ||
+    user?.kyc_status ||
+    cachedUser?.kyc?.status ||
+    cachedUser?.kyc_status;
+
   if (requireKyc && !isKycComplete(kycStatus)) {
     return <Navigate to="/kyc" replace />;
   }

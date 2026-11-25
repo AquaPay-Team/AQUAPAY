@@ -18,6 +18,7 @@ export function AddAgentModal({
   setAddAgentModalOpen,
   handleOnboardAgent,
   selectedRole = "",
+  permittedRoles = [],
 }) {
   const [isLoading, setIsLoading] = useState(false);
   const [password, setPassword] = useState('');
@@ -25,6 +26,18 @@ export function AddAgentModal({
   const [copied, setCopied] = useState(false);
   const [createdAgent, setCreatedAgent] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
+  const [chosenRole, setChosenRole] = useState(selectedRole || "");
+
+  // Update chosen role whenever modal opens or role props change
+  useEffect(() => {
+    if (selectedRole) {
+      setChosenRole(selectedRole);
+    } else if (permittedRoles && permittedRoles.length > 0) {
+      setChosenRole(permittedRoles[0].slug);
+    } else {
+      setChosenRole("");
+    }
+  }, [selectedRole, permittedRoles, addAgentModalOpen]);
 
   // Generate a fresh unique password each time the modal opens
   useEffect(() => {
@@ -73,7 +86,7 @@ export function AddAgentModal({
     setAddAgentModalOpen(false);
   }, [setAddAgentModalOpen]);
 
-  const selectedRoleSlug = String(selectedRole || "");
+  const activeRoleSlug = String(selectedRole || chosenRole || "");
   const isPasswordValid = password.length >= 8;
 
   const handleSubmit = async (e) => {
@@ -98,8 +111,8 @@ export function AddAgentModal({
       errors.email = "Please enter a valid email address";
     }
 
-    if (!selectedRoleSlug) {
-      toast.error("Select a permitted role directory before creating a user");
+    if (!activeRoleSlug) {
+      toast.error("Please select a permitted role before creating a user");
       return;
     }
 
@@ -125,7 +138,7 @@ export function AddAgentModal({
       name: nameVal,
       mobile: mobileVal,
       email: emailVal,
-      role: selectedRoleSlug,
+      role: activeRoleSlug,
       password: password,
       shopname: form.shopname.value.trim() || null,
       city: form.city.value.trim() || null,
@@ -189,6 +202,33 @@ export function AddAgentModal({
         ) : (
           /* --- CREATION FORM --- */
           <form onSubmit={handleSubmit} className="mt-4 space-y-3 text-xs">
+            {/* Role Selection / Fixed Role Display */}
+            {!selectedRole && permittedRoles && permittedRoles.length > 0 ? (
+              <div>
+                <label htmlFor="create-user-role-select" className="block font-semibold text-slate-700 mb-1">
+                  Assign User Role *
+                </label>
+                <select
+                  id="create-user-role-select"
+                  value={chosenRole}
+                  onChange={(e) => setChosenRole(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:border-blue-500 font-medium text-slate-800"
+                  required
+                >
+                  {permittedRoles.map((r) => (
+                    <option key={r.id || r.slug} value={r.slug}>
+                      {r.name} ({String(r.slug).toUpperCase()})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : selectedRole ? (
+              <div className="bg-blue-50/70 border border-blue-200/60 rounded-lg px-3 py-2 text-xs flex items-center justify-between">
+                <span className="text-slate-600 font-medium">Assigned Role:</span>
+                <span className="font-bold text-blue-700 uppercase">{selectedRole}</span>
+              </div>
+            ) : null}
+
             {/* Full Name */}
             <div>
               <label className="block font-semibold text-slate-700 mb-1">Full Name *</label>

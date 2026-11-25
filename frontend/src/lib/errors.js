@@ -3,6 +3,25 @@
  * Standardizes errors across network, server, and validation responses.
  */
 
+export const BLOCKED_ACCOUNT_MESSAGE =
+  "Your account is blocked. Please contact the administrator.";
+
+const BLOCKED_ACCOUNT_CODES = new Set([
+  "ACCOUNT_BLOCKED",
+  "ACCOUNT_INACTIVE",
+  "ACCOUNT_BLOCKED_BY_ADMIN",
+]);
+
+export function isBlockedAccountError(err) {
+  const data = err?.response?.data || err?.data;
+  const code = data?.code || data?.errorCode;
+  return (
+    BLOCKED_ACCOUNT_CODES.has(code) ||
+    data?.message === BLOCKED_ACCOUNT_MESSAGE ||
+    err?.message === BLOCKED_ACCOUNT_MESSAGE
+  );
+}
+
 export function extractFieldErrors(data) {
   const fieldErrors = {};
   if (!data) return fieldErrors;
@@ -78,6 +97,29 @@ export function parseApiError(err) {
   const specificMessage = typeof data?.message === "string" ? data.message : null;
   const backendCode = data?.code || data?.errorCode || null;
   const errorList = Array.isArray(data?.errors) ? data.errors : [];
+
+  // Blocked accounts must keep the exact backend message. This check comes
+  // before the generic 401/403 handling so it is never masked as a credential
+  // or permission error.
+  if (isBlockedAccountError(err)) {
+    return {
+      type: "ACCOUNT_BLOCKED",
+      title: "Account Blocked",
+      message: specificMessage || BLOCKED_ACCOUNT_MESSAGE,
+      fieldErrors,
+      errors: errorList,
+    };
+  }
+
+  if (backendCode === "SESSION_TERMINATED") {
+    return {
+      type: "AUTH_EXPIRED",
+      title: "Session Ended",
+      message: specificMessage || "Your session has ended. Please log in again.",
+      fieldErrors,
+      errors: errorList,
+    };
+  }
 
   if (status === 401 || backendCode === "TOKEN_EXPIRED") {
     return {

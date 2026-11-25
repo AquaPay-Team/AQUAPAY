@@ -49,7 +49,13 @@ test("operations overview reports live dependency readiness without connection d
   const overview = await adminOperationsService.getOperationsOverview();
   assert.equal(overview.dependencies.mysql.status, "ready");
   assert.equal(overview.dependencies.redis.status, "ready");
-  assert.equal(overview.reports.historical.available, false);
+  assert.equal(overview.reports.historical.available, true);
+  assert.equal(overview.reports.operational.available, true);
+  assert.equal(overview.reports.operational.scope, "persisted_mysql");
+  assert.ok(overview.reports.operational.last24Hours);
+  assert.ok(overview.reports.operational.last7Days);
+  assert.ok(Array.isArray(overview.reports.operational.hourlyBreakdown));
+  assert.ok(overview.reports.platformActivity);
   assert.doesNotMatch(JSON.stringify(overview), /password|redis:\/\/|mysql:\/\//i);
 });
 

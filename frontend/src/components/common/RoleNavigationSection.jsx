@@ -78,20 +78,6 @@ export function RoleNavigationSection({
 
       {isExpanded && !collapsed && (
         <div className="pl-7 pr-1 py-1 space-y-0.5 border-l-2 border-slate-100 ml-5 mt-0.5">
-          {/* All Users Directory Link */}
-          <Link
-            to={basePath}
-            onClick={onNavigate}
-            aria-current={!selectedRoleId && location.pathname === basePath ? "page" : undefined}
-            className={`w-full text-left px-3 py-2 rounded-lg text-[13px] transition-colors flex items-center gap-2.5 ${
-              !selectedRoleId && location.pathname === basePath
-                ? "bg-blue-50 text-blue-700 font-bold shadow-2xs"
-                : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-            }`}
-          >
-            <span className="truncate">All Users</span>
-          </Link>
-
           {loadState === "loading" && (
             <div className="px-3 py-2 text-[11px] text-slate-400">Loading roles...</div>
           )}

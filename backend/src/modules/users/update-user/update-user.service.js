@@ -1,6 +1,9 @@
 
 import pool from "../../../config/db.js";
 import userModel from "../user.model.js";
+import authModel from "../../auth/auth.model.js";
+import authSessionCache from "../../auth/authSessionCache.js";
+import { isBlockedStatus } from "../../auth/accountStatus.js";
 import ApiError from "../../../utils/ApiError.js";
 import httpStatus from "../../../utils/httpStatus.js";
 
@@ -110,7 +113,32 @@ async function updateUser({ actorId, targetUserId, fields }) {
     // 6. Update only the fields supplied by the administrator.
     await userModel.updateUserFields(targetId, fields, connection);
 
-    // 7. Fetch a safe profile for the response.
+    // 7. Terminate every existing session as part of the same transaction
+    //    when an account is deactivated/blocked. Bumping token_version makes
+    //    all previously issued JWTs fail requireAuth immediately. Reactivating
+    //    clears the in-process blocked marker and any Redis auth cache.
+    if (fields.status !== undefined) {
+      await authSessionCache.clearCachedAuthState(targetId);
+
+      if (isBlockedStatus(fields.status)) {
+        try {
+          await authModel.revokeUserSessions(targetId, connection);
+        } catch (error) {
+          // Allow deactivation before migration 011 is applied; the status
+          // check in requireAuth still blocks the account immediately.
+          const code = String(error?.code || "");
+          if (
+            code !== "ER_BAD_FIELD_ERROR" &&
+            code !== "ER_NO_SUCH_TABLE"
+          ) {
+            throw error;
+          }
+        }
+        authSessionCache.markAccountBlocked(targetId);
+      }
+    }
+
+    // 8. Fetch a safe profile for the response.
     const updatedUser = await userModel.findUserSafeById(
       targetId,
       connection,

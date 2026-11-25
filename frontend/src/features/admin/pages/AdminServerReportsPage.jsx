@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   Activity,
   AlertCircle,
@@ -39,6 +39,12 @@ export default function AdminServerReportsPage() {
   const overview = query.data;
   const api = overview?.api;
   const error = parseApiError(query.error).message || "Operational data is unavailable.";
+  const [timeframe, setTimeframe] = useState("24h");
+
+  const reports = overview?.reports?.operational;
+  const platform = overview?.reports?.platformActivity;
+  const current = timeframe === "7d" ? reports?.last7Days : reports?.last24Hours;
+  const hourlyBreakdown = reports?.hourlyBreakdown || [];
 
   return <section className="mx-auto max-w-7xl space-y-5 pb-10">
     <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start"><div><div className="mb-1 flex items-center gap-2 text-xs text-slate-400"><span>Admin</span><span>/</span><span className="font-semibold text-slate-700">Server & Reports</span></div><h1 className="text-xl font-bold tracking-tight text-slate-900">Server & Reports</h1><p className="mt-1 text-xs text-slate-500">Live, process-local operational status. Dependency readiness is checked separately from API liveness.</p></div><button type="button" onClick={() => query.refetch()} disabled={query.isFetching} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 shadow-2xs transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"><RefreshCw className={`h-3.5 w-3.5 ${query.isFetching ? "animate-spin" : ""}`} />Refresh</button></div>
@@ -47,7 +53,163 @@ export default function AdminServerReportsPage() {
 
     <div className="grid gap-4 md:grid-cols-3"><div className={panel}><div className="flex items-start justify-between"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600"><Server className="h-5 w-5" /></span>{query.isLoading ? <Loader2 className="h-4 w-4 animate-spin text-blue-600" /> : <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-bold text-emerald-700"><CheckCircle2 className="h-3 w-3" />Alive</span>}</div><h2 className="mt-4 text-sm font-bold text-slate-900">Server Overview</h2><p className="mt-1 text-xs text-slate-500">Liveness confirms this API process responded.</p><p className="mt-3 text-2xl font-bold text-slate-900">{overview?.server ? formatUptime(overview.server.uptimeSeconds) : "—"}</p><p className="mt-1 text-[11px] text-slate-400">Current process uptime</p></div><ReadinessCard label="MySQL Database" icon={Database} dependency={overview?.dependencies?.mysql} isLoading={query.isLoading} /><ReadinessCard label="Redis Cache" icon={Activity} dependency={overview?.dependencies?.redis} isLoading={query.isLoading} /></div>
 
-    <div className="grid gap-5 lg:grid-cols-2"><div className={panel}><div className="flex items-center gap-2"><Activity className="h-4 w-4 text-blue-600" /><h2 className="text-base font-bold text-slate-900">API Monitoring</h2></div><p className="mt-1 text-xs text-slate-400">Measured by this API process since its current start; not a historical or multi-instance report.</p><div className="mt-5 grid grid-cols-3 gap-3"><div><p className="text-[11px] font-semibold text-slate-500">Requests</p><p className="mt-1 text-xl font-bold text-slate-900">{api?.requestCount ?? "—"}</p></div><div><p className="text-[11px] font-semibold text-slate-500">Avg. latency</p><p className="mt-1 text-xl font-bold text-slate-900">{api?.averageLatencyMs == null ? "—" : `${api.averageLatencyMs} ms`}</p></div><div><p className="text-[11px] font-semibold text-slate-500">5xx error rate</p><p className="mt-1 text-xl font-bold text-slate-900">{api?.errorRatePercent == null ? "—" : `${api.errorRatePercent}%`}</p></div></div></div><div className={panel}><div className="flex items-center gap-2"><Clock3 className="h-4 w-4 text-blue-600" /><h2 className="text-base font-bold text-slate-900">Operational Reports</h2></div><p className="mt-1 text-xs text-slate-400">Live report generated at {formatTime(overview?.reports?.operational?.generatedAt)}.</p><div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600"><p className="font-semibold text-slate-800">Historical reports unavailable</p><p className="mt-1">{overview?.reports?.historical?.reason || "Persistent metrics storage has not been configured."}</p></div></div></div>
+    <div className="grid gap-5 lg:grid-cols-2"><div className={panel}><div className="flex items-center gap-2"><Activity className="h-4 w-4 text-blue-600" /><h2 className="text-base font-bold text-slate-900">API Monitoring</h2></div><p className="mt-1 text-xs text-slate-400">Measured by this API process since its current start; not a historical or multi-instance report.</p><div className="mt-5 grid grid-cols-3 gap-3"><div><p className="text-[11px] font-semibold text-slate-500">Requests</p><p className="mt-1 text-xl font-bold text-slate-900">{api?.requestCount ?? "—"}</p></div><div><p className="text-[11px] font-semibold text-slate-500">Avg. latency</p><p className="mt-1 text-xl font-bold text-slate-900">{api?.averageLatencyMs == null ? "—" : `${api.averageLatencyMs} ms`}</p></div><div><p className="text-[11px] font-semibold text-slate-500">5xx error rate</p><p className="mt-1 text-xl font-bold text-slate-900">{api?.errorRatePercent == null ? "—" : `${api.errorRatePercent}%`}</p></div></div></div><div className={panel}>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Clock3 className="h-4 w-4 text-blue-600" />
+            <h2 className="text-base font-bold text-slate-900">Operational Reports</h2>
+          </div>
+          <div className="flex items-center gap-1 border border-slate-200 rounded-lg overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setTimeframe("24h")}
+              className={`px-3 py-1 text-xs transition-colors ${
+                timeframe === "24h"
+                  ? "bg-blue-50 text-blue-700 font-bold"
+                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+              }`}
+            >
+              24h
+            </button>
+            <button
+              type="button"
+              onClick={() => setTimeframe("7d")}
+              className={`px-3 py-1 text-xs transition-colors ${
+                timeframe === "7d"
+                  ? "bg-blue-50 text-blue-700 font-bold"
+                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+              }`}
+            >
+              7d
+            </button>
+          </div>
+        </div>
+        <p className="mt-1 text-xs text-slate-400">
+          Persisted metrics for{" "}
+          {timeframe === "24h" ? "the last 24 hours" : "the last 7 days"}{" "}
+          (report generated at{" "}
+          {reports ? formatTime(reports.generatedAt) : "—"}).
+        </p>
+        {reports?.available ? (
+          <>
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              <div className="rounded-xl border border-slate-200 bg-white p-3">
+                <p className="text-[11px] font-semibold text-slate-500">
+                  Total Requests
+                </p>
+                <p className="mt-1 text-2xl font-bold text-slate-900">
+                  {current?.totalRequests ?? "—"}
+                </p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-3">
+                <p className="text-[11px] font-semibold text-slate-500">
+                  Avg Latency
+                </p>
+                <p className="mt-1 text-2xl font-bold text-slate-900">
+                  {current?.avgLatencyMs == null ? "—" : `${current.avgLatencyMs} ms`}
+                </p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-3">
+                <p className="text-[11px] font-semibold text-slate-500">
+                  5xx Error Rate
+                </p>
+                <p className="mt-1 text-2xl font-bold text-slate-900">
+                  {current?.error5xxRate == null ? "—" : `${current.error5xxRate}%`}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-xl border border-slate-200 bg-white p-3">
+              <p className="mb-2 text-[11px] font-semibold text-slate-500">
+                Platform Activity
+              </p>
+              <div className="grid gap-2 md:grid-cols-2 text-xs text-slate-600">
+                <div>
+                  <span className="font-semibold text-slate-800">Users (24h)</span>
+                  <span className="float-right">{platform?.users_24h ?? "—"}</span>
+                </div>
+                <div>
+                  <span className="font-semibold text-slate-800">Users (7d)</span>
+                  <span className="float-right">{platform?.users_7d ?? "—"}</span>
+                </div>
+                <div>
+                  <span className="font-semibold text-slate-800">KYC Submissions (24h)</span>
+                  <span className="float-right">{platform?.kyc_submissions_24h ?? "—"}</span>
+                </div>
+                <div>
+                  <span className="font-semibold text-slate-800">KYC Approvals (24h)</span>
+                  <span className="float-right">{platform?.kyc_approvals_24h ?? "—"}</span>
+                </div>
+              </div>
+            </div>
+
+            {hourlyBreakdown.length > 0 ? (
+              <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 overflow-x-auto">
+                <p className="mb-2 text-[11px] font-semibold text-slate-500">
+                  Hourly Breakdown
+                </p>
+                <table className="w-full text-sm text-slate-600">
+                  <thead>
+                    <tr className="border-b border-slate-200">
+                      <th className="text-left pb-2 text-[11px] font-semibold text-slate-500">
+                        Bucket Hour (UTC)
+                      </th>
+                      <th className="text-right pb-2 text-[11px] font-semibold text-slate-500">
+                        Requests
+                      </th>
+                      <th className="text-right pb-2 text-[11px] font-semibold text-slate-500">
+                        5xx
+                      </th>
+                      <th className="text-right pb-2 text-[11px] font-semibold text-slate-500">
+                        4xx
+                      </th>
+                      <th className="text-right pb-2 text-[11px] font-semibold text-slate-500">
+                        Avg Latency
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {hourlyBreakdown.map((row) => (
+                      <tr
+                        key={String(row.bucketHour)}
+                        className="border-b border-slate-100"
+                      >
+                        <td className="py-2 text-[11px]">
+                          {String(row.bucketHour)}
+                        </td>
+                        <td className="py-2 text-right text-[11px]">
+                          {row.totalRequests}
+                        </td>
+                        <td className="py-2 text-right text-[11px]">
+                          {row.error5xxCount}
+                        </td>
+                        <td className="py-2 text-right text-[11px]">
+                          {row.error4xxCount}
+                        </td>
+                        <td className="py-2 text-right text-[11px]">
+                          {row.avgLatencyMs == null ? "—" : `${row.avgLatencyMs}ms`}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-500">
+                No hourly buckets recorded yet. Make a few API requests to populate metrics.
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+            <p className="font-semibold text-slate-800">Historical reports unavailable</p>
+            <p className="mt-1">
+              {reports?.reason ||
+                "Persistent metrics and log storage are not configured. Run the 010_operational_metrics migration and restart the backend."}
+            </p>
+          </div>
+        )}
+      </div></div>
 
   </section>;
 }

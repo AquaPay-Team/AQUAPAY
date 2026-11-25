@@ -2,6 +2,12 @@ import crypto from "node:crypto";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import authModel from "./auth.model.js";
+import authSessionCache from "./authSessionCache.js";
+import {
+  BLOCKED_ACCOUNT_MESSAGE,
+  isBlockedStatus,
+  blockedAccountError,
+} from "./accountStatus.js";
 import recoveryDelivery from "./recoveryDelivery.js";
 import ApiError from "../../utils/ApiError.js";
 import { getAuthConfig, JWT_ISSUER, JWT_AUDIENCE } from "../../config/auth.js";
@@ -39,6 +45,16 @@ function authFailure() {
     "Invalid email/mobile or password",
     "INVALID_CREDENTIALS",
   );
+}
+
+/**
+ * Single gate for every token-issuing flow. Inactive/blocked accounts must
+ * always receive the blocked-account error rather than a credential error.
+ */
+function assertAccountCanAuthenticate(user) {
+  if (user && isBlockedStatus(user.status)) {
+    throw blockedAccountError();
+  }
 }
 
 async function withDatabase(operation) {
@@ -86,6 +102,10 @@ async function login({ identifier, type, password }) {
     authModel.findUserByIdentifier(lookupIdentifier, type),
   );
 
+  // Check account status before credentials so a valid inactive/blocked
+  // account can never be reported as invalid credentials.
+  assertAccountCanAuthenticate(user);
+
   let passwordMatches = false;
 
   try {
@@ -101,7 +121,10 @@ async function login({ identifier, type, password }) {
     throw authFailure();
   }
 
-  const accessToken = jwt.sign({}, config.secret, {
+  // A reactivated account gets a fresh generation and no stale blocked flag.
+  await authSessionCache.clearCachedAuthState(user.id);
+
+  const accessToken = jwt.sign({ tv: Number(user.tokenVersion) || 0 }, config.secret, {
     algorithm: "HS256",
     audience: JWT_AUDIENCE,
     expiresIn: config.expiresIn,
@@ -309,6 +332,14 @@ const authService = {
   changePassword,
 };
 
-export { login, getCurrentUser, forgotPassword, resetPassword, changePassword };
+export {
+  login,
+  getCurrentUser,
+  forgotPassword,
+  resetPassword,
+  changePassword,
+  assertAccountCanAuthenticate,
+  BLOCKED_ACCOUNT_MESSAGE,
+};
 
 export default authService;

@@ -31,23 +31,35 @@ async function updatePasswordHash(connection, userId, passwordHash) {
 
 async function findUserByIdentifier(identifier, type) {
   const column = type === "email" ? "email" : "mobile";
+  const selectUser = (withTokenVersion) => {
+    const tokenVersionColumn = withTokenVersion ? "u.token_version," : "";
+    return pool.execute(
+      `SELECT
+         ${SAFE_USER_FIELDS},
+         u.password_hash,
+         ${tokenVersionColumn}
+         k.id AS kyc_case_id,
+         k.status AS kyc_status,
+         k.steps_completed AS kyc_steps_completed,
+         k.business_type AS kyc_business_type
+        FROM users u
+        JOIN roles r ON r.id = u.role_id
+        LEFT JOIN companies c ON c.id = u.company_id
+        LEFT JOIN kyc_cases k ON k.user_id = u.id
+        WHERE u.${column} = ?
+        LIMIT 1`,
+      [identifier],
+    );
+  };
 
-  const [rows] = await pool.execute(
-    `SELECT
-       ${SAFE_USER_FIELDS},
-       u.password_hash,
-       k.id AS kyc_case_id,
-       k.status AS kyc_status,
-       k.steps_completed AS kyc_steps_completed,
-       k.business_type AS kyc_business_type
-     FROM users u
-     JOIN roles r ON r.id = u.role_id
-     LEFT JOIN companies c ON c.id = u.company_id
-     LEFT JOIN kyc_cases k ON k.user_id = u.id
-     WHERE u.${column} = ?
-     LIMIT 1`,
-    [identifier],
-  );
+  let rows;
+  try {
+    [rows] = await selectUser(true);
+  } catch (error) {
+    // Keep login working until migration 011 adds token_version.
+    if (!String(error?.code || "").includes("ER_BAD_FIELD_ERROR")) throw error;
+    [rows] = await selectUser(false);
+  }
 
   const row = rows[0];
   if (!row) return null;
@@ -57,11 +69,13 @@ async function findUserByIdentifier(identifier, type) {
     kyc_status,
     kyc_steps_completed,
     kyc_business_type,
+    token_version,
     ...user
   } = row;
 
   return {
     ...user,
+    tokenVersion: Number(token_version) || 0,
     kyc: kyc_case_id
       ? {
           status: kyc_status,
@@ -142,6 +156,55 @@ async function isUserActive(userId) {
     [userId],
   );
   return rows.length > 0;
+}
+
+/**
+ * Authoritative account state used by the auth middleware. Returns null when
+ * the user no longer exists (successful query, no rows).
+ */
+async function getUserAuthState(userId) {
+  let rows;
+  try {
+    [rows] = await pool.execute(
+      "SELECT status, token_version FROM users WHERE id = ? LIMIT 1",
+      [userId],
+    );
+  } catch (error) {
+    // The token_version column may not exist until migration 011 is applied.
+    // Fall back to the original schema so auth keeps working during rollout.
+    if (!String(error?.code || "").includes("ER_BAD_FIELD_ERROR")) throw error;
+    [rows] = await pool.execute(
+      "SELECT status, NULL AS token_version FROM users WHERE id = ? LIMIT 1",
+      [userId],
+    );
+  }
+
+  const row = Array.isArray(rows) ? rows[0] : null;
+  if (!row) return null;
+
+  return {
+    status: String(row.status || "").toLowerCase(),
+    tokenVersion: row.token_version === null || row.token_version === undefined
+      ? null
+      : Number(row.token_version),
+  };
+}
+
+/**
+ * Bump the account's session generation. Every token issued before this point
+ * carries the previous generation and is rejected by requireAuth. Called in
+ * the same transaction as the status change so deactivation and revocation
+ * cannot be split.
+ */
+async function revokeUserSessions(userId, connection) {
+  const db = connection || pool;
+  const [result] = await db.execute(
+    `UPDATE users
+        SET token_version = token_version + 1
+      WHERE id = ?`,
+    [userId],
+  );
+  return Number(result?.affectedRows) > 0;
 }
 
 async function isAdmin(userId) {
@@ -452,6 +515,8 @@ const authModel = {
   findUserByIdentifier,
   findActiveUserById,
   isUserActive,
+  getUserAuthState,
+  revokeUserSessions,
   isAdmin,
   incrementRateLimitCounter,
   createPasswordReset,
@@ -467,6 +532,8 @@ export {
   findUserByIdentifier,
   findActiveUserById,
   isUserActive,
+  getUserAuthState,
+  revokeUserSessions,
   isAdmin,
   incrementRateLimitCounter,
   createPasswordReset,

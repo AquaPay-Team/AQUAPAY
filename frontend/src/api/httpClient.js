@@ -1,5 +1,6 @@
 import axios from "axios";
 import { getToken, clearSession } from "@/features/auth/session";
+import { isBlockedAccountError } from "@/lib/errors";
 
 const rawBaseUrl = import.meta.env.VITE_API_BASE_URL;
 
@@ -47,6 +48,26 @@ httpClient.interceptors.response.use(
       url.includes("/auth/login") ||
       url.includes("/auth/forgot-password") ||
       url.includes("/auth/reset-password");
+
+    // An admin can deactivate an account while it is signed in. Any 401/403
+    // carrying ACCOUNT_BLOCKED/ACCOUNT_INACTIVE ends the local session
+    // immediately and sends the user to the login page with a flash notice.
+    if (
+      (status === 401 || status === 403) &&
+      isBlockedAccountError(error)
+    ) {
+      clearSession();
+
+      if (typeof window !== "undefined") {
+        const path = window.location.pathname;
+        if (!path.includes("/login")) {
+          const reason = encodeURIComponent("account_blocked");
+          window.location.href = `/login?reason=${reason}`;
+        }
+      }
+
+      return Promise.reject(error);
+    }
 
     // Handle token expiry / invalid token on protected endpoints
     if (status === 401 && !isPublicAuthRoute) {

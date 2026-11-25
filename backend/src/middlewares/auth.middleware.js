@@ -1,6 +1,11 @@
 
 import jwt from "jsonwebtoken";
 import authModel from "../modules/auth/auth.model.js";
+import authSessionCache from "../modules/auth/authSessionCache.js";
+import {
+  isBlockedStatus,
+  blockedAccountError,
+} from "../modules/auth/accountStatus.js";
 import ApiError from "../utils/ApiError.js";
 import { getAuthConfig, JWT_ISSUER, JWT_AUDIENCE } from "../config/auth.js";
 
@@ -10,6 +15,24 @@ function unauthorized(message = "Authentication required") {
 
 function forbidden(message = "Admin access required") {
   return new ApiError(403, message, [], "FORBIDDEN");
+}
+
+function sessionTerminated() {
+  return new ApiError(
+    401,
+    "Your session has been terminated. Please log in again.",
+    [],
+    "SESSION_TERMINATED",
+  );
+}
+
+function authenticationUnavailable() {
+  return new ApiError(
+    503,
+    "Authentication is temporarily unavailable",
+    [],
+    "SERVICE_UNAVAILABLE",
+  );
 }
 
 async function requireAuth(req, res, next) {
@@ -44,19 +67,59 @@ async function requireAuth(req, res, next) {
     return next(unauthorized("Invalid or expired access token"));
   }
 
+  // An admin-initiated deactivation is remembered in-process so the very
+  // next request from that account is rejected before any DB/cache read.
+  if (authSessionCache.isAccountMarkedBlocked(payload.sub)) {
+    return next(blockedAccountError());
+  }
+
+  let isActive;
   try {
-    if (!(await authModel.isUserActive(payload.sub))) {
-      return next(unauthorized("Invalid or expired access token"));
-    }
+    isActive = await authModel.isUserActive(payload.sub);
   } catch {
-    return next(
-      new ApiError(
-        503,
-        "Authentication is temporarily unavailable",
-        [],
-        "SERVICE_UNAVAILABLE",
-      ),
-    );
+    return next(authenticationUnavailable());
+  }
+
+  if (!isActive) {
+    // Distinguish an admin deactivation from an expired/deleted account so
+    // the client gets the actionable blocked-account message.
+    let authState = null;
+    try {
+      authState = await authModel.getUserAuthState(payload.sub);
+    } catch {
+      // Pre-migration schema or DB failure — keep the generic 401 below.
+    }
+
+    if (authState && isBlockedStatus(authState.status)) {
+      authSessionCache.markAccountBlocked(payload.sub);
+      return next(blockedAccountError());
+    }
+
+    return next(unauthorized("Invalid or expired access token"));
+  }
+
+  // Session generation is embedded in every token issued since migration 011.
+  // Only tokens that carry it need the extra state read.
+  if (Number.isFinite(payload.tv)) {
+    let authState = null;
+    try {
+      authState = await authModel.getUserAuthState(payload.sub);
+    } catch {
+      // Migration not applied yet — treat tokens without enforcement.
+    }
+
+    if (authState && isBlockedStatus(authState.status)) {
+      authSessionCache.markAccountBlocked(payload.sub);
+      return next(blockedAccountError());
+    }
+
+    if (
+      authState &&
+      Number.isFinite(authState.tokenVersion) &&
+      Number(payload.tv) !== authState.tokenVersion
+    ) {
+      return next(sessionTerminated());
+    }
   }
 
   req.user = { id: payload.sub };

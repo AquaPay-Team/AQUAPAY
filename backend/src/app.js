@@ -8,6 +8,7 @@ import userRoutes from "./modules/users/user.routes.js";
 import authRoutes from "./modules/auth/auth.routes.js";
 import kycRoutes from "./modules/kyc/kyc.routes.js";
 import { requestMonitoringMiddleware } from "./monitoring/operationsMonitor.js";
+import { operationsTelemetryMiddleware } from "./middlewares/operationsTelemetryMiddleware.js";
 
 import { notFound, errorHandler } from "./middlewares/error.middleware.js";
 
@@ -48,6 +49,7 @@ app.use(
 
 app.use(express.json({ limit: "16kb" }));
 app.use(requestMonitoringMiddleware);
+app.use(operationsTelemetryMiddleware);
 
 app.use("/api/health", healthRoutes);
 app.use("/api/admin", adminRoutes);

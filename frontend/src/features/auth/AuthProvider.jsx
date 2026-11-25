@@ -3,6 +3,7 @@ import { getCurrentUser } from "../../api/auth.api";
 import { isAdminRole, isNormalUserRole } from "../../constants/roles";
 import { getToken, getCachedUser, setSession, clearSession, updateCachedUser } from "./session";
 import { queryClient } from "@/lib/queryClient";
+import { isBlockedAccountError } from "@/lib/errors";
 
 export const AuthContext = createContext(null);
 
@@ -57,8 +58,21 @@ export function AuthProvider({ children }) {
       }
     } catch (err) {
       if (err?.response?.status === 401 || err?.response?.status === 403) {
+        const blocked = isBlockedAccountError(err);
         clearSession();
         setUser(null);
+
+        try {
+          queryClient.clear();
+        } catch {}
+
+        if (
+          blocked &&
+          typeof window !== "undefined" &&
+          !window.location.pathname.includes("/login")
+        ) {
+          window.location.assign("/login?reason=account_blocked");
+        }
       }
       setIsLoading(false);
       verifyingRef.current = false;

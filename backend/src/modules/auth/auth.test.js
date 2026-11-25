@@ -8,6 +8,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import pool from "../../config/db.js";
 import authModel from "./auth.model.js";
+import authSessionCache from "./authSessionCache.js";
 import authController from "./auth.controller.js";
 import authService from "./auth.service.js";
 import recoveryDelivery from "./recoveryDelivery.js";
@@ -316,6 +317,73 @@ test("wrong password, unknown user, missing hash, and inactive status share a ge
   }
 });
 
+test("inactive and blocked accounts get an explicit blocked-account login error", async () => {
+  const originalFind = authModel.findUserByIdentifier;
+  const hash = await bcrypt.hash("correct-password", 4);
+
+  try {
+    for (const status of ["inactive", "blocked"]) {
+      authModel.findUserByIdentifier = async () =>
+        activeUser({ password_hash: hash, status });
+
+      for (const password of ["correct-password", "wrong-password"]) {
+        await assert.rejects(
+          authService.login({ identifier: "user@example.com", type: "email", password }),
+          (error) => {
+            assert.equal(error.statusCode, 403);
+            assert.equal(error.code, "ACCOUNT_BLOCKED");
+            assert.equal(
+              error.message,
+              "Your account is blocked. Please contact the administrator.",
+            );
+            return true;
+          },
+        );
+      }
+    }
+  } finally {
+    authModel.findUserByIdentifier = originalFind;
+  }
+});
+
+test("login endpoint returns 403 ACCOUNT_BLOCKED for a deactivated account", async () => {
+  const originalFind = authModel.findUserByIdentifier;
+  const originalExecute = pool.execute;
+  const hash = await bcrypt.hash("correct-password", 4);
+
+  authModel.findUserByIdentifier = async () =>
+    activeUser({ password_hash: hash, status: "inactive" });
+  pool.execute = async (sql) =>
+    sql.includes("SELECT request_count")
+      ? [[{ request_count: 1 }]]
+      : [{ affectedRows: 1 }];
+
+  const server = app.listen(0);
+  try {
+    await new Promise((resolve) => server.once("listening", resolve));
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const response = await fetch(`${base}/api/auth/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        identifier: "user@example.com",
+        password: "correct-password",
+      }),
+    });
+    const body = await response.json();
+    assert.equal(response.status, 403);
+    assert.equal(body.code, "ACCOUNT_BLOCKED");
+    assert.equal(
+      body.message,
+      "Your account is blocked. Please contact the administrator.",
+    );
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    authModel.findUserByIdentifier = originalFind;
+    pool.execute = originalExecute;
+  }
+});
+
 test("unknown-account login uses a dummy bcrypt hash at the configured cost and remains generic", async () => {
   const originalFind = authModel.findUserByIdentifier;
   const originalCompare = bcrypt.compare;
@@ -430,6 +498,45 @@ test("JWT middleware enforces signature, expiry, and active account status", asy
     };
     assert.equal((await runAuth(`Bearer ${token}`)).error.statusCode, 503);
   } finally {
+    authModel.isUserActive = originalActive;
+  }
+});
+
+test("JWT middleware rejects deactivated accounts and tokens from terminated sessions", async () => {
+  const originalState = authModel.getUserAuthState;
+  const originalActive = authModel.isUserActive;
+  authModel.isUserActive = async () => true;
+  const token = jwt.sign({ tv: 1 }, getAuthConfig().secret, {
+    algorithm: "HS256",
+    issuer: JWT_ISSUER,
+    audience: JWT_AUDIENCE,
+    expiresIn: "1h",
+    subject: "42",
+  });
+
+  try {
+    authModel.getUserAuthState = async () => ({
+      status: "active",
+      tokenVersion: 2,
+    });
+    const terminated = await runAuth(`Bearer ${token}`);
+    assert.equal(terminated.error.statusCode, 401);
+    assert.equal(terminated.error.code, "SESSION_TERMINATED");
+
+    authModel.getUserAuthState = async () => ({
+      status: "inactive",
+      tokenVersion: 2,
+    });
+    const blocked = await runAuth(`Bearer ${token}`);
+    assert.equal(blocked.error.statusCode, 403);
+    assert.equal(blocked.error.code, "ACCOUNT_BLOCKED");
+    assert.equal(
+      blocked.error.message,
+      "Your account is blocked. Please contact the administrator.",
+    );
+  } finally {
+    await authSessionCache.clearCachedAuthState(42);
+    authModel.getUserAuthState = originalState;
     authModel.isUserActive = originalActive;
   }
 });

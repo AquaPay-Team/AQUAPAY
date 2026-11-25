@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Eye, EyeOff } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { LightAnimatedBackground } from "../../components/common/LightAnimatedBackground";
 import { ErrorAlert } from "../../components/common/ErrorAlert";
@@ -14,6 +14,7 @@ import { parseApiError } from "../../utils/errorHandler";
 import { authenticateWithMe } from "../../api/auth.api";
 import { isAdminRole, isNormalUserRole } from "../../constants/roles";
 import { AuthSlideshow } from "@/features/auth";
+import { BLOCKED_ACCOUNT_MESSAGE } from "@/lib/errors";
 
 const schema = z.object({
   email: z.string().min(1, "Please enter your email or username"),
@@ -23,6 +24,7 @@ const schema = z.object({
 
 export const LoginPage = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [showPw, setShowPw] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [apiError, setApiError] = useState(null);
@@ -52,6 +54,19 @@ export const LoginPage = () => {
       navigate(kycDone ? ROUTES.USER_DASHBOARD : ROUTES.KYC, { replace: true });
     }
   }, [authLoading, isAuthenticated, isAdmin, user, navigate]);
+
+  // Flash notice after an admin deactivates a signed-in account, or after a
+  // blocked login attempt that was redirected back here.
+  useEffect(() => {
+    const reason = searchParams.get("reason");
+    if (reason === "account_blocked" || searchParams.get("session") === "blocked") {
+      setApiError({
+        type: "ACCOUNT_BLOCKED",
+        title: "Account Blocked",
+        message: BLOCKED_ACCOUNT_MESSAGE,
+      });
+    }
+  }, [searchParams]);
 
   const onSubmit = async (data) => {
     try {

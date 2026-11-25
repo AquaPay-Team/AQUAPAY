@@ -61,6 +61,17 @@ async function getRedisClient() {
   }
 
   if (!client.isReady) throw new Error("Redis is unavailable");
+
+  // Node's test runner keeps the process alive for open sockets. Unref the
+  // shared client in test child processes so test files can exit normally;
+  // production keeps the normal ref'd connection.
+  if (
+    process.env.NODE_TEST_CONTEXT &&
+    typeof client.unref === "function"
+  ) {
+    client.unref();
+  }
+
   return client;
 }
 

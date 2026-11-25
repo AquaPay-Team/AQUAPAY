@@ -21,6 +21,7 @@ export const ErrorAlert = ({ error, onDismiss }) => {
       case "SERVER_ERROR":
       case "SERVICE_UNAVAILABLE":
         return <ServerCrash className="text-rose-600 shrink-0 mt-0.5" size={18} />;
+      case "ACCOUNT_BLOCKED":
       case "AUTH_FAILED":
       case "FORBIDDEN":
         return <ShieldAlert className="text-rose-600 shrink-0 mt-0.5" size={18} />;

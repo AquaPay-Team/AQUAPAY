@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import pool from "../../../config/db.js";
 import userModel from "../user.model.js";
+import authSessionCache from "../../auth/authSessionCache.js";
 import updateUserService from "./update-user.service.js";
 import { validateUpdateUser } from "./update-user.validator.js";
 
@@ -154,10 +155,17 @@ function createMockConnection({
   destroyError = null,
 } = {}) {
   const calls = [];
+  const executedQueries = [];
 
   return {
     calls,
+    executedQueries,
     connection: {
+      async execute(sql, values) {
+        executedQueries.push({ sql, values });
+        return [{ affectedRows: 1 }];
+      },
+
       async beginTransaction() {
         calls.push("begin");
       },
@@ -384,6 +392,53 @@ test("update-user service: updates permitted fields and commits", async () => {
 
     assert.deepEqual(mock.calls, ["begin", "commit", "release"]);
   } finally {
+    mock.restore();
+  }
+});
+
+test("update-user service: revokes all sessions when an account becomes inactive", async () => {
+  const mock = mockUpdateUserDependencies({
+    updatedUser: { id: 10, status: "inactive" },
+  });
+
+  try {
+    await updateUserService.updateUser({
+      actorId: 1,
+      targetUserId: 10,
+      fields: { status: "inactive" },
+    });
+
+    const revoke = mock.executedQueries.find((query) =>
+      query.sql.includes("token_version = token_version + 1"),
+    );
+    assert.ok(revoke, "expected the session generation to be incremented");
+    assert.deepEqual(revoke.values, [10]);
+    assert.deepEqual(mock.calls, ["begin", "commit", "release"]);
+  } finally {
+    await authSessionCache.clearCachedAuthState(10);
+    mock.restore();
+  }
+});
+
+test("update-user service: does not revoke sessions when an account is activated", async () => {
+  const mock = mockUpdateUserDependencies({
+    updatedUser: { id: 10, status: "active" },
+  });
+
+  try {
+    await updateUserService.updateUser({
+      actorId: 1,
+      targetUserId: 10,
+      fields: { status: "active" },
+    });
+
+    const revoke = mock.executedQueries.find((query) =>
+      query.sql.includes("token_version = token_version + 1"),
+    );
+    assert.equal(revoke, undefined);
+    assert.deepEqual(mock.calls, ["begin", "commit", "release"]);
+  } finally {
+    await authSessionCache.clearCachedAuthState(10);
     mock.restore();
   }
 });

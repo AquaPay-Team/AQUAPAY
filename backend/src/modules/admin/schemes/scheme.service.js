@@ -62,60 +62,107 @@ async function createScheme(name) {
   }
 }
 
-async function updateSchemeStatus(schemeId, status) {
-  const [rows] = await pool.execute(
-    `SELECT id, name, status, is_default, created_at
-     FROM schemes
-     WHERE id = ?
-     LIMIT 1`,
-    [schemeId],
-  );
-  const existing = rows[0];
-
-  if (!existing) {
-    throw new ApiError(404, "Scheme not found", [], "SCHEME_NOT_FOUND");
+async function updateSchemeStatus(schemeId, status, actorUserId) {
+  if (!actorUserId || !/^[1-9]\d*$/.test(String(actorUserId))) {
+    throw new ApiError(401, "Authentication required", [], "UNAUTHORIZED");
+  }
+  if (status !== 0 && status !== 1) {
+    throw new ApiError(400, "Status must be 0 or 1", [], "VALIDATION_ERROR");
   }
 
-  if (Number(existing.is_default) === 1) {
-    if (status === 0) {
+  const connection = await pool.getConnection();
+  let reusable = true;
+  try {
+    await connection.beginTransaction();
+
+    // Serialize status updates and future assignments to this scheme.
+    const [rows] = await connection.execute(
+      `SELECT id, name, status, is_default, created_at
+       FROM schemes WHERE id = ? FOR UPDATE`,
+      [schemeId],
+    );
+    const existing = rows[0];
+    if (!existing) {
+      throw new ApiError(404, "Scheme not found", [], "SCHEME_NOT_FOUND");
+    }
+    if (Number(existing.is_default) === 1 && status === 0) {
       throw new ApiError(
-        403,
-        "Default Scheme cannot be deactivated",
-        [],
-        "DEFAULT_SCHEME_PROTECTED",
+        403, "Default Scheme cannot be deactivated", [], "DEFAULT_SCHEME_PROTECTED",
       );
     }
-    return formatScheme(existing);
-  }
 
-  // Repeating the same status is safe and should not be treated as an error.
-  if (Number(existing.status) === status) {
-    return formatScheme(existing);
-  }
+    if (status === 0) {
+      // Locate the default, then lock only that row by primary key.
+      // The default is protected by Migration 009 and cannot be disabled.
+      const [defaults] = await connection.execute(
+        `SELECT id FROM schemes WHERE is_default = 1 AND status = 1 LIMIT 1`,
+      );
+      const defaultId = defaults[0]?.id;
+      if (defaultId == null) {
+        throw new ApiError(500, "Active Default Scheme is not configured", [],
+          "DEFAULT_SCHEME_NOT_CONFIGURED");
+      }
+      const [lockedDefault] = await connection.execute(
+        `SELECT id FROM schemes
+         WHERE id = ? AND is_default = 1 AND status = 1 FOR SHARE`,
+        [defaultId],
+      );
+      if (!lockedDefault.length) {
+        throw new ApiError(500, "Active Default Scheme is not configured", [],
+          "DEFAULT_SCHEME_NOT_CONFIGURED");
+      }
 
-  // Guard at write time too: even if the row changes, never deactivate a default.
-  const [result] = await pool.execute(
-    `UPDATE schemes SET status = ? WHERE id = ? AND is_default = 0`,
-    [status, schemeId],
-  );
+      // Include inactive/blocked users: their assignment must also be moved.
+      // Also repair lingering assignments if an older API already disabled the scheme.
+      const [assigned] = await connection.execute(
+        `SELECT id FROM users WHERE scheme_id = ? ORDER BY id FOR UPDATE`,
+        [schemeId],
+      );
+      if (assigned.length > 0) {
+        const [history] = await connection.execute(
+          `INSERT INTO user_scheme_assignments
+             (user_id, previous_scheme_id, new_scheme_id, actor_user_id, change_source, reason)
+           SELECT id, scheme_id, ?, ?, 'scheme_deactivation', ?
+           FROM users WHERE scheme_id = ?`,
+          [defaultId, actorUserId, "Reassigned to Default Scheme on deactivation", schemeId],
+        );
+        const [moved] = await connection.execute(
+          `UPDATE users SET scheme_id = ? WHERE scheme_id = ?`,
+          [defaultId, schemeId],
+        );
+        if (history.affectedRows !== assigned.length || moved.affectedRows !== assigned.length) {
+          throw new ApiError(409, "Scheme assignments could not be updated", [],
+            "SCHEME_UPDATE_CONFLICT");
+        }
+      }
+    }
 
-  const updated = await getSchemeById(schemeId);
-  if (!updated) {
-    throw new ApiError(404, "Scheme not found", [], "SCHEME_NOT_FOUND");
-  }
-  if (updated.is_default && status === 0) {
-    throw new ApiError(
-      403,
-      "Default Scheme cannot be deactivated",
-      [],
-      "DEFAULT_SCHEME_PROTECTED",
-    );
-  }
-  if (result.affectedRows === 0 && Number(updated.status) !== status) {
-    throw new ApiError(409, "Scheme status could not be updated", [], "SCHEME_UPDATE_CONFLICT");
-  }
+    // Reactivation changes status only; no former assignments are restored.
+    if (Number(existing.status) !== status) {
+      const [result] = await connection.execute(
+        `UPDATE schemes SET status = ? WHERE id = ? AND is_default = 0`,
+        [status, schemeId],
+      );
+      if (result.affectedRows !== 1) {
+        throw new ApiError(409, "Scheme status could not be updated", [],
+          "SCHEME_UPDATE_CONFLICT");
+      }
+    }
 
-  return updated;
+    await connection.commit();
+    return formatScheme({ ...existing, status });
+  } catch (error) {
+    try {
+      await connection.rollback();
+    } catch {
+      // Do not return a connection with an uncertain transaction state to the pool.
+      reusable = false;
+      connection.destroy();
+    }
+    throw error;
+  } finally {
+    if (reusable) connection.release();
+  }
 }
 
 const schemeService = {

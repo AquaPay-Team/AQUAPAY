@@ -63,7 +63,9 @@ async function updateSchemeStatusController(req, res, next) {
       throw new ApiError(400, "Status must be 0 or 1", [], "VALIDATION_ERROR");
     }
 
-    const scheme = await schemeService.updateSchemeStatus(schemeId, Number(rawStatus));
+    const scheme = await schemeService.updateSchemeStatus(
+      schemeId, Number(rawStatus), req.user?.id,
+    );
     return res.status(200).json({
       success: true,
       message: "Scheme status updated successfully",

@@ -1,4 +1,3 @@
-
 import { Router } from "express";
 import adminKycController from "./adminKyc.controller.js";
 
@@ -24,6 +23,15 @@ router.get(
   requireAuth,
   requireAdmin,
   adminKycController.getRecentKycApplicationsController,
+);
+
+// Fetch details of KYC application by User ID.
+// This route must precede /:caseId.
+router.get(
+  "/user/:userId",
+  requireAuth,
+  requireAdmin,
+  adminKycController.getKycApplicationByUserIdController,
 );
 
 // Fetch details of one KYC application

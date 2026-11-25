@@ -23,6 +23,7 @@ const ALLOWED_FIELDS = new Set([
   "state",
   "city",
   "pincode",
+  "status",
 ]);
 
 function validateUpdateUser(req, res, next) {
@@ -116,6 +117,15 @@ function validateUpdateUser(req, res, next) {
         errors.push("Pincode must be a valid 6-digit postal code");
       } else {
         validatedBody.pincode = pincode || null;
+      }
+    }
+
+    if(body.status !== undefined){
+      const status = String(body.status).trim().toLowerCase();
+      if(!["active","inactive"].includes(status)){
+        errors.push("Status must be either 'active' or 'inactive'");
+      }else{
+        validatedBody.status = status;     
       }
     }
 

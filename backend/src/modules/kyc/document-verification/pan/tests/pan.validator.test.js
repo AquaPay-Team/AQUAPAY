@@ -75,6 +75,10 @@ test("validates the approved AquaPay request and normalizes PAN case", () => {
     panNumber: "ABCDE1234F",
     consent: true,
   });
+  assert.deepEqual(validatePanVerificationInput({ pan: "abcde1234f", consent: true }), {
+    panNumber: "ABCDE1234F",
+    consent: true,
+  });
 });
 
 test("requires explicit consent and rejects unexpected client identity fields", () => {

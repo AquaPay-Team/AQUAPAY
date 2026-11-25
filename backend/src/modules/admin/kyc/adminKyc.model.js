@@ -362,6 +362,40 @@ async function findKycCaseById(caseId) {
 }
 
 /**
+ * Fetch one KYC application by User ID.
+ */
+async function findKycCaseByUserId(userId) {
+  const [rows] = await pool.execute(
+    `SELECT
+       kc.id AS case_id,
+       kc.user_id,
+       kc.business_type,
+       kc.status AS kyc_status,
+       kc.steps_completed,
+       kc.submitted_at,
+       kc.reviewed_at,
+       kc.rejection_reason,
+       kc.created_at,
+       kc.updated_at,
+       u.name,
+       u.email,
+       u.mobile,
+       u.status AS user_status,
+       u.address,
+       u.city,
+       u.pincode
+     FROM kyc_cases kc
+     INNER JOIN users u ON u.id = kc.user_id
+     WHERE kc.user_id = ?
+     ORDER BY kc.id DESC
+     LIMIT 1`,
+    [userId],
+  );
+
+  return rows[0] || null;
+}
+
+/**
  * Fetch completion status of all KYC steps.
  */
 async function findKycStepsByCaseId(caseId) {
@@ -580,6 +614,7 @@ const adminKycModel = {
   encodeCursor,
   decodeCursor,
   findKycCaseById,
+  findKycCaseByUserId,
   findKycStepsByCaseId,
   findVerificationsByCaseId,
   findBankDetailsByCaseId,
@@ -603,6 +638,7 @@ export {
   encodeCursor,
   decodeCursor,
   findKycCaseById,
+  findKycCaseByUserId,
   findKycStepsByCaseId,
   findVerificationsByCaseId,
   findBankDetailsByCaseId,

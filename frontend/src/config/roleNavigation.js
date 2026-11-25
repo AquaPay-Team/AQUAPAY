@@ -11,56 +11,113 @@
  * 8: RT (Retailer)
  */
 
-// Helper to generate downline network hierarchy cleanly
-function createDownlineNav(prefix, teamLabel, agentsLabel, createLabel = "Onboard Agent", allId, createId) {
-  return [
-    {
-      id: `${prefix}-dashboard`,
-      label: "Dashboard",
-      path: "/user/dashboard",
-      icon: "LayoutDashboard",
-    },
-    {
-      id: `${prefix}-team`,
-      label: teamLabel,
-      path: "/user/team",
-      icon: "Users",
-      children: [
-        {
-          id: allId || `${prefix}-all-agents`,
-          label: agentsLabel,
-          path: "/user/team",
-          icon: "Users",
-        },
-        {
-          id: createId || `${prefix}-create-agent`,
-          label: createLabel,
-          path: "/user/team/create",
-          icon: "UserPlus",
-          permission: "canCreateUsers",
-        },
-      ],
-    },
-    {
-      id: `${prefix}-kyc`,
-      label: "KYC Status",
-      path: "/user/kyc",
-      icon: "ShieldCheck",
-    },
-    {
-      id: `${prefix}-profile`,
-      label: "My Profile",
-      path: "/user/profile",
-      icon: "User",
-    },
-    {
-      id: `${prefix}-settings`,
-      label: "Settings",
-      path: "/user/settings",
-      icon: "Settings",
-    },
-  ];
-}
+export const SHARED_USER_OPERATIONS = [
+  {
+    id: "user-fund",
+    label: "Fund",
+    icon: "Wallet",
+    children: [
+      {
+        id: "user-fund-transfer",
+        label: "Transfer/Return",
+        path: "/user/fund/transfer-return",
+        icon: "Send",
+      },
+      {
+        id: "user-fund-report",
+        label: "Transfer Return Report",
+        path: "/user/fund/transfer-return-report",
+        icon: "FileText",
+      },
+    ],
+  },
+  {
+    id: "user-services",
+    label: "Services",
+    icon: "Zap",
+    children: [
+      {
+        id: "user-services-add-money",
+        label: "Add Money",
+        path: "/user/services/add-money",
+        icon: "Zap",
+      },
+      {
+        id: "user-services-cc-bill",
+        label: "Credit Card Bill 2",
+        path: "/user/services/credit-card-bill",
+        icon: "CreditCard",
+      },
+      {
+        id: "user-services-payout",
+        label: "Payout",
+        path: "/user/services/payout",
+        icon: "Send",
+      },
+      {
+        id: "user-services-rupay-upi",
+        label: "RupayUpi",
+        path: "/user/services/rupay-upi",
+        icon: "QrCode",
+      },
+    ],
+  },
+  {
+    id: "user-reports",
+    label: "Transaction Report",
+    icon: "FileText",
+    children: [
+      {
+        id: "user-reports-all",
+        label: "All Transaction Report",
+        path: "/user/dashboard",
+        icon: "FileText",
+      },
+      {
+        id: "user-reports-payout",
+        label: "Payout Report",
+        path: "/user/reports/payout",
+        icon: "FileText",
+      },
+      {
+        id: "user-reports-cc-offline",
+        label: "Creditcard Offline Report",
+        path: "/user/reports/creditcard-offline",
+        icon: "FileText",
+      },
+      {
+        id: "user-reports-cc-payment",
+        label: "Creditcard Payment Report",
+        path: "/user/reports/creditcard-payment",
+        icon: "FileText",
+      },
+      {
+        id: "user-reports-pg",
+        label: "Payment Gateway Report",
+        path: "/user/reports/pg",
+        icon: "FileText",
+      },
+      {
+        id: "user-reports-pos",
+        label: "POS Report",
+        path: "/user/reports/pos",
+        icon: "FileText",
+      },
+      {
+        id: "user-reports-pos-request",
+        label: "POS Request Report",
+        path: "/user/reports/pos-request",
+        icon: "FileText",
+      },
+    ],
+  },
+  {
+    id: "user-statement",
+    label: "Account Statement",
+    path: "/user/statement",
+    icon: "Landmark",
+  },
+];
 
 export const ROLE_NAVIGATION = {
   // Admin Navigation (Exclusively for Role 1 / AD)
@@ -72,12 +129,6 @@ export const ROLE_NAVIGATION = {
       icon: "LayoutDashboard",
     },
     { id: "admin-roles", isDynamicRoles: true },
-    {
-      id: "admin-kyc",
-      label: "KYC Management",
-      path: "/admin/kyc",
-      icon: "ShieldCheck",
-    },
     {
       id: "admin-reports",
       label: "Server & Reports",
@@ -93,24 +144,54 @@ export const ROLE_NAVIGATION = {
   ],
 
   // Sub Admin Navigation (Level 1)
-  SA: createDownlineNav("sa", "Downline Network", "My Agents", "Create Agent"),
+  SA: [
+    { id: "sa-dashboard", label: "Dashboard", path: "/user/dashboard", icon: "LayoutDashboard" },
+    { id: "sa-roles", isDynamicRoles: true },
+    ...SHARED_USER_OPERATIONS,
+    { id: "sa-settings", label: "Settings", path: "/user/settings", icon: "Settings" },
+  ],
 
   // NSM Navigation (Level 2)
-  NSM: createDownlineNav("nsm", "National Network", "My Team", "Onboard Agent"),
+  NSM: [
+    { id: "nsm-dashboard", label: "Dashboard", path: "/user/dashboard", icon: "LayoutDashboard" },
+    { id: "nsm-roles", isDynamicRoles: true },
+    ...SHARED_USER_OPERATIONS,
+    { id: "nsm-settings", label: "Settings", path: "/user/settings", icon: "Settings" },
+  ],
 
   // State Head Navigation (Level 3)
-  SH: createDownlineNav("sh", "State Network", "State Team", "Onboard Agent"),
+  SH: [
+    { id: "sh-dashboard", label: "Dashboard", path: "/user/dashboard", icon: "LayoutDashboard" },
+    { id: "sh-roles", isDynamicRoles: true },
+    ...SHARED_USER_OPERATIONS,
+    { id: "sh-settings", label: "Settings", path: "/user/settings", icon: "Settings" },
+  ],
 
   // CNF / CHF Navigation (Level 4)
-  CNF: createDownlineNav("cnf", "Territory Network", "Territory Agents", "Onboard Agent"),
+  CNF: [
+    { id: "cnf-dashboard", label: "Dashboard", path: "/user/dashboard", icon: "LayoutDashboard" },
+    { id: "cnf-roles", isDynamicRoles: true },
+    ...SHARED_USER_OPERATIONS,
+    { id: "cnf-settings", label: "Settings", path: "/user/settings", icon: "Settings" },
+  ],
 
   // Master Distributor Navigation (Level 5)
-  MD: createDownlineNav("md", "My Distributors", "Distributors List", "Create Distributor", "md-dist-list", "md-create-dist"),
+  MD: [
+    { id: "md-dashboard", label: "Dashboard", path: "/user/dashboard", icon: "LayoutDashboard" },
+    { id: "md-roles", isDynamicRoles: true },
+    ...SHARED_USER_OPERATIONS,
+    { id: "md-settings", label: "Settings", path: "/user/settings", icon: "Settings" },
+  ],
 
   // Distributor Navigation (Level 6)
-  DT: createDownlineNav("dt", "My Retailers", "Retailers List", "Create Retailer", "dt-retailer-list", "dt-create-retailer"),
+  DT: [
+    { id: "dt-dashboard", label: "Dashboard", path: "/user/dashboard", icon: "LayoutDashboard" },
+    { id: "dt-roles", isDynamicRoles: true },
+    ...SHARED_USER_OPERATIONS,
+    { id: "dt-settings", label: "Settings", path: "/user/settings", icon: "Settings" },
+  ],
 
-  // Retailer Navigation (Level 7) - Dedicated Merchant Terminal
+  // Retailer Navigation (Level 7) - Dedicated Merchant Terminal (No Roles section since retailer has no children)
   RT: [
     {
       id: "rt-dashboard",
@@ -118,112 +199,7 @@ export const ROLE_NAVIGATION = {
       path: "/user/dashboard",
       icon: "LayoutDashboard",
     },
-    { id: "rt-roles", isDynamicRoles: true },
-    {
-      id: "rt-fund",
-      label: "Fund",
-      icon: "Wallet",
-      children: [
-        {
-          id: "rt-fund-transfer",
-          label: "Transfer/Return",
-          path: "/user/fund/transfer-return",
-          icon: "Send",
-        },
-        {
-          id: "rt-fund-report",
-          label: "Transfer Return Report",
-          path: "/user/fund/transfer-return-report",
-          icon: "FileText",
-        },
-      ],
-    },
-    {
-      id: "rt-services",
-      label: "Services",
-      icon: "Zap",
-      children: [
-        {
-          id: "rt-services-add-money",
-          label: "Add Money",
-          path: "/user/services/add-money",
-          icon: "Zap",
-        },
-        {
-          id: "rt-services-cc-bill",
-          label: "Credit Card Bill 2",
-          path: "/user/services/credit-card-bill",
-          icon: "CreditCard",
-        },
-        {
-          id: "rt-services-payout",
-          label: "Payout",
-          path: "/user/services/payout",
-          icon: "Send",
-        },
-        {
-          id: "rt-services-rupay-upi",
-          label: "RupayUpi",
-          path: "/user/services/rupay-upi",
-          icon: "QrCode",
-        },
-      ],
-    },
-    {
-      id: "rt-reports",
-      label: "Transaction Report",
-      icon: "FileText",
-      children: [
-        {
-          id: "rt-reports-all",
-          label: "All Transaction Report",
-          path: "/user/dashboard",
-          icon: "FileText",
-        },
-        {
-          id: "rt-reports-payout",
-          label: "Payout Report",
-          path: "/user/reports/payout",
-          icon: "FileText",
-        },
-        {
-          id: "rt-reports-cc-offline",
-          label: "Creditcard Offline Report",
-          path: "/user/reports/creditcard-offline",
-          icon: "FileText",
-        },
-        {
-          id: "rt-reports-cc-payment",
-          label: "Creditcard Payment Report",
-          path: "/user/reports/creditcard-payment",
-          icon: "FileText",
-        },
-        {
-          id: "rt-reports-pg",
-          label: "Payment Gateway Report",
-          path: "/user/reports/pg",
-          icon: "FileText",
-        },
-        {
-          id: "rt-reports-pos",
-          label: "POS Report",
-          path: "/user/reports/pos",
-          icon: "FileText",
-        },
-        {
-          id: "rt-reports-pos-request",
-          label: "POS Request Report",
-          path: "/user/reports/pos-request",
-          icon: "FileText",
-        },
-      ],
-    },
-    {
-      id: "rt-statement",
-      label: "Account Statement",
-      path: "/user/statement",
-      icon: "Landmark",
-    },
+    ...SHARED_USER_OPERATIONS,
     {
       id: "rt-settings",
       label: "Settings",
@@ -242,7 +218,7 @@ export function getRoleNavigation(userOrRole) {
   let slug = "";
   if (typeof userOrRole === "object") {
     slug = String(
-      userOrRole.role_slug || userOrRole.slug || ""
+      userOrRole.role_slug || userOrRole.slug || userOrRole.role_name || userOrRole.role || ""
     ).trim().toUpperCase();
 
     if (!slug && userOrRole.role_id) {
@@ -271,26 +247,36 @@ export function getRoleNavigation(userOrRole) {
   if (slug === "DISTRIBUTOR") slug = "DT";
   if (slug === "RETAILER") slug = "RT";
 
-  if (slug !== "AD") {
-    const items = [
-      { id: `${slug.toLowerCase()}-dashboard`, label: "Dashboard", path: "/user/dashboard", icon: "LayoutDashboard" },
-      { id: `${slug.toLowerCase()}-roles`, isDynamicRoles: true },
-    ];
-
-    if (slug === "RT") {
-      return [
-        ...items,
-        ...ROLE_NAVIGATION.RT.filter((item) => item.id.startsWith("rt-") && item.id !== "rt-dashboard" && item.id !== "rt-roles"),
-      ];
-    }
-
-    return [
-      ...items,
-      { id: `${slug.toLowerCase()}-settings`, label: "Settings", path: "/user/settings", icon: "Settings" },
-    ];
+  if (slug === "AD") {
+    return ROLE_NAVIGATION.AD;
   }
 
-  return ROLE_NAVIGATION[slug] || ROLE_NAVIGATION.RT;
+  const isRetailer =
+    slug === "RT" ||
+    Number(userOrRole?.role_id) === 8 ||
+    String(userOrRole?.role_slug || "").toUpperCase() === "RT" ||
+    String(userOrRole?.role_name || "").toUpperCase() === "RETAILER" ||
+    String(userOrRole?.role || "").toUpperCase() === "RETAILER";
+  const prefix = slug.toLowerCase();
+
+  return [
+    {
+      id: `${prefix}-dashboard`,
+      label: "Dashboard",
+      path: "/user/dashboard",
+      icon: "LayoutDashboard",
+    },
+    // Non-retailer users have children, so they include the dynamic Roles directory.
+    // Retailers do not have any child users, so Roles is omitted.
+    ...(!isRetailer ? [{ id: `${prefix}-roles`, isDynamicRoles: true }] : []),
+    ...SHARED_USER_OPERATIONS,
+    {
+      id: `${prefix}-settings`,
+      label: "Settings",
+      path: "/user/settings",
+      icon: "Settings",
+    },
+  ];
 }
 
 export default ROLE_NAVIGATION;

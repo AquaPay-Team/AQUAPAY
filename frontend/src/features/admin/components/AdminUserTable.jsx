@@ -4,33 +4,58 @@ import {
   Download,
   Plus,
   Settings,
-  Filter,
-  Eye,
+  Loader2,
+  BadgeCheck,
+  Shield,
+  RotateCcw,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 
 export function AdminUserTable({
+  scope = "admin",
+  basePath = "/admin/users",
+  canCreateUser = true,
   getCurrentRoleTitle = () => "All Users",
   memberSearch = "",
   setMemberSearch = () => {},
-  statusFilter = "All",
-  setStatusFilter = () => {},
+  kycFilter = "All",
+  setKycFilter = () => {},
+  accountFilter = "All",
+  setAccountFilter = () => {},
+  hasActiveFilters = false,
+  resetAllFilters = () => {},
+  visibleMembers = [],
   filteredMembers = [],
+  totalUsers = 0,
+  uiPage = 1,
+  setUiPage = () => {},
+  totalUiPages = 1,
+  pageSize = 25,
   handleExportCSV = () => {},
   setAddAgentModalOpen = () => {},
-  setActionModalUser = () => {},
   isLoadingUsers = false,
   selectedRoleId = "",
+  onToggleStatus = null,
+  updatingUserId = null,
 }) {
+  const displayMembers = visibleMembers.length > 0 ? visibleMembers : filteredMembers;
+
+  const visiblePageNumbers = React.useMemo(() => {
+    if (totalUiPages <= 5) {
+      return Array.from({ length: totalUiPages }, (_, i) => i + 1);
+    }
+    const start = Math.max(1, Math.min(uiPage - 2, totalUiPages - 4));
+    return Array.from({ length: 5 }, (_, i) => start + i);
+  }, [uiPage, totalUiPages]);
   return (
     <div className="space-y-5 max-w-7xl mx-auto pb-10">
       {/* ── Breadcrumb & Page Title ───────────────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <div className="text-xs text-slate-400 flex items-center gap-2 mb-1">
-            <span>Admin</span>
+            <span>{scope === "admin" ? "Admin" : "User"}</span>
             <span>/</span>
-            <span>Directory</span>
+            <span>{scope === "admin" ? "Directory" : "Team"}</span>
             <span>/</span>
             <span className="font-semibold text-slate-700 capitalize">
               {getCurrentRoleTitle()}
@@ -46,7 +71,7 @@ export function AdminUserTable({
 
         <button
           onClick={() => setAddAgentModalOpen(true)}
-          disabled={!selectedRoleId}
+          disabled={canCreateUser === false}
           className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs px-4 py-2 rounded-xl transition shadow-2xs flex items-center gap-2 cursor-pointer self-start sm:self-auto disabled:opacity-50"
         >
           <Plus className="w-4 h-4 text-white" strokeWidth={2.25} />
@@ -62,12 +87,12 @@ export function AdminUserTable({
             <h3 className="text-base font-bold text-slate-900">
               {getCurrentRoleTitle()} Records
             </h3>
-            <p className="text-xs text-slate-400 mt-1">{filteredMembers.length} accounts in this directory</p>
+            <p className="text-xs text-slate-400 mt-1">{totalUsers.toLocaleString()} accounts in this directory</p>
           </div>
 
           <div className="flex items-center gap-2.5 flex-wrap">
             <span className="px-3 py-2 bg-blue-50 text-blue-700 border border-blue-200/80 font-bold rounded-xl text-xs">
-              {filteredMembers.length} Found
+              {totalUsers.toLocaleString()} Found
             </span>
 
             <button
@@ -85,35 +110,65 @@ export function AdminUserTable({
           </div>
         </div>
 
-        {/* Search & Filter Toolbar */}
-        <div className="p-4 sm:p-5 bg-slate-50/40 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-3">
+        {/* Search & Multi-Filter Toolbar */}
+        <div className="p-4 sm:p-5 bg-slate-50/40 border-b border-slate-100 flex flex-col xl:flex-row xl:items-center justify-between gap-3">
           {/* Search Input */}
-          <div className="relative flex-1 max-w-md">
+          <div className="relative flex-1 min-w-[240px] max-w-md">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               placeholder="Search by name, mobile, email, shop, or ID..."
               value={memberSearch}
               onChange={(e) => setMemberSearch(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-blue-500"
+              className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 shadow-2xs"
             />
           </div>
 
-          {/* Status Filter */}
-          <div className="flex items-center gap-2">
+          {/* Filter Dropdowns Grid */}
+          <div className="flex items-center gap-2.5 flex-wrap">
+            {/* KYC Status Dropdown */}
             <div className="flex items-center gap-1.5 text-xs text-slate-500">
-              <Filter className="w-3.5 h-3.5 text-slate-400" />
-              <span>Status:</span>
+              <BadgeCheck className="w-3.5 h-3.5 text-slate-400" />
               <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:border-blue-500 font-medium"
+                value={kycFilter}
+                onChange={(e) => setKycFilter(e.target.value)}
+                className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:border-blue-500 font-medium cursor-pointer shadow-2xs"
+                title="Filter by KYC status"
               >
-                <option value="All">All Statuses</option>
-                <option value="Active">Active Accounts</option>
-                <option value="Inactive">Inactive Accounts</option>
+                <option value="All">All KYC</option>
+                <option value="Pending">Pending</option>
+                <option value="Under Review">Under Review</option>
+                <option value="Verified">Approved / Verified</option>
+                <option value="Rejected">Rejected</option>
               </select>
             </div>
+
+            {/* Account Status Dropdown */}
+            <div className="flex items-center gap-1.5 text-xs text-slate-500">
+              <Shield className="w-3.5 h-3.5 text-slate-400" />
+              <select
+                value={accountFilter}
+                onChange={(e) => setAccountFilter(e.target.value)}
+                className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:border-blue-500 font-medium cursor-pointer shadow-2xs"
+                title="Filter by account status"
+              >
+                <option value="All">All Accounts</option>
+                <option value="Active">Active Only</option>
+                <option value="Inactive">Inactive Only</option>
+              </select>
+            </div>
+
+            {/* Reset All Filters Button */}
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={resetAllFilters}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100/70 border border-rose-200 rounded-xl transition cursor-pointer shadow-2xs"
+                title="Reset all filters"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         </div>
 
@@ -140,49 +195,75 @@ export function AdminUserTable({
                     </div>
                   </td>
                 </tr>
-              ) : filteredMembers.length === 0 ? (
+              ) : displayMembers.length === 0 ? (
                 <tr>
                   <td colSpan="6" className="text-center py-12 text-slate-400">
                     <div className="max-w-sm mx-auto space-y-1.5">
                       <p className="font-semibold text-slate-700 text-sm">
-                        {selectedRoleId ? `No ${getCurrentRoleTitle()} users found` : "Choose a role directory"}
+                        No {getCurrentRoleTitle()} accounts found
                       </p>
                       <p className="text-xs text-slate-400">
-                        {selectedRoleId ? "Try adjusting your search criteria." : "Select a permitted role from the Roles section in the sidebar."}
+                        {hasActiveFilters
+                          ? "Try adjusting your search criteria."
+                          : "No users created in this directory yet. Click Create User to onboard an agent."}
                       </p>
                     </div>
                   </td>
                 </tr>
               ) : (
-                filteredMembers.map((m) => {
+                displayMembers.map((m) => {
                   const isActive = (m.status || "active").toLowerCase() === "active";
-                  const kycStatus = String(m.kyc?.status || "pending").toLowerCase();
+                  const rawKyc = m.kyc?.status || m.kyc_status || (typeof m.kyc === "string" ? m.kyc : "");
+                  const kycStatus = String(rawKyc || "pending").toLowerCase();
                   const isKycVerified =
                     kycStatus === "verified" || kycStatus === "completed" || kycStatus === "approved";
                   const isKycSubmitted =
                     kycStatus === "submitted" || kycStatus === "under_review";
+                  const isKycRejected =
+                    kycStatus === "rejected";
 
                   return (
                     <tr
                       key={m.id}
                       className="hover:bg-slate-50/80 transition-colors group"
                     >
-                      {/* Status */}
+                      {/* Status Toggle or Badge */}
                       <td className="py-4 px-5 text-center align-middle">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold ${
-                            isActive
-                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200/80"
-                              : "bg-slate-100 text-slate-600 border border-slate-200"
-                          }`}
-                        >
+                        {onToggleStatus ? (
+                          <button
+                            type="button"
+                            onClick={() => onToggleStatus(m)}
+                            disabled={updatingUserId === m.id}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${isActive
+                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200/80 hover:bg-emerald-100"
+                                : "bg-slate-100 text-slate-600 border border-slate-200 hover:bg-slate-200"
+                              }`}
+                            title={`Click to ${isActive ? "deactivate" : "activate"} account`}
+                          >
+                            {updatingUserId === m.id ? (
+                              <Loader2 className="w-3 h-3 animate-spin text-slate-500" />
+                            ) : (
+                              <span
+                                className={`w-1.5 h-1.5 rounded-full ${isActive ? "bg-emerald-500" : "bg-slate-400"
+                                  }`}
+                              />
+                            )}
+                            <span>{isActive ? "Active" : "Inactive"}</span>
+                          </button>
+                        ) : (
                           <span
-                            className={`w-1.5 h-1.5 rounded-full ${
-                              isActive ? "bg-emerald-500" : "bg-slate-400"
-                            }`}
-                          />
-                          {isActive ? "Active" : "Inactive"}
-                        </span>
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold ${isActive
+                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200/80"
+                                : "bg-slate-100 text-slate-600 border border-slate-200"
+                              }`}
+                          >
+                            <span
+                              className={`w-1.5 h-1.5 rounded-full ${isActive ? "bg-emerald-500" : "bg-slate-400"
+                                }`}
+                            />
+                            <span>{isActive ? "Active" : "Inactive"}</span>
+                          </span>
+                        )}
                       </td>
 
                       {/* Agent & Contact */}
@@ -239,6 +320,8 @@ export function AdminUserTable({
                               ? "bg-emerald-50 text-emerald-700 border border-emerald-200/80"
                               : isKycSubmitted
                               ? "bg-blue-50 text-blue-700 border border-blue-200/80"
+                              : isKycRejected
+                              ? "bg-rose-50 text-rose-700 border border-rose-200/80"
                               : "bg-amber-50 text-amber-700 border border-amber-200/80"
                           }`}
                         >
@@ -246,24 +329,22 @@ export function AdminUserTable({
                             ? "Verified"
                             : isKycSubmitted
                             ? "Under Review"
+                            : isKycRejected
+                            ? "Rejected"
                             : "Pending"}
                         </span>
                       </td>
 
                       {/* Action Button */}
+                                            {/* Action Button */}
                       <td className="py-4 px-5 text-center align-middle">
-                        <div className="inline-flex items-center gap-1">
-                          <Link to={`/admin/users/${m.id}?roleId=${encodeURIComponent(selectedRoleId)}`} className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition border border-slate-200 inline-flex items-center justify-center" title="View user profile">
-                            <Eye className="w-4 h-4 text-black" />
-                          </Link>
-                          <button
-                            onClick={() => setActionModalUser(m)}
-                            className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition border border-slate-200 inline-flex items-center justify-center cursor-pointer shadow-2xs hover:shadow-xs"
-                            title="Edit Agent Details"
-                          >
-                            <Settings className="w-4 h-4 text-black" />
-                          </button>
-                        </div>
+                        <Link
+                          to={`${basePath}/${m.id}?roleId=${encodeURIComponent(selectedRoleId)}`}
+                          className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition border border-slate-200 inline-flex items-center justify-center cursor-pointer shadow-2xs hover:shadow-xs"
+                          title="Manage User Profile & Settings"
+                        >
+                          <Settings className="w-4 h-4 text-slate-700 hover:text-blue-600" />
+                        </Link>
                       </td>
                     </tr>
                   );
@@ -271,6 +352,60 @@ export function AdminUserTable({
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* ── Table Footer Pagination ─────────────────────────────── */}
+        <div className="p-4 sm:px-6 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500 bg-white">
+          <div>
+            Showing{" "}
+            <span className="font-semibold text-slate-800">
+              {totalUsers === 0 ? 0 : (uiPage - 1) * pageSize + 1}
+            </span>
+            –
+            <span className="font-semibold text-slate-800">
+              {Math.min(uiPage * pageSize, totalUsers)}
+            </span>{" "}
+            of{" "}
+            <span className="font-semibold text-slate-800">
+              {totalUsers.toLocaleString()}
+            </span>{" "}
+            users
+          </div>
+
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setUiPage((p) => Math.max(1, p - 1))}
+              disabled={uiPage <= 1}
+              className="px-3 py-1.5 rounded-xl border border-slate-200 font-semibold text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer shadow-2xs"
+            >
+              Previous
+            </button>
+
+            {visiblePageNumbers.map((num) => (
+              <button
+                key={num}
+                type="button"
+                onClick={() => setUiPage(num)}
+                className={`w-8 h-8 rounded-xl font-bold transition cursor-pointer text-xs ${
+                  uiPage === num
+                    ? "bg-blue-600 text-white shadow-2xs"
+                    : "border border-slate-200 text-slate-700 bg-white hover:bg-slate-50"
+                }`}
+              >
+                {num}
+              </button>
+            ))}
+
+            <button
+              type="button"
+              onClick={() => setUiPage((p) => Math.min(totalUiPages, p + 1))}
+              disabled={uiPage >= totalUiPages}
+              className="px-3 py-1.5 rounded-xl border border-slate-200 font-semibold text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer shadow-2xs"
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
     </div>

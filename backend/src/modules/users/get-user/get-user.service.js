@@ -9,8 +9,11 @@ const VALID_KYC_STATUSES = new Set([
   "submitted",
   "under_review",
   "approved",
+  "verified",
   "rejected",
 ]);
+
+const ALLOWED_ACCOUNT_STATUSES = new Set(["active", "inactive", "blocked"]);
 
 async function getActor(actorId) {
   const parentId = Number(actorId);
@@ -45,7 +48,7 @@ function isAdmin(actor) {
 async function getUsers(actorId, options = {}) {
   const actor = await getActor(actorId);
 
-  const kycStatus = options.kycStatus;
+  const kycStatus = options.kycStatus ? String(options.kycStatus).toLowerCase().trim() : undefined;
 
   if (
     kycStatus !== undefined &&
@@ -63,9 +66,40 @@ async function getUsers(actorId, options = {}) {
     );
   }
 
-  // Search by name, mobile number, or email
-  const search = typeof options.search === "string" ? options.search.trim() : "";
   const userOptions = { ...options };
+
+  if (kycStatus) {
+    userOptions.kycStatus = kycStatus;
+  }
+
+  // Validate pagination parameters if provided
+  if (options.page !== undefined) {
+    const parsedPage = Number(options.page);
+    if (!Number.isInteger(parsedPage) || parsedPage < 1) {
+      throw new ApiError(httpStatus.BAD_REQUEST, "Page must be a positive integer", [], "VALIDATION_ERROR");
+    }
+    userOptions.page = parsedPage;
+  }
+
+  if (options.limit !== undefined) {
+    const parsedLimit = Number(options.limit);
+    if (!Number.isInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > 100) {
+      throw new ApiError(httpStatus.BAD_REQUEST, "Limit must be between 1 and 100", [], "VALIDATION_ERROR");
+    }
+    userOptions.limit = parsedLimit;
+  }
+
+  // Validate account status if provided
+  if (options.status) {
+    const st = String(options.status).toLowerCase().trim();
+    if (!ALLOWED_ACCOUNT_STATUSES.has(st)) {
+      throw new ApiError(httpStatus.BAD_REQUEST, "Invalid account status", [], "VALIDATION_ERROR");
+    }
+    userOptions.status = st;
+  }
+
+  // Search by name, mobile number, email, shop, or ID
+  const search = typeof options.search === "string" ? options.search.trim() : "";
   if (search) userOptions.search = search;
   else delete userOptions.search;
 
@@ -154,12 +188,18 @@ async function getDescendantRoles(actorId) {
   return getUserModel.findDescendantRoles(actor.id);
 }
 
+async function getUserStats(actorId) {
+  const actor = await getActor(actorId);
+  return getUserModel.getUserStats(actor.id, isAdmin(actor));
+}
+
 const getUserService = {
   getUsers,
   getUserById,
   getDescendantRoles,
+  getUserStats,
 };
 
-export { getUsers, getUserById, getDescendantRoles };
+export { getUsers, getUserById, getDescendantRoles, getUserStats };
 
 export default getUserService;

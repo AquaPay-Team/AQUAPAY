@@ -68,6 +68,25 @@ async function getKycApplicationDetailsController(req, res, next) {
 }
 
 /**
+ * GET /api/admin/kyc/user/:userId
+ * Fetch complete details of one KYC application by User ID.
+ */
+async function getKycApplicationByUserIdController(req, res, next) {
+  try {
+    const { userId } = req.params;
+    const result =
+      await adminKycService.getKycApplicationDetailsByUserId(userId);
+    return res.status(200).json({
+      success: true,
+      message: "KYC application details fetched successfully",
+      data: result,
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+/**
  * GET /api/admin/kyc/:caseId/documents/:assetId
  * Generate temporary secure access to a KYC document.
  */
@@ -140,6 +159,7 @@ const adminKycController = {
   getKycApplicationsController,
   getRecentKycApplicationsController,
   getKycApplicationDetailsController,
+  getKycApplicationByUserIdController,
   getKycDocumentAccessController,
   approveKycApplicationController,
   rejectKycApplicationController,
@@ -149,6 +169,7 @@ export {
   getKycApplicationsController,
   getRecentKycApplicationsController,
   getKycApplicationDetailsController,
+  getKycApplicationByUserIdController,
   getKycDocumentAccessController,
   approveKycApplicationController,
   rejectKycApplicationController,

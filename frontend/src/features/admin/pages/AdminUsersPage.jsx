@@ -2,7 +2,6 @@ import React, { useState, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { AdminUserTable } from "../components/AdminUserTable";
-import { ActionModal } from "../modals/ActionModal";
 import { AddAgentModal } from "@/features/users/components/AddAgentModal";
 import {
   useUsers,
@@ -11,21 +10,45 @@ import {
   useUpdateUser,
 } from "../hooks/useAdminUsers";
 
+const EMPTY_USERS = [];
+
 export default function AdminUsersPage() {
   const [searchParams] = useSearchParams();
   const selectedRoleId = searchParams.get("roleId") || "";
 
-  // Data fetching via TanStack Query
-  const { data: users = [], isLoading: isLoadingUsers } = useUsers(selectedRoleId);
-  const { data: permittedRoles = [] } = useDescendantRoles();
+  // Pagination state (UI page displays 25 users, backend fetches in batches of 100)
+  const UI_PAGE_SIZE = 25;
+  const [uiPage, setUiPage] = useState(1);
+  const backendBatch = Math.max(1, Math.ceil(uiPage / 4));
 
   // Local filtering state
   const [memberSearch, setMemberSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("All");
+  const [kycFilter, setKycFilter] = useState("All");
+  const [accountFilter, setAccountFilter] = useState("All");
+
+  // Data fetching via TanStack Query with server-side pagination & filters
+  const { data: usersData, isLoading: isLoadingUsers } = useUsers({
+    roleId: selectedRoleId,
+    page: backendBatch,
+    limit: 100,
+    search: memberSearch.trim(),
+    status: accountFilter === "All" ? "" : accountFilter.toLowerCase(),
+    kycStatus: kycFilter === "All" ? "" : kycFilter.toLowerCase(),
+  });
+
+  const users = usersData?.users || EMPTY_USERS;
+  const pagination = usersData?.pagination || {
+    total: users.length,
+    page: backendBatch,
+    limit: 100,
+    totalPages: 1,
+  };
+
+  const { data: permittedRoles = [] } = useDescendantRoles();
 
   // Modals state
-  const [actionModalUser, setActionModalUser] = useState(null);
   const [addAgentModalOpen, setAddAgentModalOpen] = useState(false);
+  const [updatingUserId, setUpdatingUserId] = useState(null);
 
   // Mutations
   const createUserMutation = useCreateUser();
@@ -42,28 +65,42 @@ export default function AdminUsersPage() {
     return "All Users";
   };
 
-  // Filtered members list
-  const filteredMembers = useMemo(() => {
-    return users.filter((u) => {
-      const q = memberSearch.toLowerCase().trim();
-      const searchMatch =
-        !q ||
-        (u.name && u.name.toLowerCase().includes(q)) ||
-        (u.mobile && u.mobile.includes(q)) ||
-        (u.email && u.email.toLowerCase().includes(q)) ||
-        (u.shopname && u.shopname.toLowerCase().includes(q)) ||
-        String(u.id).includes(q);
+  const hasActiveFilters = Boolean(
+    memberSearch.trim() ||
+    kycFilter !== "All" ||
+    accountFilter !== "All"
+  );
 
-      const statusMatch =
-        statusFilter === "All"
-          ? true
-          : statusFilter === "Active"
-          ? u.status === "active"
-          : u.status !== "active";
+  const handleSearchChange = (val) => {
+    setMemberSearch(val);
+    setUiPage(1);
+  };
 
-      return searchMatch && statusMatch;
-    });
-  }, [users, memberSearch, statusFilter]);
+  const handleKycFilterChange = (val) => {
+    setKycFilter(val);
+    setUiPage(1);
+  };
+
+  const handleAccountFilterChange = (val) => {
+    setAccountFilter(val);
+    setUiPage(1);
+  };
+
+  const resetAllFilters = () => {
+    setMemberSearch("");
+    setKycFilter("All");
+    setAccountFilter("All");
+    setUiPage(1);
+  };
+
+  // Slices 25 users per UI page from the 100-user batch loaded in memory
+  const visibleMembers = useMemo(() => {
+    const sliceStart = ((uiPage - 1) % 4) * UI_PAGE_SIZE;
+    return users.slice(sliceStart, sliceStart + UI_PAGE_SIZE);
+  }, [users, uiPage]);
+
+  const totalUsers = pagination.total || 0;
+  const totalUiPages = Math.max(1, Math.ceil(totalUsers / UI_PAGE_SIZE));
 
   // Export users to CSV
   const handleExportCSV = (filename, dataRows) => {
@@ -113,37 +150,56 @@ export default function AdminUsersPage() {
     }
   };
 
-  const handleUpdateMemberDetails = async (userId, updatedFields) => {
+  const handleToggleStatus = async (user) => {
+    if (!user || updatingUserId) return;
+    const currentActive = (user.status || "active").toLowerCase() === "active";
+    const nextStatus = currentActive ? "inactive" : "active";
+
     try {
-      await updateUserMutation.mutateAsync({ userId, fields: updatedFields });
-      toast.success("User profile updated successfully.");
-      setActionModalUser(null);
+      setUpdatingUserId(user.id);
+      await updateUserMutation.mutateAsync({
+        userId: user.id,
+        fields: { status: nextStatus },
+      });
+      toast.success(
+        `User ${user.name || `#${user.id}`} ${
+          nextStatus === "active" ? "activated" : "deactivated"
+        } successfully.`
+      );
     } catch (err) {
-      const errMsg = err.response?.data?.message || err.message || "Failed to update agent details";
+      const errMsg =
+        err.response?.data?.message || err.message || "Failed to update account status";
       toast.error(errMsg);
+    } finally {
+      setUpdatingUserId(null);
     }
   };
-
+  
   return (
     <>
       <AdminUserTable
         getCurrentRoleTitle={getCurrentRoleTitle}
         memberSearch={memberSearch}
-        setMemberSearch={setMemberSearch}
-        statusFilter={statusFilter}
-        setStatusFilter={setStatusFilter}
-        filteredMembers={filteredMembers}
+        setMemberSearch={handleSearchChange}
+        kycFilter={kycFilter}
+        setKycFilter={handleKycFilterChange}
+        accountFilter={accountFilter}
+        setAccountFilter={handleAccountFilterChange}
+        hasActiveFilters={hasActiveFilters}
+        resetAllFilters={resetAllFilters}
+        filteredMembers={users}
+        visibleMembers={visibleMembers}
+        uiPage={uiPage}
+        setUiPage={setUiPage}
+        totalUsers={totalUsers}
+        totalUiPages={totalUiPages}
+        pageSize={UI_PAGE_SIZE}
         handleExportCSV={handleExportCSV}
         setAddAgentModalOpen={setAddAgentModalOpen}
-        setActionModalUser={setActionModalUser}
         isLoadingUsers={isLoadingUsers}
         selectedRoleId={selectedRoleId}
-      />
-
-      <ActionModal
-        actionModalUser={actionModalUser}
-        setActionModalUser={setActionModalUser}
-        handleUpdateMemberDetails={handleUpdateMemberDetails}
+        onToggleStatus={handleToggleStatus}
+        updatingUserId={updatingUserId}
       />
 
       <AddAgentModal

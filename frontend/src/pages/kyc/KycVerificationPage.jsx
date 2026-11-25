@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { parseApiError } from "../../utils/errorHandler";
+import { useAuth } from "../../features/auth/useAuth";
 
 // Reusable White-Theme Components
 import KycHeader from "../../features/kyc/components/KycHeader";
@@ -47,6 +48,7 @@ import {
 
 export function KycVerificationPage() {
   const navigate = useNavigate();
+  const { logout } = useAuth();
 
   const storedUser = useMemo(() => {
     try {
@@ -222,8 +224,9 @@ export function KycVerificationPage() {
 
     try {
       const res = await verifyPanDetails({
+        panNumber: cleanPan,
         pan: cleanPan,
-        name: formData.fullName?.trim() || undefined,
+        consent: true,
       });
 
       const data = res?.data || {};
@@ -239,6 +242,7 @@ export function KycVerificationPage() {
       const isVerified =
         data.status === "VERIFIED" ||
         data.status === "verified" ||
+        data.status === "development_unverified" ||
         data.verificationStatus === "COMPLETED" ||
         data.verified === true ||
         Boolean(data.verifiedName || data.full_name);
@@ -254,6 +258,7 @@ export function KycVerificationPage() {
       const verifiedName = data.verifiedName || data.full_name;
       const maskedId = data.maskedIdentifier || `••••••${cleanPan.slice(-4)}`;
       setPanVerified(true);
+      setCompletedSteps((prev) => Array.from(new Set([...prev, 3])));
       setFormData((prev) => ({
         ...prev,
         panNumber: cleanPan,
@@ -567,10 +572,7 @@ export function KycVerificationPage() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("accessToken");
-    localStorage.removeItem("user");
-    localStorage.removeItem("adminUser");
-    navigate("/login");
+    logout();
   };
 
   if (isLoadingKycStatus) {

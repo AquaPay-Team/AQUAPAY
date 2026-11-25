@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Menu, Search, CreditCard, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { getCurrentUser } from "../../api/auth.api";
+import { useAuth } from "../../features/auth/useAuth";
 import { NotificationDropdown } from "./NotificationDropdown";
 
 // ─── Notification helpers (localStorage-backed until real API) ────────────────
@@ -66,40 +66,8 @@ export function DashboardHeader({
 
   const [notifications] = useState(() => getStoredNotifications());
   const [unseenCount, setUnseenCount] = useState(() => getUnseenCount(getStoredNotifications()));
-
-  const [currentUser, setCurrentUser] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem("user") || "{}");
-    } catch {
-      return {};
-    }
-  });
-
-  useEffect(() => {
-    const handleUserUpdate = (e) => {
-      try {
-        const fresh = e?.detail || JSON.parse(localStorage.getItem("user") || "{}");
-        setCurrentUser(fresh);
-      } catch {}
-    };
-    window.addEventListener("aquapay:user_updated", handleUserUpdate);
-    window.addEventListener("storage", handleUserUpdate);
-    return () => {
-      window.removeEventListener("aquapay:user_updated", handleUserUpdate);
-      window.removeEventListener("storage", handleUserUpdate);
-    };
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-    getCurrentUser().then((response) => {
-      const fresh = response?.data || response;
-      if (!active || !fresh?.id) return;
-      setCurrentUser(fresh);
-      localStorage.setItem("user", JSON.stringify(fresh));
-    }).catch(() => {});
-    return () => { active = false; };
-  }, []);
+  const { user } = useAuth();
+  const currentUser = user || {};
 
   // Searchable pages
   const searchablePages = [

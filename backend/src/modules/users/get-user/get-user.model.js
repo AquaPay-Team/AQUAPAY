@@ -30,7 +30,7 @@ const USER_PROJECTION = `
   JOIN roles r ON r.id = u.role_id
   LEFT JOIN companies c ON c.id = u.company_id
   LEFT JOIN users p ON p.id = u.parent_id
-  LEFT JOIN kyc_cases k ON k.user_id = u.id
+  LEFT JOIN kyc_cases k ON k.id = (SELECT MAX(k2.id) FROM kyc_cases k2 WHERE k2.user_id = u.id)
 `;
 
 function formatUserRow(row) {
@@ -89,21 +89,35 @@ async function findDescendantRoles(actorId) {
   return rows;
 }
 
-// Get all users (Admin view) with optional KYC status filter.
-// Get all users (Admin view) with optional KYC status and search filters.
-async function findAllUsers(options = {}) {
-  let query = USER_PROJECTION;
+// Helper to build parameterized SQL filter clauses across user queries
+function buildUserFilterClauses(options = {}, includeRoleId = true) {
   const conditions = [];
   const params = [];
 
-  if (options.kycStatus) {
-    conditions.push(`k.status = ?`);
-    params.push(options.kycStatus);
+  if (includeRoleId && options.roleId) {
+    conditions.push("u.role_id = ?");
+    params.push(options.roleId);
   }
 
-  if (options.roleId) {
-    conditions.push(`u.role_id = ?`);
-    params.push(options.roleId);
+  if (options.status) {
+    conditions.push("u.status = ?");
+    params.push(String(options.status).toLowerCase());
+  }
+
+  if (options.kycStatus) {
+    const kyc = String(options.kycStatus).toLowerCase().trim();
+    if (kyc === "pending") {
+      conditions.push("(k.status = 'pending' OR k.status IS NULL)");
+    } else if (kyc === "under_review") {
+      conditions.push("k.status IN ('under_review', 'submitted')");
+    } else if (kyc === "verified" || kyc === "approved" || kyc === "completed") {
+      conditions.push("k.status IN ('approved', 'verified', 'completed')");
+    } else if (kyc === "rejected") {
+      conditions.push("k.status = 'rejected'");
+    } else {
+      conditions.push("k.status = ?");
+      params.push(options.kycStatus);
+    }
   }
 
   if (options.search) {
@@ -111,21 +125,53 @@ async function findAllUsers(options = {}) {
       u.name LIKE ?
       OR u.mobile LIKE ?
       OR u.email LIKE ?
+      OR u.shopname LIKE ?
+      OR CAST(u.id AS CHAR) LIKE ?
     )`);
-
     const searchValue = `%${options.search}%`;
-
-    params.push(searchValue, searchValue, searchValue);
+    params.push(searchValue, searchValue, searchValue, searchValue, searchValue);
   }
 
-  if (conditions.length > 0) {
-    query += ` WHERE ${conditions.join(" AND ")}`;
-  }
+  return { conditions, params };
+}
 
-  query += ` ORDER BY u.id DESC`;
+// Get all users (Admin view) with pagination, sorting by newest first
+async function findAllUsers(options = {}) {
+  const { conditions, params } = buildUserFilterClauses(options, true);
+  const whereClause = conditions.length > 0 ? ` WHERE ${conditions.join(" AND ")}` : "";
 
-  const [rows] = await pool.execute(query, params);
-  return rows.map(formatUserRow);
+  // 1. Total count query
+  const countSql = `
+    SELECT COUNT(DISTINCT u.id) AS total
+    FROM users u
+    JOIN roles r ON r.id = u.role_id
+    LEFT JOIN companies c ON c.id = u.company_id
+    LEFT JOIN users p ON p.id = u.parent_id
+    LEFT JOIN kyc_cases k ON k.id = (SELECT MAX(k2.id) FROM kyc_cases k2 WHERE k2.user_id = u.id)
+    ${whereClause}
+  `;
+  const [countRows] = await pool.execute(countSql, params);
+  const total = Number(countRows[0]?.total || 0);
+
+  // 2. Paginated data query
+  const limit = Math.min(Math.max(1, Number(options.limit) || 100), 100);
+  const page = Math.max(1, Number(options.page) || 1);
+  const offset = (page - 1) * limit;
+
+  const dataSql = `${USER_PROJECTION} ${whereClause} ORDER BY u.created_at DESC, u.id DESC LIMIT ${limit} OFFSET ${offset}`;
+  const [rows] = await pool.execute(dataSql, params);
+
+  return {
+    users: rows.map(formatUserRow),
+    pagination: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit) || 1,
+      hasNextPage: page * limit < total,
+      hasPreviousPage: page > 1,
+    },
+  };
 }
 
 /**
@@ -189,30 +235,59 @@ async function findAdminUsersPage(options = {}) {
 }
 
 async function findUsersInDescendantScope(actorId, roleId, options = {}) {
-  const conditions = ["u.role_id = ?", "scope.id <> ?"];
-  const params = [actorId, roleId, actorId];
-  if (options.kycStatus) {
-    conditions.push("k.status = ?");
-    params.push(options.kycStatus);
-  }
-  if (options.search) {
-    conditions.push(`(u.name LIKE ? OR u.mobile LIKE ? OR u.email LIKE ?)`);
-    const value = `%${options.search}%`;
-    params.push(value, value, value);
-  }
-  const [rows] = await pool.execute(
-    `WITH RECURSIVE scope AS (
-       SELECT id FROM users WHERE id = ?
-       UNION DISTINCT
-       SELECT child.id FROM users child JOIN scope parent ON child.parent_id = parent.id
-     )
-     ${USER_PROJECTION}
-     JOIN scope ON scope.id = u.id
-     WHERE ${conditions.join(" AND ")}
-     ORDER BY u.id DESC`,
-    params,
-  );
-  return rows.map(formatUserRow);
+  const { conditions, params: filterParams } = buildUserFilterClauses(options, false);
+  const allConditions = ["u.role_id = ?", "scope.id <> ?", ...conditions];
+  const allParams = [actorId, roleId, actorId, ...filterParams];
+
+  // 1. Total count query
+  const countSql = `
+    WITH RECURSIVE scope AS (
+      SELECT id FROM users WHERE id = ?
+      UNION DISTINCT
+      SELECT child.id FROM users child JOIN scope parent ON child.parent_id = parent.id
+    )
+    SELECT COUNT(DISTINCT u.id) AS total
+    FROM users u
+    JOIN roles r ON r.id = u.role_id
+    LEFT JOIN companies c ON c.id = u.company_id
+    LEFT JOIN users p ON p.id = u.parent_id
+    LEFT JOIN kyc_cases k ON k.id = (SELECT MAX(k2.id) FROM kyc_cases k2 WHERE k2.user_id = u.id)
+    JOIN scope ON scope.id = u.id
+    WHERE ${allConditions.join(" AND ")}
+  `;
+  const [countRows] = await pool.execute(countSql, allParams);
+  const total = Number(countRows[0]?.total || 0);
+
+  // 2. Paginated data query
+  const limit = Math.min(Math.max(1, Number(options.limit) || 100), 100);
+  const page = Math.max(1, Number(options.page) || 1);
+  const offset = (page - 1) * limit;
+
+  const dataSql = `
+    WITH RECURSIVE scope AS (
+      SELECT id FROM users WHERE id = ?
+      UNION DISTINCT
+      SELECT child.id FROM users child JOIN scope parent ON child.parent_id = parent.id
+    )
+    ${USER_PROJECTION}
+    JOIN scope ON scope.id = u.id
+    WHERE ${allConditions.join(" AND ")}
+    ORDER BY u.created_at DESC, u.id DESC
+    LIMIT ${limit} OFFSET ${offset}
+  `;
+  const [rows] = await pool.execute(dataSql, allParams);
+
+  return {
+    users: rows.map(formatUserRow),
+    pagination: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit) || 1,
+      hasNextPage: page * limit < total,
+      hasPreviousPage: page > 1,
+    },
+  };
 }
 
 async function findUserById(userId) {
@@ -226,36 +301,61 @@ async function findUserById(userId) {
   return formatUserRow(rows[0]);
 }
 
-// Get children created by a parent.
-
-// Get children created by a parent with optional KYC status and search filters.
+// Get children created by a parent with optional KYC status, search, and pagination.
 async function findChildrenByParentId(parentId, options = {}) {
-  let query = `${USER_PROJECTION}
-    WHERE u.parent_id = ?`;
+  const { conditions, params: filterParams } = buildUserFilterClauses(options, true);
+  const allConditions = ["scope.id <> ?", ...conditions];
+  const allParams = [parentId, parentId, ...filterParams];
 
-  const params = [parentId];
+  // 1. Total count query
+  const countSql = `
+    WITH RECURSIVE scope AS (
+      SELECT id FROM users WHERE id = ?
+      UNION DISTINCT
+      SELECT child.id FROM users child JOIN scope parent ON child.parent_id = parent.id
+    )
+    SELECT COUNT(DISTINCT u.id) AS total
+    FROM users u
+    JOIN roles r ON r.id = u.role_id
+    LEFT JOIN companies c ON c.id = u.company_id
+    LEFT JOIN users p ON p.id = u.parent_id
+    LEFT JOIN kyc_cases k ON k.id = (SELECT MAX(k2.id) FROM kyc_cases k2 WHERE k2.user_id = u.id)
+    JOIN scope ON scope.id = u.id
+    WHERE ${allConditions.join(" AND ")}
+  `;
+  const [countRows] = await pool.execute(countSql, allParams);
+  const total = Number(countRows[0]?.total || 0);
 
-  if (options.kycStatus) {
-    query += ` AND k.status = ?`;
-    params.push(options.kycStatus);
-  }
+  // 2. Paginated data query
+  const limit = Math.min(Math.max(1, Number(options.limit) || 100), 100);
+  const page = Math.max(1, Number(options.page) || 1);
+  const offset = (page - 1) * limit;
 
-  if (options.search) {
-    query += ` AND (
-      u.name LIKE ?
-      OR u.mobile LIKE ?
-      OR u.email LIKE ?
-    )`;
+  const dataSql = `
+    WITH RECURSIVE scope AS (
+      SELECT id FROM users WHERE id = ?
+      UNION DISTINCT
+      SELECT child.id FROM users child JOIN scope parent ON child.parent_id = parent.id
+    )
+    ${USER_PROJECTION}
+    JOIN scope ON scope.id = u.id
+    WHERE ${allConditions.join(" AND ")}
+    ORDER BY u.created_at DESC, u.id DESC
+    LIMIT ${limit} OFFSET ${offset}
+  `;
+  const [rows] = await pool.execute(dataSql, allParams);
 
-    const searchValue = `%${options.search}%`;
-
-    params.push(searchValue, searchValue, searchValue);
-  }
-
-  query += ` ORDER BY u.id DESC`;
-
-  const [rows] = await pool.execute(query, params);
-  return rows.map(formatUserRow);
+  return {
+    users: rows.map(formatUserRow),
+    pagination: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit) || 1,
+      hasNextPage: page * limit < total,
+      hasPreviousPage: page > 1,
+    },
+  };
 }
 
 
@@ -286,6 +386,63 @@ async function findDescendantUserById(childId, parentId) {
   return formatUserRow(rows[0]);
 }
 
+async function getUserStats(actorId, isAdminActor) {
+  if (isAdminActor) {
+    const sql = `
+      SELECT
+        COUNT(DISTINCT u.id) AS total,
+        COUNT(DISTINCT CASE WHEN u.status = 'active' THEN u.id END) AS active,
+        COUNT(DISTINCT CASE WHEN r.slug = 'RT' OR r.id = 8 THEN u.id END) AS retailers,
+        COUNT(DISTINCT CASE WHEN r.slug = 'DT' OR r.id = 7 THEN u.id END) AS distributors,
+        COUNT(DISTINCT CASE WHEN k.status IN ('approved', 'verified', 'completed') THEN u.id END) AS verifiedKyc,
+        COUNT(DISTINCT CASE WHEN k.status = 'pending' OR k.status IS NULL THEN u.id END) AS pendingKyc
+      FROM users u
+      JOIN roles r ON r.id = u.role_id
+      LEFT JOIN kyc_cases k ON k.id = (SELECT MAX(k2.id) FROM kyc_cases k2 WHERE k2.user_id = u.id)
+    `;
+    const [rows] = await pool.execute(sql);
+    const row = rows[0] || {};
+    return {
+      total: Number(row.total || 0),
+      active: Number(row.active || 0),
+      retailers: Number(row.retailers || 0),
+      distributors: Number(row.distributors || 0),
+      verifiedKyc: Number(row.verifiedKyc || 0),
+      pendingKyc: Number(row.pendingKyc || 0),
+    };
+  }
+
+  const sql = `
+    WITH RECURSIVE scope AS (
+      SELECT id FROM users WHERE id = ?
+      UNION DISTINCT
+      SELECT child.id FROM users child JOIN scope parent ON child.parent_id = parent.id
+    )
+    SELECT
+      COUNT(DISTINCT u.id) AS total,
+      COUNT(DISTINCT CASE WHEN u.status = 'active' THEN u.id END) AS active,
+      COUNT(DISTINCT CASE WHEN r.slug = 'RT' OR r.id = 8 THEN u.id END) AS retailers,
+      COUNT(DISTINCT CASE WHEN r.slug = 'DT' OR r.id = 7 THEN u.id END) AS distributors,
+      COUNT(DISTINCT CASE WHEN k.status IN ('approved', 'verified', 'completed') THEN u.id END) AS verifiedKyc,
+      COUNT(DISTINCT CASE WHEN k.status = 'pending' OR k.status IS NULL THEN u.id END) AS pendingKyc
+    FROM users u
+    JOIN roles r ON r.id = u.role_id
+    LEFT JOIN kyc_cases k ON k.id = (SELECT MAX(k2.id) FROM kyc_cases k2 WHERE k2.user_id = u.id)
+    JOIN scope ON scope.id = u.id
+    WHERE scope.id <> ?
+  `;
+  const [rows] = await pool.execute(sql, [actorId, actorId]);
+  const row = rows[0] || {};
+  return {
+    total: Number(row.total || 0),
+    active: Number(row.active || 0),
+    retailers: Number(row.retailers || 0),
+    distributors: Number(row.distributors || 0),
+    verifiedKyc: Number(row.verifiedKyc || 0),
+    pendingKyc: Number(row.pendingKyc || 0),
+  };
+}
+
 export {
   findActorRole,
   findDescendantRoles,
@@ -296,6 +453,7 @@ export {
   findChildrenByParentId,
   findChildByIdAndParentId,
   findDescendantUserById,
+  getUserStats,
   formatUserRow,
 };
 
@@ -309,5 +467,6 @@ export default {
   findChildrenByParentId,
   findChildByIdAndParentId,
   findDescendantUserById,
+  getUserStats,
   formatUserRow,
 };

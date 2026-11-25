@@ -316,6 +316,49 @@ async function getKycApplicationDetails(caseId) {
 }
 
 /**
+ * Fetch complete safe details of one KYC application by User ID.
+ */
+async function getKycApplicationDetailsByUserId(userId) {
+  const parsedUserId = parsePositiveId(userId, "User ID");
+
+  const application = await adminKycModel.findKycCaseByUserId(parsedUserId);
+
+  if (!application) {
+    throw new ApiError(
+      404,
+      "No KYC application found for this user",
+      [],
+      "NOT_FOUND",
+    );
+  }
+
+  const caseId = application.case_id;
+
+  const [
+    steps,
+    verifications,
+    bankAccount,
+    media,
+    agreements,
+  ] = await Promise.all([
+    adminKycModel.findKycStepsByCaseId(caseId),
+    adminKycModel.findVerificationsByCaseId(caseId),
+    adminKycModel.findBankDetailsByCaseId(caseId),
+    adminKycModel.findMediaDetailsByCaseId(caseId),
+    adminKycModel.findAgreementsByCaseId(caseId),
+  ]);
+
+  return {
+    application,
+    steps,
+    verifications,
+    bankAccount,
+    media,
+    agreements,
+  };
+}
+
+/**
  * Generate temporary secure access to an admin KYC document.
  */
 async function getKycDocumentAccess(caseId, assetId) {
@@ -622,6 +665,7 @@ const adminKycService = {
   getKycApplications,
   getRecentKycApplications,
   getKycApplicationDetails,
+  getKycApplicationDetailsByUserId,
   getKycDocumentAccess,
   approveKycApplication,
   rejectKycApplication
@@ -631,6 +675,7 @@ export {
   getKycApplications,
   getRecentKycApplications,
   getKycApplicationDetails,
+  getKycApplicationDetailsByUserId,
   getKycDocumentAccess,
   approveKycApplication,
   rejectKycApplication
